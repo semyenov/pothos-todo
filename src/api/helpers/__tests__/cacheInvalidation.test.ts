@@ -10,7 +10,7 @@ import {
   clearAllUserCaches,
   CachePatterns,
 } from '../cacheInvalidation';
-import type { Context } from '../../context';
+import type { Context } from '../../schema/builder.js';
 
 // Mock the cache module
 mock.module('@/api/plugins/responseCache', () => ({

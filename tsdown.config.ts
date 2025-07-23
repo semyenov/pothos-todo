@@ -71,7 +71,7 @@ export default defineConfig({
   clean: buildConfig.clean,
 
   // TypeScript settings
-  dts: false, // Temporarily disabled due to type generation issues
+  dts: true, // Temporarily disabled due to type generation issues
   tsconfig: './tsconfig.json',
 
   // Development settings (from configuration)

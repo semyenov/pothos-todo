@@ -55,7 +55,7 @@ export class ModernFederationGateway {
   private config: ModernGatewayConfig;
   private system!: SystemIntegration;
   private yoga!: ReturnType<typeof createYoga>;
-  private hiveGateway: HiveGatewayService;
+  private hiveGateway: HiveGatewayService | null = null;
 
   // Infrastructure components
   private edgeComputing?: EdgeComputingSystem;
@@ -73,7 +73,7 @@ export class ModernFederationGateway {
 
   constructor(config: ModernGatewayConfig) {
     this.config = config;
-    this.hiveGateway = HiveGatewayService.getInstance();
+    this.hiveGateway = null; // Will be initialized in initialize() method
   }
 
   /**
@@ -81,6 +81,9 @@ export class ModernFederationGateway {
    */
   async initialize(): Promise<void> {
     logger.info('Initializing Modern Federation Gateway...', { config: this.config });
+
+    // Initialize Hive Gateway
+    this.hiveGateway = await HiveGatewayService.getInstance();
 
     // Initialize system integration
     this.system = await SystemIntegration.initialize({

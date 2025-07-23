@@ -37,23 +37,19 @@ export interface IHiveGatewayService {
  * - CDN-based schema distribution
  * - Integration with existing infrastructure
  */
-export class HiveGatewayService extends AsyncSingletonService<IHiveGatewayService> {
-  private gateway: Gateway | null = null;
-  private initialized = false;
-  private metricsCollector: MetricsCollector;
-  private redisManager: RedisClusterManager;
+export class HiveGatewayService extends AsyncSingletonService implements IHiveGatewayService {
+  public gateway: Gateway | null = null;
+  public initialized = false;
+  public metricsCollector: MetricsCollector | null = null;
+  public redisManager: RedisClusterManager | null = null;
 
   protected constructor() {
     super();
-    this.metricsCollector = MetricsCollector.getInstance();
-    this.redisManager = RedisClusterManager.getInstance();
   }
 
-  public static async getInstance(): Promise<IHiveGatewayService> {
+  static async getInstance(): Promise<HiveGatewayService> {
     return super.getInstanceAsync(async (instance) => {
-      const gatewayService = new HiveGatewayService();
-      await gatewayService.initialize();
-      return gatewayService;
+      await instance.initialize();
     });
   }
 
@@ -67,6 +63,10 @@ export class HiveGatewayService extends AsyncSingletonService<IHiveGatewayServic
     }
 
     try {
+      // Initialize dependencies
+      this.metricsCollector = MetricsCollector.getInstance();
+      this.redisManager = RedisClusterManager.getInstance();
+
       const serverConfig = getServerConfig();
       const cacheConfig = getCacheConfig();
 

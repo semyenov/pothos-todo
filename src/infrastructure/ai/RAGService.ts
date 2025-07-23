@@ -3,7 +3,7 @@ import { EmbeddingService } from './EmbeddingService.js';
 import { VectorStore } from './VectorStore.js';
 import { logger } from '@/logger.js';
 import type { Todo, PrismaClient } from '@prisma/client';
-import { SingletonService } from '../core/SingletonService.js';
+import { AsyncSingletonService, SingletonService } from '../core/SingletonService.js';
 
 export interface RAGContext {
   query: string;
@@ -22,26 +22,18 @@ export interface RAGResponse {
   confidence: number;
 }
 
-export class RAGService extends SingletonService<RAGService> {
+export class RAGService extends SingletonService {
   private openai: OpenAI | null = null;
   private embeddingService: EmbeddingService | null = null;
   private vectorStore: VectorStore | null = null;
 
-  protected constructor() {
-    super();
-  }
-
-  static async getInstance(): Promise<RAGService> {
-    return super.getInstance();
-  }
-
   /**
    * Configure the RAGService with required dependencies
    */
-  public async configure(
+  public configure(
     embeddingService: EmbeddingService,
     vectorStore: VectorStore
-  ): Promise<void> {
+  ) {
     this.embeddingService = embeddingService;
     this.vectorStore = vectorStore;
   }

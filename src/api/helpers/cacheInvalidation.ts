@@ -1,6 +1,6 @@
 import { invalidateCache } from '../plugins/responseCache.js';
-import type { Context } from '../context.js';
-import { logger } from '@/logger.js';
+import type { Context } from '../schema/builder.js';
+import { logger } from '@/lib/unjs-utils.js';
 
 /**
  * Cache invalidation patterns for different entity types.

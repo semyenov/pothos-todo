@@ -10,12 +10,18 @@ export interface CacheOptions {
   tags?: string[]; // Tags for cache invalidation
 }
 
-export class CacheManager extends AsyncSingletonService<CacheManager> {
+export class CacheManager extends AsyncSingletonService {
   private client!: RedisClient;
   public isConnected = false;
 
   protected constructor() {
     super();
+  }
+
+  static async getInstance(): Promise<CacheManager> {
+    return super.getInstanceAsync(async (instance) => {
+      await instance.connect();
+    });
   }
 
   public async connect(): Promise<void> {

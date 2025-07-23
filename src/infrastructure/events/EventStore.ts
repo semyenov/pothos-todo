@@ -1,21 +1,20 @@
 import { DomainEvent } from '../../domain/events/DomainEvent.js';
+import type { JsonValue } from '@prisma/client/runtime/library';
 
 export interface StoredEvent {
   id: string;
   eventType: string;
   aggregateId: string;
-  eventData: Record<string, unknown>;
+  eventData: JsonValue;
   version: number;
   createdAt: Date;
 }
 
-export interface EventStore {
+export interface IEventStore {
   append(event: DomainEvent): Promise<void>;
   appendAll(events: DomainEvent[]): Promise<void>;
-  getEvents(aggregateId: string, fromVersion?: number, limit?: number): Promise<DomainEvent[]>;
+  getEvents(aggregateId: string): Promise<StoredEvent[]>;
   getEventsFromVersion(aggregateId: string, fromVersion: number): Promise<StoredEvent[]>;
   getAllEvents(): Promise<StoredEvent[]>;
   getEventsByType(eventType: string): Promise<StoredEvent[]>;
-  getEventsAfterPosition(position: number, limit: number): Promise<DomainEvent[]>;
-  getEventsByTimeRange(start: Date, end: Date): Promise<DomainEvent[]>;
 }

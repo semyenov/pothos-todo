@@ -1,7 +1,8 @@
 import { logger } from '@/logger';
 import { QdrantClient } from '@qdrant/js-client-rest';
 import type { EmbeddingResult } from './EmbeddingService.js';
-import { AsyncSingletonService } from '@/infrastructure/core/SingletonService.js';
+import { AsyncSingletonService, SingletonService } from '@/infrastructure/core/SingletonService.js';
+import type { PrismaClient } from '@prisma/client';
 
 export interface VectorSearchOptions {
   limit?: number;
@@ -11,11 +12,15 @@ export interface VectorSearchOptions {
 
 export interface VectorDocument {
   id: string;
-  vector: number[]; 
+  vector: number[];
   payload: Record<string, any>;
 }
 
-export class VectorStore extends AsyncSingletonService<VectorStore> {
+export interface VectorStoreConfig {
+  url: string;
+}
+
+export class VectorStore extends AsyncSingletonService {
   private client: QdrantClient | null = null;
   private isConnected = false;
 
@@ -23,10 +28,9 @@ export class VectorStore extends AsyncSingletonService<VectorStore> {
     super();
   }
 
-  public static async getInstance(): Promise<VectorStore> {
-    return super.getInstanceAsync(async (instance) => {
-      await instance.connect();
-    });
+
+  public async configure(config: VectorStoreConfig): Promise<void> {
+    await this.connect(config.url);
   }
 
   public async connect(url: string = 'http://localhost:6333'): Promise<void> {

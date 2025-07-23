@@ -8,7 +8,7 @@ import {
   ownsResource,
   compose,
 } from '../authenticated';
-import type { Context } from '../../context';
+import type { Context } from '../../schema/builder.js';
 
 // Mock context factory
 function createContext(overrides?: Partial<Context>): Context {

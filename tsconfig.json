@@ -27,5 +27,11 @@
     "paths": {
       "@/*": ["./src/*"], 
     }
-  }
+  },
+  "exclude": [
+    "examples",
+    "pulumi",
+    "node_modules",
+    "dist"
+  ]
 }

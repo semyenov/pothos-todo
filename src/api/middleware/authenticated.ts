@@ -1,5 +1,5 @@
 import { GraphQLError } from 'graphql';
-import type { Context } from '../context.js';
+import type { Context } from '../schema/builder.js';
 
 /**
  * Authentication middleware for GraphQL resolvers.

@@ -15,7 +15,7 @@ export interface EmbeddingResult {
   dimensions: number;
 }
 
-export class EmbeddingService extends SingletonService<EmbeddingService> {
+export class EmbeddingService extends SingletonService {
   private openai: OpenAI | null = null;
   private vectorStore: VectorStore | null = null;
   private prisma: PrismaClient | null = null;
@@ -27,8 +27,10 @@ export class EmbeddingService extends SingletonService<EmbeddingService> {
     super();
   }
 
-  public static async getInstance(): Promise<EmbeddingService> {
-    return super.getInstance();
+  public static override getInstance(prisma: PrismaClient): EmbeddingService {
+    const instance = super.getInstance<EmbeddingService>();
+    instance.configure(prisma);
+    return instance;
   }
 
   /**

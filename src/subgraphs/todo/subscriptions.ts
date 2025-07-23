@@ -4,7 +4,7 @@ import prisma from "../../lib/subgraph-prisma.js";
 import type { Todo, TodoList } from "@prisma/client";
 
 // Create a PubSub instance for this subgraph
-export const pubsub = new PubSub() as PubSub & { asyncIterator: (topics: string[]) => AsyncIterator<any> };
+export const pubsub = new PubSub();
 
 // Subscription topics
 export const TODO_EVENTS = {
@@ -34,19 +34,19 @@ interface TodoListEvent {
 builder.subscriptionType({
   fields: (t) => ({
     // Subscribe to todo changes for a specific user
-    todoChanged: t.field({
+    todoChanged: t.prismaField({
       type: 'Todo',
       args: {
         userId: t.arg.id({ required: true }),
       },
       subscribe: (_root, args) => {
         // Filter events by userId
-        const asyncIterator = pubsub.asyncIterator([
+        const asyncIterator = (pubsub as any).asyncIterator([
           TODO_EVENTS.TODO_CREATED,
           TODO_EVENTS.TODO_UPDATED,
           TODO_EVENTS.TODO_DELETED,
           TODO_EVENTS.TODO_COMPLETED,
-        ]);
+        ]) as AsyncIterable<TodoEvent>;
 
         // Wrap the async iterator to filter by userId
         return {
@@ -59,17 +59,17 @@ builder.subscriptionType({
           },
         };
       },
-      resolve: (payload: TodoEvent) => payload.todo,
+      resolve: (query, payload: TodoEvent) => payload.todo,
     }),
 
     // Subscribe to todo completions
-    todoCompleted: t.field({
+    todoCompleted: t.prismaField({
       type: 'Todo',
       args: {
         userId: t.arg.id({ required: true }),
       },
       subscribe: (_root, args) => {
-        const asyncIterator = pubsub.asyncIterator([TODO_EVENTS.TODO_COMPLETED]);
+        const asyncIterator = (pubsub as any).asyncIterator([TODO_EVENTS.TODO_COMPLETED]) as AsyncIterable<TodoEvent>;
 
         return {
           async *[Symbol.asyncIterator]() {
@@ -81,21 +81,21 @@ builder.subscriptionType({
           },
         };
       },
-      resolve: (payload: TodoEvent) => payload.todo,
+      resolve: (query, payload: TodoEvent) => payload.todo,
     }),
 
     // Subscribe to todo list changes
-    todoListChanged: t.field({
+    todoListChanged: t.prismaField({
       type: 'TodoList',
       args: {
         userId: t.arg.id({ required: true }),
       },
       subscribe: (_root, args) => {
-        const asyncIterator = pubsub.asyncIterator([
+        const asyncIterator = (pubsub as any).asyncIterator([
           TODO_EVENTS.TODOLIST_CREATED,
           TODO_EVENTS.TODOLIST_UPDATED,
           TODO_EVENTS.TODOLIST_DELETED,
-        ]);
+        ]) as AsyncIterable<TodoListEvent>;
 
         return {
           async *[Symbol.asyncIterator]() {
@@ -107,7 +107,7 @@ builder.subscriptionType({
           },
         };
       },
-      resolve: (payload: TodoListEvent) => payload.todoList,
+      resolve: (query, payload: TodoListEvent) => payload.todoList,
     }),
 
     // Real-time todo statistics - temporarily commented out to fix schema build

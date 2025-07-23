@@ -1,29 +1,70 @@
-import { builder } from "../../api/schema/subgraph-builder.js";
-import type { User as PrismaUser, Todo as PrismaTodo } from "@prisma/client";
+import { builder } from "../../api/schema/builder.js";
+import { nanoid } from "nanoid";
 
 // AI-specific types
-builder.objectType('TodoSuggestion', {
+const TodoSuggestion = builder.interfaceRef<{
+  id: string;
+  title: string;
+  description: string;
+  priority: string;
+  estimatedTime: number;
+}>('TodoSuggestion');
+
+TodoSuggestion.implement({
   fields: (t) => ({
-    title: t.string(),
-    description: t.string({ nullable: true }),
-    priority: t.string(),
-    estimatedTime: t.int({ nullable: true }),
+    title: t.string({
+      resolve: (parent) => parent.title,
+    }),
+    description: t.string({
+      resolve: (parent) => parent.description,
+    }),
+    priority: t.string({
+      resolve: (parent) => parent.priority,
+    }),
+    estimatedTime: t.int({
+      resolve: (parent) => parent.estimatedTime,
+    }),
   }),
 });
 
-builder.objectType('TodoSearchResult', {
+const TodoSearchResult = builder.interfaceRef<{
+  id: string;
+  title: string;
+  similarity: number;
+}>('TodoSearchResult');
+
+TodoSearchResult.implement({
   fields: (t) => ({
-    id: t.id(),
-    title: t.string(),
-    similarity: t.float(),
+    id: t.id({
+      resolve: (parent) => parent.id,
+    }),
+    title: t.string({
+      resolve: (parent) => parent.title,
+    }),
+    similarity: t.float({
+      resolve: (parent) => parent.similarity,
+    }),
   }),
 });
 
-builder.objectType('UserInsight', {
+const UserInsight = builder.interfaceRef<{
+  type: string;
+  message: string;
+  data: string;
+}>('UserInsight');
+
+UserInsight.implement({
   fields: (t) => ({
-    type: t.string(),
-    message: t.string(),
-    data: t.string({ nullable: true }),
+    type: t.string({
+      resolve: (parent) => parent.type,
+    }),
+    message: t.string({
+      resolve: (parent) => parent.message,
+    }),
+    data: t.string({
+      nullable: true,
+      resolve: (parent) => parent.data,
+    }),
   }),
 });
 
@@ -34,70 +75,72 @@ builder.objectType('UserInsight', {
 builder.queryType({
   fields: (t) => ({
     searchTodos: t.field({
-      type: ['TodoSearchResult'],
+      type: TodoSearchResult,
       args: {
         query: t.arg.string({ required: true }),
         limit: t.arg.int({ defaultValue: 10 }),
       },
-      resolve: async () => {
+      resolve: async (_, args) => {
         // Mock implementation
-        return [
-          {
-            id: '1',
-            title: 'Example Todo',
-            similarity: 0.95,
-          },
-        ];
+        return {
+          id: nanoid(),
+          title: 'Example Todo',
+          similarity: 0.95,
+        };
       },
     }),
     suggestTodos: t.field({
-      type: ['TodoSuggestion'],
+      type: TodoSuggestion,
       args: {
         limit: t.arg.int({ defaultValue: 5 }),
       },
-      resolve: async () => {
+      resolve: async (_, args) => {
         // Mock implementation
-        return [
-          {
-            title: 'Review project documentation',
-            description: 'Go through all project docs and update outdated sections',
-            priority: 'medium',
-            estimatedTime: 120,
-          },
-        ];
+        return {
+          title: 'Review project documentation',
+          description: 'Go through all project docs and update outdated sections',
+          priority: 'medium',
+          estimatedTime: 120,
+          id: nanoid(),
+        };
       },
     }),
-    askAboutTodos: t.string({
+    askAboutTodos: t.field({
+      type: TodoSuggestion,
       args: {
         question: t.arg.string({ required: true }),
       },
       resolve: async (_, args) => {
         // Mock implementation
-        return `Based on your todos, ${args.question}`;
+        return {
+          id: nanoid(),
+          title: 'Review project documentation',
+          description: 'Go through all project docs and update outdated sections',
+          priority: 'medium',
+          estimatedTime: 120,
+        };
       },
     }),
     getUserInsights: t.field({
-      type: ['UserInsight'],
+      type: UserInsight,
       args: {
-        userId: t.arg.id({ required: true }),
+        userId: t.arg.string({ required: true }),
       },
-      resolve: async () => {
-        // Mock implementation
-        return [
-          {
-            type: 'completion_rate',
-            message: 'Your task completion rate is 78%',
-            data: JSON.stringify({ rate: 0.78 }),
-          },
-        ];
+      resolve: async (_, args) => {
+        return {
+          type: 'completion_rate',
+          message: 'Your task completion rate is 78%',
+          data: JSON.stringify({ rate: 0.78 }),
+          id: nanoid(),
+        };
       },
     }),
     predictCompletionTime: t.float({
       nullable: true,
       args: {
-        todoId: t.arg.id({ required: true }),
+        todoId: t.arg.string({ required: true }),
       },
-      resolve: async () => {
+      resolve: async (_, args) => {
         // Mock implementation
         return 3.5; // hours
       },

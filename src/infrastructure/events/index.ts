@@ -3,7 +3,7 @@ export type { IDomainEventHandler } from './DomainEventHandler.js';
 export { EventBus } from './EventBus.js';
 export { EventHandlerRegistry } from './EventHandlerRegistry.js';
 export type { IEventPublisher as IEventPublisher } from './EventPublisher.js';
-export type { IEventStore as IEventStore } from './EventStore.js';
+export type { IEventStore, StoredEvent } from './EventStore.js';
 export { InMemoryEventPublisher } from './InMemoryEventPublisher.js';
 export { PrismaEventStore } from './PrismaEventStore.js';
 

@@ -26,16 +26,8 @@ export interface ParsedCommand {
   confidence: number;
 }
 
-export class NLPService extends SingletonService<NLPService> {
+export class NLPService extends SingletonService {
   private openai: OpenAI | null = null;
-
-  protected constructor() {
-    super();
-  }
-
-  static getInstance(): NLPService {
-    return super.getInstance();
-  }
 
   initialize(apiKey: string): void {
     this.openai = new OpenAI({ apiKey });

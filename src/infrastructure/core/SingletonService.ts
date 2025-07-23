@@ -15,8 +15,9 @@ import { EventEmitter } from 'events';
  * }
  * ```
  */
-export abstract class SingletonService {
-  private static instances = new Map<string, SingletonService>();
+export abstract class SingletonService<T extends SingletonService<T>> {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  private static instances = new Map<string, SingletonService<T>>();
 
   /**
    * Gets or creates the singleton instance for the calling class.
@@ -24,14 +25,12 @@ export abstract class SingletonService {
    * 
    * @returns The singleton instance of the service
    */
-  public static getInstance<T extends SingletonService>(this: new () => T): T | undefined {
-    const instance = new this();
-
-    if (!SingletonService.instances.has(instance.constructor.name)) {
-      SingletonService.instances.set(instance.constructor.name, instance);
+  public static getInstance<T extends SingletonService<T>>(this: new (...args: unknown[]) => T, ...args: unknown[]): T {
+    const className = this.name;
+    if (!SingletonService.instances.has(className)) {
+      SingletonService.instances.set(className, new this(...args));
     }
-
-    return SingletonService.instances.get(instance.constructor.name) as T;
+    return SingletonService.instances.get(className) as T;
   }
 
   /**
@@ -41,14 +40,15 @@ export abstract class SingletonService {
    * @param key - Custom key for the instance
    * @returns The singleton instance for the given key
    */
-  public static getInstanceWithKey<T extends SingletonService>(
-    this: new () => T,
-    key: string
+  public static getInstanceWithKey<T extends SingletonService<T>>(
+    this: new (...args: unknown[]) => T,
+    key: string,
+    ...args: unknown[]
   ): T {
     const instanceKey = `${this.name}:${key}`;
 
     if (!SingletonService.instances.has(instanceKey)) {
-      SingletonService.instances.set(instanceKey, new this());
+      SingletonService.instances.set(instanceKey, new this(...args));
     }
 
     return SingletonService.instances.get(instanceKey) as T;
@@ -98,47 +98,33 @@ export abstract class SingletonService {
  * }
  * ```
  */
-export abstract class AsyncSingletonService extends SingletonService {
-  private static initializationPromises = new Map<string, Promise<any>>();
+export abstract class AsyncSingletonService<T extends AsyncSingletonService<T>> extends SingletonService<T> {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  private static initializationPromises = new Map<string, Promise<T>>();
   private static initializedInstances = new Set<string>();
 
   /**
    * Gets or creates the singleton instance with async initialization.
    * 
-   * @param initializer - Optional async function to initialize the instance
    * @returns Promise resolving to the singleton instance
-   */
-  static async getInstanceAsync<T extends AsyncSingletonService>(
-    this: new () => T,
-    initializer?: (instance: T) => Promise<void>
-  ): Promise<T> {
+    */
+  public static override async getInstance<T extends AsyncSingletonService<T>>(this: new (...args: unknown[]) => T, ...args: unknown[]): Promise<T> {
     const className = this.name;
 
     // If already initialized, return immediately
     if (AsyncSingletonService.initializedInstances.has(className)) {
-      return SingletonService.getInstance.call(this) as T;
+      return SingletonService.getInstance.call(this, ...args) as T;
     }
 
     // If initialization is in progress, wait for it
     if (AsyncSingletonService.initializationPromises.has(className)) {
       await AsyncSingletonService.initializationPromises.get(className);
-      return SingletonService.getInstance.call(this) as T;
+      return SingletonService.getInstance.call(this, ...args) as T;
     }
 
-    // Start new initialization 
-    const instance = SingletonService.getInstance.call(this) as T;
-
-    if (initializer) {
-      const initPromise = initializer(instance).then(() => {
-        AsyncSingletonService.initializedInstances.add(className);
-        AsyncSingletonService.initializationPromises.delete(className);
-      });
-
-      AsyncSingletonService.initializationPromises.set(className, initPromise);
-      await initPromise;
-    } else {
-      AsyncSingletonService.initializedInstances.add(className);
-    }
+    // Start new initialization
+    const instance = SingletonService.getInstance.call(this, ...args) as T;
+    AsyncSingletonService.initializedInstances.add(className);
 
     return instance;
   }
@@ -149,14 +135,14 @@ export abstract class AsyncSingletonService extends SingletonService {
    * @param className - The name of the class to check
    * @returns Whether the service has been initialized
    */
-  static isInitialized(className: string): boolean {
+  public static isInitialized(className: string): boolean {
     return AsyncSingletonService.initializedInstances.has(className);
   }
 
   /**
    * Clears all singleton instances and their initialization state.
    */
-  public clearAllInstances(): void {
+  public static override clearAllInstances(): void {
     AsyncSingletonService.initializationPromises.clear();
     AsyncSingletonService.initializedInstances.clear();
   }
@@ -180,25 +166,22 @@ export abstract class AsyncSingletonService extends SingletonService {
  * }
  * ```
  */
+type EventEmitterSingletonServiceEventMap<T = Record<string, unknown[]>> = Record<keyof T, unknown[]> | [never];
 
-type EventEmitterSingletonServiceEventMap<T = Record<string, any[]>> = Record<keyof T, any[]> | [never];
-
-export abstract class EventEmitterSingletonService<T extends EventEmitterSingletonServiceEventMap = Record<string, any[]>> extends EventEmitter<T> {
-  private static instances = new Map<string, EventEmitterSingletonService>();
+export abstract class EventEmitterSingletonService<T extends SingletonService<T>> extends EventEmitter {
+  private static instances = new Map<string, EventEmitterSingletonService<T>>();
 
   /**
    * Gets or creates the singleton instance for the calling class.
    * 
    * @returns The singleton instance of the service
     */
-  public static getInstance<T extends EventEmitterSingletonService>(this: new () => T): EventEmitterSingletonService {
+  public static getInstance<T extends EventEmitterSingletonService<T>>(this: new (...args: unknown[]) => T, ...args: unknown[]): T {
     const className = this.name;
-
     if (!EventEmitterSingletonService.instances.has(className)) {
-      EventEmitterSingletonService.instances.set(className, new this());
+      EventEmitterSingletonService.instances.set(className, new this(...args));
     }
-
-    return EventEmitterSingletonService.instances.get(className) as EventEmitterSingletonService;
+    return EventEmitterSingletonService.instances.get(className) as T;
   }
 
   /**
@@ -207,22 +190,23 @@ export abstract class EventEmitterSingletonService<T extends EventEmitterSinglet
    * @param key - Custom key for the instance
    * @returns The singleton instance for the given key
    */
-  public static getInstanceWithKey<T extends EventEmitterSingletonService>(
-    this: new () => T,
-    key: string
-  ): EventEmitterSingletonService {
+  public static getInstanceWithKey<T extends EventEmitterSingletonService<T>>(
+    this: new (...args: unknown[]) => T,
+    key: string,
+    ...args: unknown[]
+  ): T {
     const instanceKey = `${this.name}:${key}`;
 
     if (!EventEmitterSingletonService.instances.has(instanceKey)) {
-      EventEmitterSingletonService.instances.set(instanceKey, new this() as EventEmitterSingletonService);
+      EventEmitterSingletonService.instances.set(instanceKey, new this(...args));
     }
-    return EventEmitterSingletonService.instances.get(instanceKey) as EventEmitterSingletonService;
+    return EventEmitterSingletonService.instances.get(instanceKey) as T;
   }
 
   /**
    * Clears all singleton instances.
    */
-  public clearAllInstances(): void {
+  public static clearAllInstances(): void {
     EventEmitterSingletonService.instances.clear();
   }
 
@@ -231,7 +215,7 @@ export abstract class EventEmitterSingletonService<T extends EventEmitterSinglet
    * 
    * @param className - The name of the class to clear
    */
-  static clearInstance(className: string): void {
+  public static clearInstance(className: string): void {
     EventEmitterSingletonService.instances.delete(className);
   }
 
@@ -261,49 +245,35 @@ export abstract class EventEmitterSingletonService<T extends EventEmitterSinglet
  *     this.emit('connected');
  *   }
  * }
- * ```
+ * ```  
  */
-export abstract class AsyncEventEmitterSingletonService<T extends EventEmitterSingletonServiceEventMap = Record<string, any[]>> extends EventEmitterSingletonService<T> {
-  private static initializationPromises = new Map<string, Promise<any>>();
+export abstract class AsyncEventEmitterSingletonService<T extends EventEmitterSingletonService<T>> extends EventEmitterSingletonService<T> {
+  private static initializationPromises = new Map<string, Promise<T>>();
   private static initializedInstances = new Set<string>();
 
   /**
    * Gets or creates the singleton instance with async initialization.
    * 
-   * @param initializer - Optional async function to initialize the instance
    * @returns Promise resolving to the singleton instance
    */
-  static async getInstanceAsync<T extends AsyncEventEmitterSingletonService>(
-    this: new () => T,
-    initializer?: (instance: T) => Promise<void>
-  ): Promise<EventEmitterSingletonService> {
+  public static override async getInstance<T extends AsyncEventEmitterSingletonService<T>>(this: new (...args: unknown[]) => T, ...args: unknown[]): Promise<T> {
     const className = this.name;
 
     // If already initialized, return immediately
     if (AsyncEventEmitterSingletonService.initializedInstances.has(className)) {
-      return EventEmitterSingletonService.getInstance.call(this);
+      return EventEmitterSingletonService.getInstance.call(this, ...args) as T;
     }
 
     // If initialization is in progress, wait for it
     if (AsyncEventEmitterSingletonService.initializationPromises.has(className)) {
       await AsyncEventEmitterSingletonService.initializationPromises.get(className);
-      return EventEmitterSingletonService.getInstance.call(this);
+      return EventEmitterSingletonService.getInstance.call(this, ...args) as T;
     }
 
     // Start new initialization
-    const instance = EventEmitterSingletonService.getInstance.call(this) as T;
+    const instance = EventEmitterSingletonService.getInstance.call(this, ...args) as T;
 
-    if (initializer) {
-      const initPromise = initializer(instance).then(() => {
-        AsyncEventEmitterSingletonService.initializedInstances.add(className);
-        AsyncEventEmitterSingletonService.initializationPromises.delete(className);
-      });
-
-      AsyncEventEmitterSingletonService.initializationPromises.set(className, initPromise);
-      await initPromise;
-    } else {
-      AsyncEventEmitterSingletonService.initializedInstances.add(className);
-    }
+    AsyncEventEmitterSingletonService.initializedInstances.add(className);
 
     return instance;
   }
@@ -314,15 +284,14 @@ export abstract class AsyncEventEmitterSingletonService<T extends EventEmitterSi
    * @param className - The name of the class to check
    * @returns Whether the service has been initialized
    */
-  static isInitialized(className: string): boolean {
+  public static isInitialized(className: string): boolean {
     return AsyncEventEmitterSingletonService.initializedInstances.has(className);
   }
 
   /**
    * Clears all singleton instances and their initialization state.
    */
-  public override clearAllInstances(): void {
-    super.clearAllInstances();
+  public static override  clearAllInstances(): void {
     AsyncEventEmitterSingletonService.initializationPromises.clear();
     AsyncEventEmitterSingletonService.initializedInstances.clear();
   }

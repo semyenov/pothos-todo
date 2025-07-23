@@ -1,6 +1,7 @@
 import { HiveGatewayService } from '../../infrastructure/gateway/HiveGatewayService.js';
 import { logger } from '../../lib/unjs-utils.js';
-import type { Gateway } from '@graphql-hive/gateway';
+// TODO: Add proper Gateway type when @graphql-hive/gateway is properly configured
+// import type { Gateway } from '@graphql-hive/gateway';
 
 export interface GatewayConfig {
   cors?: {
@@ -21,11 +22,17 @@ export interface GatewayConfig {
  * and the new Hive Gateway implementation.
  */
 export class FederationGateway {
-  private hiveGateway: HiveGatewayService;
+  private hiveGateway: HiveGatewayService | null = null;
   private started = false;
 
   constructor(private config: GatewayConfig) {
-    this.hiveGateway = HiveGatewayService.getInstance();
+    // HiveGateway will be initialized in start() method
+  }
+
+  private async initializeHiveGateway() {
+    if (!this.hiveGateway) {
+      this.hiveGateway = await HiveGatewayService.getInstance();
+    }
   }
   
   /**
@@ -35,9 +42,12 @@ export class FederationGateway {
     try {
       logger.info('Starting Federation Gateway with Hive...');
       
+      // Initialize Hive Gateway instance
+      await this.initializeHiveGateway();
+      
       // Initialize and start Hive Gateway
-      await this.hiveGateway.initialize();
-      await this.hiveGateway.start(this.config.port || 4000);
+      await this.hiveGateway!.initialize();
+      await this.hiveGateway!.start(this.config.port || 4000);
       
       this.started = true;
       
@@ -55,7 +65,7 @@ export class FederationGateway {
    * Stop the federation gateway
    */
   async stop() {
-    if (this.started) {
+    if (this.started && this.hiveGateway) {
       logger.info('Stopping Federation Gateway...');
       await this.hiveGateway.stop();
       this.started = false;
@@ -67,6 +77,16 @@ export class FederationGateway {
    * Get gateway metrics
    */
   getMetrics() {
+    if (!this.hiveGateway) {
+      return {
+        requestCount: 0,
+        errorCount: 0,
+        averageLatency: 0,
+        healthy: Promise.resolve(false),
+        initialized: false,
+      };
+    }
+
     const metrics = this.hiveGateway.getMetrics();
     
     return {
@@ -82,13 +102,16 @@ export class FederationGateway {
    * Check if the gateway is healthy
    */
   async isHealthy(): Promise<boolean> {
+    if (!this.hiveGateway) {
+      return false;
+    }
     return this.hiveGateway.isHealthy();
   }
 
   /**
    * Get the underlying Hive Gateway instance
    */
-  getHiveGateway(): HiveGatewayService {
+  getHiveGateway(): HiveGatewayService | null {
     return this.hiveGateway;
   }
 }

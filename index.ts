@@ -82,8 +82,7 @@ async function startServer() {
 
     // Initialize cache manager if enabled
     if (cacheConfig.enabled) {
-      const cacheManager = CacheManager.getInstance();
-      await cacheManager.connect();
+      const cacheManager = await CacheManager.getInstance();
       logger.info("Cache manager initialized");
 
       // Start cache warming
@@ -377,7 +376,7 @@ async function startServer() {
           cacheWarmer.stop();
           logger.info("Cache warming stopped");
 
-          const cacheManager = CacheManager.getInstance();
+          const cacheManager = await CacheManager.getInstance();
           await cacheManager.disconnect();
           logger.info("Cache manager shutdown complete");
         }

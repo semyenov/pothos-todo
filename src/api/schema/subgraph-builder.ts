@@ -1,25 +1,37 @@
 import SchemaBuilder from '@pothos/core';
 import PrismaPlugin from '@pothos/plugin-prisma';
 import FederationPlugin from '@pothos/plugin-federation';
+import ScopeAuthPlugin from '@pothos/plugin-scope-auth';
 import type PrismaTypes from '@pothos/plugin-prisma/generated';
-import type { Scalars } from '@/graphql/__generated__/schema';
 import prisma from '@/lib/subgraph-prisma';
 
 // Create a simplified builder for subgraphs that doesn't require the full container
 export const builder = new SchemaBuilder<{
   PrismaTypes: PrismaTypes;
-  Scalars: Scalars;
+  Scalars: {
+    DateTime: { Input: Date; Output: Date };
+    JSON: { Input: any; Output: any };
+  };
   Context: {
     request: Request;
   };
+  AuthScopes: {
+    authenticated: boolean;
+  };
 }>({
-  plugins: [PrismaPlugin, FederationPlugin],
+  plugins: [PrismaPlugin, FederationPlugin, ScopeAuthPlugin],
   prisma: {
     client: prisma,
   },
-  federation: {
-    version: 1,
+  scopeAuth: {
+    authScopes: async () => ({
+      authenticated: false, // Simplified auth for subgraphs
+    }),
   },
+  // TODO: Add federation options when properly supported
+  // federation: {
+  //   version: 1,
+  // },
 });
 
 // Add scalar types

@@ -5,7 +5,7 @@ export { Container } from './container/Container.js'
 // Events
 export { EventHandlerRegistry } from './events/EventHandlerRegistry.js'
 export type { IEventPublisher as EventPublisher } from './events/EventPublisher.js'
-export type { IEventStore as EventStore, StoredEvent } from './events/EventStore.js'
+export type { IEventStore, StoredEvent } from './events/EventStore.js'
 export { InMemoryEventPublisher } from './events/InMemoryEventPublisher.js'
 export { PrismaEventStore } from './events/PrismaEventStore.js'
 

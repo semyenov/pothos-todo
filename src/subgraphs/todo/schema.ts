@@ -20,13 +20,11 @@ builder.prismaObject("Todo", {
     id: t.exposeID("id"),
     title: t.exposeString("title"),
     description: t.exposeString("description", { nullable: true }),
-    status: t.field({
+    status: t.expose('status', {
       type: 'TodoStatus',
-      resolve: (parent) => parent.status,
     }),
-    priority: t.field({
+    priority: t.expose('priority', {
       type: 'Priority',
-      resolve: (parent) => parent.priority,
     }),
     dueDate: t.expose("dueDate", {
       type: "DateTime",
@@ -91,8 +89,8 @@ builder.queryType({
     todos: t.prismaField({
       type: ["Todo"],
       args: {
-        status: t.arg({ type: 'TodoStatus', required: false }),
-        priority: t.arg({ type: 'Priority', required: false }),
+        status: t.arg.string({ required: false }),
+        priority: t.arg.string({ required: false }),
         todoListId: t.arg.id({ required: false }),
       },
       resolve: async (query, root, args, _ctx) => {
@@ -144,39 +142,9 @@ builder.mutationType({
   }),
 });
 
-// Extend User type from user subgraph
-builder.objectType('User', {
-  directives: {
-    key: { fields: 'id', resolvable: false },
-    extends: true,
-  },
-  fields: (t) => ({
-    id: t.id({ 
-      resolve: (user) => user.id,
-      // external: true, // Not supported in field definition
-    }),
-    todos: t.prismaField({
-      type: ['Todo'],
-      resolve: async (query, user, args, ctx) => {
-        return prisma.todo.findMany({
-          ...query,
-          where: { userId: user.id },
-          orderBy: { createdAt: 'desc' },
-        });
-      },
-    }),
-    todoLists: t.prismaField({
-      type: ['TodoList'],
-      resolve: async (query, user, args, ctx) => {
-        return prisma.todoList.findMany({
-          ...query,
-          where: { userId: user.id },
-          orderBy: { createdAt: 'desc' },
-        });
-      },
-    }),
-  }),
-});
+// For now, skip federation extensions since they need proper setup
+// In a real federation, this would extend the User type from the user subgraph
+// TODO: Implement proper federation type extensions
 
 // Build and export the schema
 export const schema = builder.toSubGraphSchema({
