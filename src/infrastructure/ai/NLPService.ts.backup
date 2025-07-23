@@ -1,13 +1,10 @@
-import { OpenAI } from "openai";
-import { logger } from "../../lib/unjs-utils.js";
-import {
-  Priority as PrismaPriority,
-  TodoStatus as PrismaTodoStatus,
-} from "@prisma/client";
+import { OpenAI } from 'openai';
+import { logger } from '@/logger';
+import { Priority as PrismaPriority, TodoStatus as PrismaTodoStatus } from '@prisma/client';
 
 export interface ParsedCommand {
-  action: "create" | "update" | "complete" | "delete" | "list";
-  entity: "todo" | "todoList";
+  action: 'create' | 'update' | 'complete' | 'delete' | 'list';
+  entity: 'todo' | 'todoList';
   parameters: {
     title?: string;
     priority?: PrismaPriority;
@@ -29,7 +26,7 @@ export class NLPService {
   private static instance: NLPService | null = null;
   private openai: OpenAI | null = null;
 
-  private constructor() {}
+  private constructor() { }
 
   static getInstance(): NLPService {
     if (!NLPService.instance) {
@@ -42,14 +39,9 @@ export class NLPService {
     this.openai = new OpenAI({ apiKey });
   }
 
-  async parseCommand(
-    command: string,
-    context?: { userId: string }
-  ): Promise<ParsedCommand> {
+  async parseCommand(command: string, context?: { userId: string }): Promise<ParsedCommand> {
     if (!this.openai) {
-      throw new Error(
-        "NLP service not initialized. Please provide OpenAI API key."
-      );
+      throw new Error('NLP service not initialized. Please provide OpenAI API key.');
     }
 
     try {
@@ -85,24 +77,24 @@ Examples:
 If the command is ambiguous, set a lower confidence score.`;
 
       const response = await this.openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: 'gpt-4o-mini',
         messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: command },
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: command }
         ],
-        response_format: { type: "json_object" },
+        response_format: { type: 'json_object' },
         temperature: 0.3,
-        max_tokens: 500,
+        max_tokens: 500
       });
 
-      const parsed = JSON.parse(response.choices[0]?.message?.content || "{}");
+      const parsed = JSON.parse(response.choices[0]?.message?.content || '{}');
 
       // Validate and transform the response
       const result: ParsedCommand = {
-        action: parsed.action || "list",
-        entity: parsed.entity || "todo",
+        action: parsed.action || 'list',
+        entity: parsed.entity || 'todo',
         parameters: {},
-        confidence: parsed.confidence || 0.5,
+        confidence: parsed.confidence || 0.5
       };
 
       // Transform parameters
@@ -111,9 +103,7 @@ If the command is ambiguous, set a lower confidence score.`;
           result.parameters.title = parsed.parameters.title;
         }
         if (parsed.parameters?.priority) {
-          result.parameters.priority = this.mapPriority(
-            parsed.parameters.priority
-          );
+          result.parameters.priority = this.mapPriority(parsed.parameters.priority);
         }
         if (parsed.parameters?.status) {
           result.parameters.status = this.mapStatus(parsed.parameters.status);
@@ -135,22 +125,20 @@ If the command is ambiguous, set a lower confidence score.`;
         }
       }
 
-      logger.info("Parsed natural language command", {
+      logger.info('Parsed natural language command', {
         command,
         result,
-        userId: context?.userId,
+        userId: context?.userId
       });
 
       return result;
     } catch (error) {
-      logger.error("Failed to parse natural language command", {
+      logger.error('Failed to parse natural language command', {
         command,
         error,
-        userId: context?.userId,
+        userId: context?.userId
       });
-      throw new Error(
-        "Failed to parse command. Please try again with clearer instructions."
-      );
+      throw new Error('Failed to parse command. Please try again with clearer instructions.');
     }
   }
 
@@ -173,22 +161,20 @@ Time: ${context.timeOfDay}
 Day: ${context.dayOfWeek}`;
 
       const response = await this.openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: 'gpt-4o-mini',
         messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
         ],
-        response_format: { type: "json_object" },
+        response_format: { type: 'json_object' },
         temperature: 0.7,
-        max_tokens: 200,
+        max_tokens: 200
       });
 
-      const result = JSON.parse(
-        response.choices[0]?.message?.content || '{"suggestions":[]}'
-      );
+      const result = JSON.parse(response.choices[0]?.message?.content || '{"suggestions":[]}');
       return result.suggestions || [];
     } catch (error) {
-      logger.error("Failed to generate suggestions", { error });
+      logger.error('Failed to generate suggestions', { error });
       return [];
     }
   }
@@ -196,14 +182,14 @@ Day: ${context.dayOfWeek}`;
   private mapPriority(priority: string): PrismaPriority {
     const normalized = priority.toLowerCase();
     switch (normalized) {
-      case "low":
+      case 'LOW':
         return PrismaPriority.LOW;
-      case "medium":
+      case 'MEDIUM':
         return PrismaPriority.MEDIUM;
-      case "high":
+      case 'HIGH':
         return PrismaPriority.HIGH;
-      case "critical":
-      case "urgent":
+      case 'CRITICAL':
+      case 'URGENT':
         return PrismaPriority.URGENT;
       default:
         return PrismaPriority.MEDIUM;
@@ -213,16 +199,16 @@ Day: ${context.dayOfWeek}`;
   private mapStatus(status: string): PrismaTodoStatus {
     const normalized = status.toLowerCase();
     switch (normalized) {
-      case "pending":
+      case 'PENDING':
         return PrismaTodoStatus.PENDING;
-      case "in_progress":
-      case "in-progress":
+      case 'IN_PROGRESS':
+      case 'IN-PROGRESS':
         return PrismaTodoStatus.IN_PROGRESS;
-      case "completed":
-      case "done":
+      case 'COMPLETED':
+      case 'DONE':
         return PrismaTodoStatus.COMPLETED;
-      case "cancelled":
-      case "canceled":
+      case 'CANCELLED':
+      case 'CANCELED':
         return PrismaTodoStatus.CANCELLED;
       default:
         return PrismaTodoStatus.PENDING;

@@ -1,0 +1,89 @@
+# Dependencies
+node_modules/
+bun.lockb
+
+# Build artifacts
+dist/
+build/
+.next/
+.nuxt/
+.output/
+
+# Development files
+.env.local
+.env.development
+.env.test
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Testing
+coverage/
+.nyc_output/
+.jest/
+
+# Documentation
+docs/
+*.md
+!CLAUDE.md
+
+# Examples and scripts
+examples/
+scripts/dev/
+scripts/test/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Docker
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+
+# Pulumi
+pulumi/
+Pulumi*.yaml
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Monitoring and observability
+monitoring/
+logs/
+traces/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+data/
+
+# Cache
+.cache/
+.parcel-cache/
+.next/cache/

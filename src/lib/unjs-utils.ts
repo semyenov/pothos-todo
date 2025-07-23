@@ -4,35 +4,41 @@
  */
 
 // Core utilities
-import { $fetch, ofetch } from 'ofetch';
-import { consola } from 'consola';
-import { defu } from 'defu';
-import { hash } from 'ohash';
-import { joinURL, withQuery, parseURL, cleanDoubleSlashes, withBase } from 'ufo';
-import { resolve, join, dirname, basename, extname, normalize } from 'pathe';
-import { createStorage } from 'unstorage';
-import fsDriver from 'unstorage/drivers/fs';
-import redisDriver from 'unstorage/drivers/redis';
-import memoryDriver from 'unstorage/drivers/memory';
+import { $fetch, ofetch } from "ofetch";
+import { consola } from "consola";
+import { defu } from "defu";
+import { hash } from "ohash";
+import {
+  joinURL,
+  withQuery,
+  parseURL,
+  cleanDoubleSlashes,
+  withBase,
+} from "ufo";
+import { resolve, join, dirname, basename, extname, normalize } from "pathe";
+import { createStorage } from "unstorage";
+import fsDriver from "unstorage/drivers/fs";
+import redisDriver from "unstorage/drivers/redis";
+import memoryDriver from "unstorage/drivers/memory";
 
 // Advanced utilities
-import { pascalCase, camelCase, kebabCase, snakeCase } from 'scule';
-import { createJiti } from 'jiti';
-import { resolveSync, resolvePath, createResolve } from 'mlly';
-import { loadConfig } from 'unconfig';
-import { createUnhead } from 'unhead';
-import { subtle, randomUUID } from 'uncrypto';
-import { listen } from 'listhen';
-import { detectPackageManager, installDependencies } from 'nypm';
-import { fileURLToPath } from 'node:url';
-import { readPackageJSON, writePackageJSON } from 'pkg-types';
+import { pascalCase, camelCase, kebabCase, snakeCase } from "scule";
+import { createJiti } from "jiti";
+import { resolveSync, resolvePath, createResolve } from "mlly";
+import { loadConfig } from "unconfig";
+import { createUnhead } from "unhead";
+import { subtle, randomUUID } from "uncrypto";
+import { listen } from "listhen";
+import { detectPackageManager, installDependencies } from "nypm";
+import { fileURLToPath } from "node:url";
+import { readPackageJSON, writePackageJSON } from "pkg-types";
 
 /**
  * Enhanced HTTP client with advanced features
  */
 export class UnJSHttpClient {
   private client: typeof $fetch;
-  
+
   constructor(baseURL?: string, options: any = {}) {
     this.client = $fetch.create({
       baseURL,
@@ -44,23 +50,23 @@ export class UnJSHttpClient {
   }
 
   async get<T = any>(url: string, options?: any): Promise<T> {
-    return this.client<T>(url, { method: 'GET', ...options });
+    return this.client<T>(url, { method: "GET", ...options });
   }
 
   async post<T = any>(url: string, data?: any, options?: any): Promise<T> {
-    return this.client<T>(url, { method: 'POST', body: data, ...options });
+    return this.client<T>(url, { method: "POST", body: data, ...options });
   }
 
   async put<T = any>(url: string, data?: any, options?: any): Promise<T> {
-    return this.client<T>(url, { method: 'PUT', body: data, ...options });
+    return this.client<T>(url, { method: "PUT", body: data, ...options });
   }
 
   async delete<T = any>(url: string, options?: any): Promise<T> {
-    return this.client<T>(url, { method: 'DELETE', ...options });
+    return this.client<T>(url, { method: "DELETE", ...options });
   }
 
   async patch<T = any>(url: string, data?: any, options?: any): Promise<T> {
-    return this.client<T>(url, { method: 'PATCH', body: data, ...options });
+    return this.client<T>(url, { method: "PATCH", body: data, ...options });
   }
 }
 
@@ -71,17 +77,17 @@ export class UnJSStorage {
   private storage: ReturnType<typeof createStorage>;
 
   constructor(options: { driver?: string; base?: string; redis?: any } = {}) {
-    const { driver = 'memory', base = './storage', redis } = options;
-    
+    const { driver = "memory", base = "./storage", redis } = options;
+
     let storageDriver;
     switch (driver) {
-      case 'fs':
+      case "fs":
         storageDriver = fsDriver({ base });
         break;
-      case 'redis':
-        storageDriver = redisDriver(redis || { host: 'localhost', port: 6379 });
+      case "redis":
+        storageDriver = redisDriver(redis || { host: "localhost", port: 6379 });
         break;
-      case 'memory':
+      case "memory":
       default:
         storageDriver = memoryDriver();
         break;
@@ -117,7 +123,7 @@ export class UnJSStorage {
   }
 
   async getMany<T = any>(keys: string[]): Promise<(T | null)[]> {
-    return Promise.all(keys.map(key => this.get<T>(key)));
+    return Promise.all(keys.map((key) => this.get<T>(key)));
   }
 
   async setMany<T = any>(items: Record<string, T>): Promise<void> {
@@ -152,7 +158,11 @@ export class UnJSUrlUtils {
   }
 
   static isAbsolute(url: string): boolean {
-    return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('//');
+    return (
+      url.startsWith("http://") ||
+      url.startsWith("https://") ||
+      url.startsWith("//")
+    );
   }
 
   static normalize(url: string): string {
@@ -193,7 +203,7 @@ export class UnJSPathUtils {
   }
 
   static relative(from: string, to: string): string {
-    return resolve(to).replace(resolve(from), '').replace(/^\//, '');
+    return resolve(to).replace(resolve(from), "").replace(/^\//, "");
   }
 }
 
@@ -260,14 +270,15 @@ export class UnJSStringUtils {
     return str.charAt(0).toLowerCase() + str.slice(1);
   }
 
-  static truncate(str: string, length: number, suffix = '...'): string {
+  static truncate(str: string, length: number, suffix = "..."): string {
     if (str.length <= length) return str;
     return str.slice(0, length - suffix.length) + suffix;
   }
 
   static random(length = 10): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let result = '';
+    const chars =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let result = "";
     for (let i = 0; i < length; i++) {
       result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
@@ -275,7 +286,7 @@ export class UnJSStringUtils {
   }
 
   static slug(str: string): string {
-    return this.kebabCase(str.toLowerCase().replace(/[^\w\s-]/g, ''));
+    return this.kebabCase(str.toLowerCase().replace(/[^\w\s-]/g, ""));
   }
 }
 
@@ -283,17 +294,17 @@ export class UnJSStringUtils {
  * Crypto utilities for hashing and encryption
  */
 export class UnJSCryptoUtils {
-  static async hash(data: string, algorithm = 'SHA-256'): Promise<string> {
+  static async hash(data: string, algorithm = "SHA-256"): Promise<string> {
     const encoder = new TextEncoder();
     const dataBuffer = encoder.encode(data);
     const hashBuffer = await subtle.digest(algorithm, dataBuffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
   static randomBytes(size: number): Uint8Array {
     const bytes = new Uint8Array(size);
-    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    if (typeof crypto !== "undefined" && crypto.getRandomValues) {
       crypto.getRandomValues(bytes);
     }
     return bytes;
@@ -304,11 +315,11 @@ export class UnJSCryptoUtils {
   }
 
   static base64Encode(data: string): string {
-    return Buffer.from(data, 'utf8').toString('base64');
+    return Buffer.from(data, "utf8").toString("base64");
   }
 
   static base64Decode(data: string): string {
-    return Buffer.from(data, 'base64').toString('utf8');
+    return Buffer.from(data, "base64").toString("utf8");
   }
 }
 
@@ -316,23 +327,25 @@ export class UnJSCryptoUtils {
  * Configuration management with unconfig
  */
 export class UnJSConfigManager {
-  static async loadConfig<T = any>(options: {
-    sources?: any[];
-    defaults?: T;
-    cwd?: string;
-  } = {}): Promise<{ config: T; sources: string[] }> {
+  static async loadConfig<T = any>(
+    options: {
+      sources?: any[];
+      defaults?: T;
+      cwd?: string;
+    } = {}
+  ): Promise<{ config: T; sources: string[] }> {
     const { config } = await loadConfig<T>({
-      name: 'config',
-      sources: options.sources || ['config.ts', 'config.js', 'config.json'],
+      name: "config",
+      sources: options.sources || ["config.ts", "config.js", "config.json"],
       defaults: options.defaults,
-      cwd: options.cwd
+      cwd: options.cwd,
     });
-    return { config: config || {} as T, sources: ['config'] };
+    return { config: config || ({} as T), sources: ["config"] };
   }
 
   static async writeConfig(path: string, config: any): Promise<void> {
     // Implementation would depend on the specific config format
-    const fs = await import('fs/promises');
+    const fs = await import("fs/promises");
     await fs.writeFile(path, JSON.stringify(config, null, 2));
   }
 }
@@ -342,7 +355,7 @@ export class UnJSConfigManager {
  */
 export class UnJSPackageUtils {
   static async readPackageJSON(path?: string): Promise<any> {
-    return readPackageJSON(path || '.');
+    return readPackageJSON(path || ".");
   }
 
   static async writePackageJSON(pkg: any, path?: string): Promise<void> {
@@ -352,7 +365,9 @@ export class UnJSPackageUtils {
   static async getPackageInfo(packageName: string): Promise<any> {
     try {
       const pkg = await readPackageJSON();
-      return pkg.dependencies?.[packageName] || pkg.devDependencies?.[packageName];
+      return (
+        pkg.dependencies?.[packageName] || pkg.devDependencies?.[packageName]
+      );
     } catch {
       return null;
     }

@@ -1,0 +1,8 @@
+config:
+  pothos-todo-infrastructure:environment: production
+  pothos-todo-infrastructure:dockerRegistry: ghcr.io
+  pothos-todo-infrastructure:namespace: pothos-todo-prod
+  pothos-todo-infrastructure:hiveCdnEndpoint:
+    secure: AEAAAD+rHwEjNUzwOI+/AMpyAH0kQCsGhYDFQsNwvWNGKOBl/TUKDv5kO3xDo6Pp9Q==
+  pothos-todo-infrastructure:hiveCdnKey:
+    secure: AEAAAD+rHwEjNUzwOI+/AMpyAH0kQCsGhYDFQsNwvWNGKOBl/TUKDv5kO3xDo6Pp9Q==

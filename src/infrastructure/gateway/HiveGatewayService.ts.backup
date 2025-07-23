@@ -9,7 +9,6 @@ import { MetricsCollector } from '../monitoring/MetricsCollector.js';
 import { RedisClusterManager } from '../cache/RedisClusterManager.js';
 import { getServerConfig, getCacheConfig } from '../../config/index.js';
 import type { GraphQLSchema } from 'graphql';
-import { AsyncSingletonService } from '@/infrastructure/core/SingletonService';
 
 /**
  * HiveGatewayService - Manages the GraphQL Hive Gateway instance
@@ -20,14 +19,14 @@ import { AsyncSingletonService } from '@/infrastructure/core/SingletonService';
  * - CDN-based schema distribution
  * - Integration with existing infrastructure
  */
-export class HiveGatewayService extends AsyncSingletonService<HiveGatewayService> {
+export class HiveGatewayService {
+  private static instance: HiveGatewayService | null = null;
   private gateway: Gateway | null = null;
   private initialized = false;
   private metricsCollector: MetricsCollector;
   private redisManager: RedisClusterManager;
 
-  protected constructor() {
-    super();
+  private constructor() {
     this.metricsCollector = MetricsCollector.getInstance();
     this.redisManager = RedisClusterManager.getInstance();
   }

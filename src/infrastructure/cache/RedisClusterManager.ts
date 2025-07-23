@@ -3,17 +3,16 @@
  * High-performance distributed caching with intelligent routing, failover, and monitoring
  */
 
-import { logger, stringUtils } from '@/lib/unjs-utils.js';
-import { validationService } from '@/infrastructure/validation/UnJSValidation.js';
-import { monitoring } from '@/infrastructure/observability/AdvancedMonitoring.js';
-import { z } from 'zod';
+import { logger } from "../../lib/unjs-utils.js";
+import { nanoid } from "nanoid";
+import { z } from "zod";
 
 export interface CacheNode {
   id: string;
   host: string;
   port: number;
-  role: 'master' | 'replica' | 'sentinel';
-  status: 'connected' | 'disconnected' | 'error' | 'syncing';
+  role: "master" | "replica" | "sentinel";
+  status: "connected" | "disconnected" | "error" | "syncing";
   slots: number[];
   replicas: string[];
   metrics: {
@@ -45,10 +44,16 @@ export interface CacheCluster {
   configuration: {
     replicationFactor: number;
     shardCount: number;
-    maxMemoryPolicy: 'allkeys-lru' | 'volatile-lru' | 'allkeys-lfu' | 'volatile-lfu' | 'volatile-ttl' | 'noeviction';
+    maxMemoryPolicy:
+      | "allkeys-lru"
+      | "volatile-lru"
+      | "allkeys-lfu"
+      | "volatile-lfu"
+      | "volatile-ttl"
+      | "noeviction";
     persistence: {
       enabled: boolean;
-      type: 'rdb' | 'aof' | 'both';
+      type: "rdb" | "aof" | "both";
       schedule: string;
     };
     security: {
@@ -68,7 +73,7 @@ export interface CacheCluster {
       };
     };
   };
-  status: 'healthy' | 'degraded' | 'offline' | 'maintenance';
+  status: "healthy" | "degraded" | "offline" | "maintenance";
   metrics: {
     totalMemory: number;
     usedMemory: number;
@@ -81,7 +86,16 @@ export interface CacheCluster {
 
 export interface CacheOperation {
   id: string;
-  type: 'get' | 'set' | 'del' | 'exists' | 'expire' | 'ttl' | 'scan' | 'pipeline' | 'transaction';
+  type:
+    | "get"
+    | "set"
+    | "del"
+    | "exists"
+    | "expire"
+    | "ttl"
+    | "scan"
+    | "pipeline"
+    | "transaction";
   key?: string;
   pattern?: string;
   keys?: string[];
@@ -92,15 +106,15 @@ export interface CacheOperation {
     serialize?: boolean;
     retries?: number;
     timeout?: number;
-    consistency?: 'eventual' | 'strong';
-    nodePreference?: 'master' | 'replica' | 'any';
+    consistency?: "eventual" | "strong";
+    nodePreference?: "master" | "replica" | "any";
   };
   metadata: {
     tenantId?: string;
     userId?: string;
     source: string;
     timestamp: Date;
-    priority: 'low' | 'normal' | 'high' | 'critical';
+    priority: "low" | "normal" | "high" | "critical";
     tags: string[];
   };
 }
@@ -134,7 +148,7 @@ export interface CachePolicy {
       sliding?: boolean;
     };
     eviction: {
-      policy: 'lru' | 'lfu' | 'ttl' | 'random' | 'custom';
+      policy: "lru" | "lfu" | "ttl" | "random" | "custom";
       priority: number;
     };
     storage: {
@@ -145,11 +159,11 @@ export interface CachePolicy {
     replication: {
       factor: number;
       preferredNodes?: string[];
-      consistency: 'eventual' | 'strong';
+      consistency: "eventual" | "strong";
     };
     access: {
-      readPreference: 'master' | 'replica' | 'nearest';
-      writePolicy: 'write-through' | 'write-back' | 'write-around';
+      readPreference: "master" | "replica" | "nearest";
+      writePolicy: "write-through" | "write-back" | "write-around";
     };
   };
   conditions: {
@@ -220,13 +234,25 @@ export class RedisClusterManager {
   private connectionPools: Map<string, any> = new Map();
   private hashRing: Map<string, string[]> = new Map(); // key -> node mapping
   private stats: CacheStats;
-  private circuitBreakers: Map<string, {
-    failures: number;
-    lastFailure: Date;
-    state: 'closed' | 'open' | 'half-open';
-  }> = new Map();
+  private circuitBreakers: Map<
+    string,
+    {
+      failures: number;
+      lastFailure: Date;
+      state: "closed" | "open" | "half-open";
+    }
+  > = new Map();
 
-  constructor() {
+  private static instance: RedisClusterManager | null = null;
+
+  static getInstance(): RedisClusterManager {
+    if (!RedisClusterManager.instance) {
+      RedisClusterManager.instance = new RedisClusterManager();
+    }
+    return RedisClusterManager.instance;
+  }
+
+  private constructor() {
     this.stats = {
       operations: {
         total: 0,
@@ -275,7 +301,17 @@ export class RedisClusterManager {
    */
   private setupValidationSchemas(): void {
     const cacheOperationSchema = z.object({
-      type: z.enum(['get', 'set', 'del', 'exists', 'expire', 'ttl', 'scan', 'pipeline', 'transaction']),
+      type: z.enum([
+        "get",
+        "set",
+        "del",
+        "exists",
+        "expire",
+        "ttl",
+        "scan",
+        "pipeline",
+        "transaction",
+      ]),
       key: z.string().optional(),
       pattern: z.string().optional(),
       keys: z.array(z.string()).optional(),
@@ -286,14 +322,14 @@ export class RedisClusterManager {
         serialize: z.boolean().optional(),
         retries: z.number().optional(),
         timeout: z.number().optional(),
-        consistency: z.enum(['eventual', 'strong']).optional(),
-        nodePreference: z.enum(['master', 'replica', 'any']).optional(),
+        consistency: z.enum(["eventual", "strong"]).optional(),
+        nodePreference: z.enum(["master", "replica", "any"]).optional(),
       }),
       metadata: z.object({
         tenantId: z.string().optional(),
         userId: z.string().optional(),
         source: z.string(),
-        priority: z.enum(['low', 'normal', 'high', 'critical']),
+        priority: z.enum(["low", "normal", "high", "critical"]),
         tags: z.array(z.string()),
       }),
     });
@@ -309,7 +345,7 @@ export class RedisClusterManager {
           sliding: z.boolean().optional(),
         }),
         eviction: z.object({
-          policy: z.enum(['lru', 'lfu', 'ttl', 'random', 'custom']),
+          policy: z.enum(["lru", "lfu", "ttl", "random", "custom"]),
           priority: z.number(),
         }),
         storage: z.object({
@@ -322,19 +358,20 @@ export class RedisClusterManager {
       priority: z.number(),
     });
 
-    validationService.registerSchema('cacheOperation', cacheOperationSchema);
-    validationService.registerSchema('cachePolicy', cachePolicySchema);
+    // Validation service not available - would register schemas here
   }
 
   /**
    * Create cache cluster
    */
-  createCluster(cluster: Omit<CacheCluster, 'id' | 'status' | 'metrics'>): string {
-    const id = stringUtils.random(8);
+  createCluster(
+    cluster: Omit<CacheCluster, "id" | "status" | "metrics">
+  ): string {
+    const id = nanoid();
 
     const cacheCluster: CacheCluster = {
       id,
-      status: 'offline',
+      status: "offline",
       metrics: {
         totalMemory: 0,
         usedMemory: 0,
@@ -356,28 +393,21 @@ export class RedisClusterManager {
       this.circuitBreakers.set(node.id, {
         failures: 0,
         lastFailure: new Date(0),
-        state: 'closed',
+        state: "closed",
       });
     }
 
     // Initialize hash ring for consistent hashing
     this.updateHashRing(id);
 
-    logger.info('Cache cluster created', {
+    logger.info("Cache cluster created", {
       clusterId: id,
       name: cluster.name,
       nodeCount: cluster.nodes.length,
       shardCount: cluster.configuration.shardCount,
     });
 
-    monitoring.recordMetric({
-      name: 'cache.cluster.created',
-      value: 1,
-      tags: {
-        clusterId: id,
-        nodeCount: cluster.nodes.length.toString(),
-      },
-    });
+    // Monitoring disabled - would record cluster creation metric here
 
     return id;
   }
@@ -385,13 +415,13 @@ export class RedisClusterManager {
   /**
    * Execute cache operation
    */
-  async execute(operation: Omit<CacheOperation, 'id'>): Promise<any> {
-    const id = stringUtils.random(12);
+  async execute(operation: Omit<CacheOperation, "id">): Promise<any> {
+    const id = nanoid();
     const cacheOperation: CacheOperation = { id, ...operation };
 
     this.operations.set(id, cacheOperation);
 
-    const spanId = monitoring.startTrace(`cache.operation.${operation.type}`);
+    // Monitoring disabled - would start trace here
     const startTime = Date.now();
 
     try {
@@ -414,59 +444,16 @@ export class RedisClusterManager {
       const duration = Date.now() - startTime;
       this.updateStats(cacheOperation, duration, true);
 
-      monitoring.finishSpan(spanId, {
-        success: true,
-        operationId: id,
-        operationType: operation.type,
-        clusterId: cluster.id,
-        nodeId: node.id,
-        duration,
-      });
-
-      monitoring.recordMetric({
-        name: 'cache.operation.success',
-        value: 1,
-        tags: {
-          type: operation.type,
-          clusterId: cluster.id,
-          nodeId: node.id,
-        },
-      });
-
-      monitoring.recordMetric({
-        name: 'cache.operation.duration',
-        value: duration,
-        tags: {
-          type: operation.type,
-          clusterId: cluster.id,
-        },
-        unit: 'ms',
-      });
+      // Monitoring disabled - would record success metrics here
 
       return result;
-
     } catch (error) {
       const duration = Date.now() - startTime;
       this.updateStats(cacheOperation, duration, false);
 
-      monitoring.finishSpan(spanId, {
-        success: false,
-        operationId: id,
-        operationType: operation.type,
-        duration,
-        error: String(error),
-      });
+      // Monitoring disabled - would record error metrics here
 
-      monitoring.recordMetric({
-        name: 'cache.operation.error',
-        value: 1,
-        tags: {
-          type: operation.type,
-          error: 'execution_failed',
-        },
-      });
-
-      logger.error('Cache operation failed', {
+      logger.error("Cache operation failed", {
         operationId: id,
         type: operation.type,
         key: operation.key,
@@ -480,35 +467,43 @@ export class RedisClusterManager {
   /**
    * Select optimal node for operation
    */
-  private async selectNode(operation: CacheOperation): Promise<{ cluster: CacheCluster; node: CacheNode }> {
+  private async selectNode(
+    operation: CacheOperation
+  ): Promise<{ cluster: CacheCluster; node: CacheNode }> {
     // For now, use the first healthy cluster
-    const cluster = Array.from(this.clusters.values()).find(c => c.status === 'healthy');
+    const cluster = Array.from(this.clusters.values()).find(
+      (c) => c.status === "healthy"
+    );
     if (!cluster) {
-      throw new Error('No healthy clusters available');
+      throw new Error("No healthy clusters available");
     }
 
     let candidateNodes: CacheNode[] = [];
 
     // Apply node preference
     switch (operation.options.nodePreference) {
-      case 'master':
-        candidateNodes = cluster.nodes.filter(n => n.role === 'master' && n.status === 'connected');
+      case "master":
+        candidateNodes = cluster.nodes.filter(
+          (n) => n.role === "master" && n.status === "connected"
+        );
         break;
-      case 'replica':
-        candidateNodes = cluster.nodes.filter(n => n.role === 'replica' && n.status === 'connected');
+      case "replica":
+        candidateNodes = cluster.nodes.filter(
+          (n) => n.role === "replica" && n.status === "connected"
+        );
         break;
       default:
-        candidateNodes = cluster.nodes.filter(n => n.status === 'connected');
+        candidateNodes = cluster.nodes.filter((n) => n.status === "connected");
     }
 
     if (candidateNodes.length === 0) {
-      throw new Error('No available nodes for operation');
+      throw new Error("No available nodes for operation");
     }
 
     // For consistent hashing, use key-based routing
     if (operation.key) {
       const nodeId = this.getNodeForKey(cluster.id, operation.key);
-      const node = candidateNodes.find(n => n.id === nodeId);
+      const node = candidateNodes.find((n) => n.id === nodeId);
       if (node) {
         return { cluster, node };
       }
@@ -545,7 +540,7 @@ export class RedisClusterManager {
     let hash = 0;
     for (let i = 0; i < key.length; i++) {
       const char = key.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash; // Convert to 32-bit integer
     }
     return Math.abs(hash);
@@ -562,7 +557,7 @@ export class RedisClusterManager {
     const virtualNodes = 150; // Virtual nodes per physical node
 
     for (const node of cluster.nodes) {
-      if (node.role === 'master') {
+      if (node.role === "master") {
         for (let i = 0; i < virtualNodes; i++) {
           ring.push(node.id);
         }
@@ -577,10 +572,10 @@ export class RedisClusterManager {
 
     this.hashRing.set(clusterId, ring);
 
-    logger.debug('Hash ring updated', {
+    logger.debug("Hash ring updated", {
       clusterId,
       ringSize: ring.length,
-      physicalNodes: cluster.nodes.filter(n => n.role === 'master').length,
+      physicalNodes: cluster.nodes.filter((n) => n.role === "master").length,
     });
   }
 
@@ -591,12 +586,13 @@ export class RedisClusterManager {
     const breaker = this.circuitBreakers.get(nodeId);
     if (!breaker) return;
 
-    if (breaker.state === 'open') {
+    if (breaker.state === "open") {
       const timeSinceLastFailure = Date.now() - breaker.lastFailure.getTime();
-      if (timeSinceLastFailure < 60000) { // 1 minute timeout
+      if (timeSinceLastFailure < 60000) {
+        // 1 minute timeout
         throw new Error(`Circuit breaker is open for node: ${nodeId}`);
       }
-      breaker.state = 'half-open';
+      breaker.state = "half-open";
     }
   }
 
@@ -610,31 +606,36 @@ export class RedisClusterManager {
   ): Promise<any> {
     // Simulate Redis operations
     switch (operation.type) {
-      case 'get':
+      case "get":
         return this.simulateGet(node, operation.key!);
 
-      case 'set':
-        return this.simulateSet(node, operation.key!, operation.value, operation.ttl);
+      case "set":
+        return this.simulateSet(
+          node,
+          operation.key!,
+          operation.value,
+          operation.ttl
+        );
 
-      case 'del':
+      case "del":
         return this.simulateDel(node, operation.keys || [operation.key!]);
 
-      case 'exists':
+      case "exists":
         return this.simulateExists(node, operation.key!);
 
-      case 'expire':
+      case "expire":
         return this.simulateExpire(node, operation.key!, operation.ttl!);
 
-      case 'ttl':
+      case "ttl":
         return this.simulateTtl(node, operation.key!);
 
-      case 'scan':
+      case "scan":
         return this.simulateScan(node, operation.pattern!);
 
-      case 'pipeline':
+      case "pipeline":
         return this.simulatePipeline(node, operation);
 
-      case 'transaction':
+      case "transaction":
         return this.simulateTransaction(node, operation);
 
       default:
@@ -647,7 +648,7 @@ export class RedisClusterManager {
    */
   private async simulateGet(node: CacheNode, key: string): Promise<any> {
     // Simulate network latency
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 10));
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 10));
 
     // Simulate cache hit/miss
     const hitProbability = node.metrics.performance.hitRate / 100;
@@ -670,14 +671,19 @@ export class RedisClusterManager {
   /**
    * Simulate Redis SET operation
    */
-  private async simulateSet(node: CacheNode, key: string, value: any, ttl?: number): Promise<boolean> {
+  private async simulateSet(
+    node: CacheNode,
+    key: string,
+    value: any,
+    ttl?: number
+  ): Promise<boolean> {
     // Simulate network latency
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 5));
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 5));
 
     // Update node metrics
     node.metrics.memory.used += this.estimateSize(value);
 
-    logger.debug('Cache SET operation', {
+    logger.debug("Cache SET operation", {
       nodeId: node.id,
       key,
       ttl,
@@ -691,12 +697,12 @@ export class RedisClusterManager {
    * Simulate Redis DEL operation
    */
   private async simulateDel(node: CacheNode, keys: string[]): Promise<number> {
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 3));
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 3));
 
     // Simulate deletion of random subset
     const deletedCount = Math.floor(Math.random() * keys.length);
 
-    logger.debug('Cache DEL operation', {
+    logger.debug("Cache DEL operation", {
       nodeId: node.id,
       keysRequested: keys.length,
       deletedCount,
@@ -709,15 +715,19 @@ export class RedisClusterManager {
    * Simulate Redis EXISTS operation
    */
   private async simulateExists(node: CacheNode, key: string): Promise<boolean> {
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 2));
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 2));
     return Math.random() < 0.7; // 70% exist probability
   }
 
   /**
    * Simulate Redis EXPIRE operation
    */
-  private async simulateExpire(node: CacheNode, key: string, ttl: number): Promise<boolean> {
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 2));
+  private async simulateExpire(
+    node: CacheNode,
+    key: string,
+    ttl: number
+  ): Promise<boolean> {
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 2));
     return Math.random() < 0.9; // 90% success probability
   }
 
@@ -725,22 +735,25 @@ export class RedisClusterManager {
    * Simulate Redis TTL operation
    */
   private async simulateTtl(node: CacheNode, key: string): Promise<number> {
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 2));
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 2));
     return Math.floor(Math.random() * 3600); // Random TTL
   }
 
   /**
    * Simulate Redis SCAN operation
    */
-  private async simulateScan(node: CacheNode, pattern: string): Promise<string[]> {
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 20));
+  private async simulateScan(
+    node: CacheNode,
+    pattern: string
+  ): Promise<string[]> {
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 20));
 
     // Generate matching keys
     const keys: string[] = [];
     const count = Math.floor(Math.random() * 100);
 
     for (let i = 0; i < count; i++) {
-      keys.push(`${pattern.replace('*', '')}${i}`);
+      keys.push(`${pattern.replace("*", "")}${i}`);
     }
 
     return keys;
@@ -749,8 +762,11 @@ export class RedisClusterManager {
   /**
    * Simulate Redis pipeline operation
    */
-  private async simulatePipeline(node: CacheNode, operation: CacheOperation): Promise<any[]> {
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 50));
+  private async simulatePipeline(
+    node: CacheNode,
+    operation: CacheOperation
+  ): Promise<any[]> {
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 50));
 
     // Simulate pipeline with multiple operations
     const results = [];
@@ -766,16 +782,19 @@ export class RedisClusterManager {
   /**
    * Simulate Redis transaction
    */
-  private async simulateTransaction(node: CacheNode, operation: CacheOperation): Promise<any[]> {
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 30));
+  private async simulateTransaction(
+    node: CacheNode,
+    operation: CacheOperation
+  ): Promise<any[]> {
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 30));
 
     // Simulate transaction success/failure
     const success = Math.random() < 0.95; // 95% success rate
 
     if (success) {
-      return ['OK', 'OK', 'OK']; // Successful transaction
+      return ["OK", "OK", "OK"]; // Successful transaction
     } else {
-      throw new Error('Transaction aborted');
+      throw new Error("Transaction aborted");
     }
   }
 
@@ -797,7 +816,7 @@ export class RedisClusterManager {
     if (!operation.key) return null;
 
     const policies = Array.from(this.policies.values())
-      .filter(p => p.enabled)
+      .filter((p) => p.enabled)
       .sort((a, b) => b.priority - a.priority);
 
     for (const policy of policies) {
@@ -815,7 +834,7 @@ export class RedisClusterManager {
    */
   private applyPolicy(operation: CacheOperation, policy: CachePolicy): void {
     // Apply TTL rules
-    if (operation.type === 'set' && !operation.ttl) {
+    if (operation.type === "set" && !operation.ttl) {
       operation.ttl = policy.rules.ttl.default;
     }
 
@@ -832,11 +851,14 @@ export class RedisClusterManager {
     operation.options.consistency = policy.rules.replication.consistency;
 
     // Apply access rules
-    if (operation.type === 'get') {
-      operation.options.nodePreference = policy.rules.access.readPreference as 'master' | 'replica' | 'any';
+    if (operation.type === "get") {
+      operation.options.nodePreference = policy.rules.access.readPreference as
+        | "master"
+        | "replica"
+        | "any";
     }
 
-    logger.debug('Cache policy applied', {
+    logger.debug("Cache policy applied", {
       operationId: operation.id,
       policyId: policy.id,
       ttl: operation.ttl,
@@ -847,24 +869,18 @@ export class RedisClusterManager {
   /**
    * Create cache policy
    */
-  createPolicy(policy: Omit<CachePolicy, 'id'>): string {
-    const id = stringUtils.random(8);
+  createPolicy(policy: Omit<CachePolicy, "id">): string {
+    const id = nanoid();
     this.policies.set(id, { ...policy, id });
 
-    logger.info('Cache policy created', {
+    logger.info("Cache policy created", {
       policyId: id,
       name: policy.name,
       pattern: policy.pattern,
       priority: policy.priority,
     });
 
-    monitoring.recordMetric({
-      name: 'cache.policy.created',
-      value: 1,
-      tags: {
-        policyName: policy.name,
-      },
-    });
+    // Monitoring disabled - would record policy creation metric here
 
     return id;
   }
@@ -882,11 +898,13 @@ export class RedisClusterManager {
       retryDelay?: number;
     } = {}
   ): Promise<string | null> {
-    const lockId = stringUtils.random(16);
+    const lockId = nanoid();
     const lockKey = `lock:${key}`;
 
     // Check if lock already exists
-    const existingLock = Array.from(this.locks.values()).find(l => l.key === lockKey);
+    const existingLock = Array.from(this.locks.values()).find(
+      (l) => l.key === lockKey
+    );
     if (existingLock && existingLock.expires > new Date()) {
       return null; // Lock already held
     }
@@ -905,7 +923,7 @@ export class RedisClusterManager {
 
     this.locks.set(lockId, lock);
 
-    logger.debug('Distributed lock acquired', {
+    logger.debug("Distributed lock acquired", {
       lockId,
       key: lockKey,
       owner,
@@ -913,14 +931,7 @@ export class RedisClusterManager {
       autoRenew: lock.autoRenew,
     });
 
-    monitoring.recordMetric({
-      name: 'cache.lock.acquired',
-      value: 1,
-      tags: {
-        key: lockKey,
-        owner,
-      },
-    });
+    // Monitoring disabled - would record lock acquisition metric here
 
     return lockId;
   }
@@ -935,12 +946,12 @@ export class RedisClusterManager {
     }
 
     if (lock.owner !== owner) {
-      throw new Error('Lock can only be released by its owner');
+      throw new Error("Lock can only be released by its owner");
     }
 
     this.locks.delete(lockId);
 
-    logger.debug('Distributed lock released', {
+    logger.debug("Distributed lock released", {
       lockId,
       key: lock.key,
       owner,
@@ -948,14 +959,7 @@ export class RedisClusterManager {
       renewals: lock.renewals,
     });
 
-    monitoring.recordMetric({
-      name: 'cache.lock.released',
-      value: 1,
-      tags: {
-        key: lock.key,
-        owner,
-      },
-    });
+    // Monitoring disabled - would record lock release metric here
 
     return true;
   }
@@ -963,20 +967,24 @@ export class RedisClusterManager {
   /**
    * Renew distributed lock
    */
-  async renewLock(lockId: string, owner: string, additionalTtl: number = 30000): Promise<boolean> {
+  async renewLock(
+    lockId: string,
+    owner: string,
+    additionalTtl: number = 30000
+  ): Promise<boolean> {
     const lock = this.locks.get(lockId);
     if (!lock) {
       return false;
     }
 
     if (lock.owner !== owner) {
-      throw new Error('Lock can only be renewed by its owner');
+      throw new Error("Lock can only be renewed by its owner");
     }
 
     lock.expires = new Date(Date.now() + additionalTtl);
     lock.renewals++;
 
-    logger.debug('Distributed lock renewed', {
+    logger.debug("Distributed lock renewed", {
       lockId,
       key: lock.key,
       owner,
@@ -990,17 +998,21 @@ export class RedisClusterManager {
   /**
    * Update operation statistics
    */
-  private updateStats(operation: CacheOperation, duration: number, success: boolean): void {
+  private updateStats(
+    operation: CacheOperation,
+    duration: number,
+    success: boolean
+  ): void {
     this.stats.operations.total++;
 
     switch (operation.type) {
-      case 'get':
+      case "get":
         this.stats.operations.gets++;
         break;
-      case 'set':
+      case "set":
         this.stats.operations.sets++;
         break;
-      case 'del':
+      case "del":
         this.stats.operations.dels++;
         break;
     }
@@ -1010,7 +1022,7 @@ export class RedisClusterManager {
       (this.stats.performance.avgLatency + duration) / 2;
 
     // Update hit rate for GET operations
-    if (operation.type === 'get') {
+    if (operation.type === "get") {
       this.stats.operations.hitRate =
         (this.stats.operations.hits / this.stats.operations.gets) * 100;
     }
@@ -1025,121 +1037,175 @@ export class RedisClusterManager {
   private setupDefaultCluster(): void {
     const nodes: CacheNode[] = [
       {
-        id: 'node-master-1',
-        host: 'localhost',
+        id: "node-master-1",
+        host: "localhost",
         port: 7000,
-        role: 'master',
-        status: 'connected',
+        role: "master",
+        status: "connected",
         slots: Array.from({ length: 5461 }, (_, i) => i), // 0-5460
-        replicas: ['node-replica-1'],
+        replicas: ["node-replica-1"],
         metrics: {
-          memory: { used: 50 * 1024 * 1024, max: 1024 * 1024 * 1024, percentage: 5 },
-          performance: { connections: 10, opsPerSecond: 1000, hitRate: 85, avgLatency: 2 },
+          memory: {
+            used: 50 * 1024 * 1024,
+            max: 1024 * 1024 * 1024,
+            percentage: 5,
+          },
+          performance: {
+            connections: 10,
+            opsPerSecond: 1000,
+            hitRate: 85,
+            avgLatency: 2,
+          },
           replication: { lag: 0, backlog: 0, syncInProgress: false },
         },
         lastPing: new Date(),
-        version: '7.0.0',
+        version: "7.0.0",
       },
       {
-        id: 'node-master-2',
-        host: 'localhost',
+        id: "node-master-2",
+        host: "localhost",
         port: 7001,
-        role: 'master',
-        status: 'connected',
+        role: "master",
+        status: "connected",
         slots: Array.from({ length: 5461 }, (_, i) => i + 5461), // 5461-10921
-        replicas: ['node-replica-2'],
+        replicas: ["node-replica-2"],
         metrics: {
-          memory: { used: 45 * 1024 * 1024, max: 1024 * 1024 * 1024, percentage: 4.5 },
-          performance: { connections: 8, opsPerSecond: 950, hitRate: 87, avgLatency: 1.8 },
+          memory: {
+            used: 45 * 1024 * 1024,
+            max: 1024 * 1024 * 1024,
+            percentage: 4.5,
+          },
+          performance: {
+            connections: 8,
+            opsPerSecond: 950,
+            hitRate: 87,
+            avgLatency: 1.8,
+          },
           replication: { lag: 0, backlog: 0, syncInProgress: false },
         },
         lastPing: new Date(),
-        version: '7.0.0',
+        version: "7.0.0",
       },
       {
-        id: 'node-master-3',
-        host: 'localhost',
+        id: "node-master-3",
+        host: "localhost",
         port: 7002,
-        role: 'master',
-        status: 'connected',
+        role: "master",
+        status: "connected",
         slots: Array.from({ length: 5462 }, (_, i) => i + 10922), // 10922-16383
-        replicas: ['node-replica-3'],
+        replicas: ["node-replica-3"],
         metrics: {
-          memory: { used: 52 * 1024 * 1024, max: 1024 * 1024 * 1024, percentage: 5.2 },
-          performance: { connections: 12, opsPerSecond: 1100, hitRate: 83, avgLatency: 2.2 },
+          memory: {
+            used: 52 * 1024 * 1024,
+            max: 1024 * 1024 * 1024,
+            percentage: 5.2,
+          },
+          performance: {
+            connections: 12,
+            opsPerSecond: 1100,
+            hitRate: 83,
+            avgLatency: 2.2,
+          },
           replication: { lag: 0, backlog: 0, syncInProgress: false },
         },
         lastPing: new Date(),
-        version: '7.0.0',
+        version: "7.0.0",
       },
       // Replica nodes
       {
-        id: 'node-replica-1',
-        host: 'localhost',
+        id: "node-replica-1",
+        host: "localhost",
         port: 7003,
-        role: 'replica',
-        status: 'connected',
+        role: "replica",
+        status: "connected",
         slots: [],
         replicas: [],
         metrics: {
-          memory: { used: 50 * 1024 * 1024, max: 1024 * 1024 * 1024, percentage: 5 },
-          performance: { connections: 5, opsPerSecond: 500, hitRate: 85, avgLatency: 2.1 },
+          memory: {
+            used: 50 * 1024 * 1024,
+            max: 1024 * 1024 * 1024,
+            percentage: 5,
+          },
+          performance: {
+            connections: 5,
+            opsPerSecond: 500,
+            hitRate: 85,
+            avgLatency: 2.1,
+          },
           replication: { lag: 100, backlog: 1024, syncInProgress: false },
         },
         lastPing: new Date(),
-        version: '7.0.0',
+        version: "7.0.0",
       },
       {
-        id: 'node-replica-2',
-        host: 'localhost',
+        id: "node-replica-2",
+        host: "localhost",
         port: 7004,
-        role: 'replica',
-        status: 'connected',
+        role: "replica",
+        status: "connected",
         slots: [],
         replicas: [],
         metrics: {
-          memory: { used: 45 * 1024 * 1024, max: 1024 * 1024 * 1024, percentage: 4.5 },
-          performance: { connections: 4, opsPerSecond: 480, hitRate: 87, avgLatency: 1.9 },
+          memory: {
+            used: 45 * 1024 * 1024,
+            max: 1024 * 1024 * 1024,
+            percentage: 4.5,
+          },
+          performance: {
+            connections: 4,
+            opsPerSecond: 480,
+            hitRate: 87,
+            avgLatency: 1.9,
+          },
           replication: { lag: 80, backlog: 512, syncInProgress: false },
         },
         lastPing: new Date(),
-        version: '7.0.0',
+        version: "7.0.0",
       },
       {
-        id: 'node-replica-3',
-        host: 'localhost',
+        id: "node-replica-3",
+        host: "localhost",
         port: 7005,
-        role: 'replica',
-        status: 'connected',
+        role: "replica",
+        status: "connected",
         slots: [],
         replicas: [],
         metrics: {
-          memory: { used: 52 * 1024 * 1024, max: 1024 * 1024 * 1024, percentage: 5.2 },
-          performance: { connections: 6, opsPerSecond: 520, hitRate: 83, avgLatency: 2.3 },
+          memory: {
+            used: 52 * 1024 * 1024,
+            max: 1024 * 1024 * 1024,
+            percentage: 5.2,
+          },
+          performance: {
+            connections: 6,
+            opsPerSecond: 520,
+            hitRate: 83,
+            avgLatency: 2.3,
+          },
           replication: { lag: 120, backlog: 2048, syncInProgress: false },
         },
         lastPing: new Date(),
-        version: '7.0.0',
+        version: "7.0.0",
       },
     ];
 
     this.createCluster({
-      name: 'Main Redis Cluster',
+      name: "Main Redis Cluster",
       nodes,
       configuration: {
         replicationFactor: 1,
         shardCount: 3,
-        maxMemoryPolicy: 'allkeys-lru',
+        maxMemoryPolicy: "allkeys-lru",
         persistence: {
           enabled: true,
-          type: 'both',
-          schedule: '0 2 * * *', // Daily at 2 AM
+          type: "both",
+          schedule: "0 2 * * *", // Daily at 2 AM
         },
         security: {
           auth: true,
           tls: true,
           aclEnabled: true,
-          password: 'cluster-password',
+          password: "cluster-password",
         },
         networking: {
           timeout: 5000,
@@ -1154,7 +1220,7 @@ export class RedisClusterManager {
       },
     });
 
-    logger.info('Default Redis cluster created');
+    logger.info("Default Redis cluster created");
   }
 
   /**
@@ -1163,8 +1229,8 @@ export class RedisClusterManager {
   private setupDefaultPolicies(): void {
     // Session cache policy
     this.createPolicy({
-      name: 'Session Cache',
-      pattern: 'session:*',
+      name: "Session Cache",
+      pattern: "session:*",
       rules: {
         ttl: {
           default: 1800, // 30 minutes
@@ -1173,21 +1239,21 @@ export class RedisClusterManager {
           sliding: true,
         },
         eviction: {
-          policy: 'lru',
+          policy: "lru",
           priority: 10,
         },
         storage: {
           compress: false,
           serialize: true,
-          partition: 'sessions',
+          partition: "sessions",
         },
         replication: {
           factor: 2,
-          consistency: 'eventual',
+          consistency: "eventual",
         },
         access: {
-          readPreference: 'master',
-          writePolicy: 'write-through',
+          readPreference: "master",
+          writePolicy: "write-through",
         },
       },
       conditions: {
@@ -1200,8 +1266,8 @@ export class RedisClusterManager {
 
     // API Response cache policy
     this.createPolicy({
-      name: 'API Response Cache',
-      pattern: 'api:*',
+      name: "API Response Cache",
+      pattern: "api:*",
       rules: {
         ttl: {
           default: 300, // 5 minutes
@@ -1209,21 +1275,21 @@ export class RedisClusterManager {
           max: 3600,
         },
         eviction: {
-          policy: 'lfu',
+          policy: "lfu",
           priority: 8,
         },
         storage: {
           compress: true,
           serialize: true,
-          partition: 'api-responses',
+          partition: "api-responses",
         },
         replication: {
           factor: 1,
-          consistency: 'eventual',
+          consistency: "eventual",
         },
         access: {
-          readPreference: 'replica',
-          writePolicy: 'write-through',
+          readPreference: "replica",
+          writePolicy: "write-through",
         },
       },
       conditions: {
@@ -1236,8 +1302,8 @@ export class RedisClusterManager {
 
     // Analytics cache policy
     this.createPolicy({
-      name: 'Analytics Cache',
-      pattern: 'analytics:*',
+      name: "Analytics Cache",
+      pattern: "analytics:*",
       rules: {
         ttl: {
           default: 3600, // 1 hour
@@ -1245,21 +1311,21 @@ export class RedisClusterManager {
           max: 86400,
         },
         eviction: {
-          policy: 'ttl',
+          policy: "ttl",
           priority: 5,
         },
         storage: {
           compress: true,
           serialize: true,
-          partition: 'analytics',
+          partition: "analytics",
         },
         replication: {
           factor: 2,
-          consistency: 'strong',
+          consistency: "strong",
         },
         access: {
-          readPreference: 'master',
-          writePolicy: 'write-back',
+          readPreference: "master",
+          writePolicy: "write-back",
         },
       },
       conditions: {
@@ -1269,7 +1335,7 @@ export class RedisClusterManager {
       priority: 5,
     });
 
-    logger.info('Default cache policies created');
+    logger.info("Default cache policies created");
   }
 
   /**
@@ -1287,34 +1353,41 @@ export class RedisClusterManager {
           try {
             // Simulate health check
             const isHealthy = Math.random() > 0.05; // 95% uptime
-            node.status = isHealthy ? 'connected' : 'error';
+            node.status = isHealthy ? "connected" : "error";
             node.lastPing = new Date();
 
             if (isHealthy) {
               healthyNodes++;
 
               // Update node metrics
-              node.metrics.memory.used += Math.floor((Math.random() - 0.5) * 1024 * 1024);
+              node.metrics.memory.used += Math.floor(
+                (Math.random() - 0.5) * 1024 * 1024
+              );
               node.metrics.memory.used = Math.max(0, node.metrics.memory.used);
               node.metrics.memory.percentage =
                 (node.metrics.memory.used / node.metrics.memory.max) * 100;
 
-              node.metrics.performance.connections += Math.floor((Math.random() - 0.5) * 5);
-              node.metrics.performance.connections = Math.max(0, node.metrics.performance.connections);
+              node.metrics.performance.connections += Math.floor(
+                (Math.random() - 0.5) * 5
+              );
+              node.metrics.performance.connections = Math.max(
+                0,
+                node.metrics.performance.connections
+              );
 
               node.metrics.performance.opsPerSecond =
                 800 + Math.floor(Math.random() * 400);
 
-              node.metrics.performance.hitRate =
-                80 + Math.random() * 15;
+              node.metrics.performance.hitRate = 80 + Math.random() * 15;
 
-              node.metrics.performance.avgLatency =
-                1 + Math.random() * 3;
+              node.metrics.performance.avgLatency = 1 + Math.random() * 3;
 
               // Update replication metrics for replicas
-              if (node.role === 'replica') {
+              if (node.role === "replica") {
                 node.metrics.replication.lag = Math.floor(Math.random() * 200);
-                node.metrics.replication.backlog = Math.floor(Math.random() * 4096);
+                node.metrics.replication.backlog = Math.floor(
+                  Math.random() * 4096
+                );
               }
 
               totalMemory += node.metrics.memory.max;
@@ -1323,11 +1396,10 @@ export class RedisClusterManager {
 
               // Reset circuit breaker on successful health check
               const breaker = this.circuitBreakers.get(node.id);
-              if (breaker && breaker.state !== 'closed') {
+              if (breaker && breaker.state !== "closed") {
                 breaker.failures = 0;
-                breaker.state = 'closed';
+                breaker.state = "closed";
               }
-
             } else {
               // Update circuit breaker on failure
               const breaker = this.circuitBreakers.get(node.id);
@@ -1335,43 +1407,15 @@ export class RedisClusterManager {
                 breaker.failures++;
                 breaker.lastFailure = new Date();
                 if (breaker.failures >= 5) {
-                  breaker.state = 'open';
+                  breaker.state = "open";
                 }
               }
             }
 
-            monitoring.recordMetric({
-              name: 'cache.node.health',
-              value: isHealthy ? 1 : 0,
-              tags: {
-                clusterId,
-                nodeId: node.id,
-                role: node.role,
-              },
-            });
-
-            monitoring.recordMetric({
-              name: 'cache.node.memory.usage',
-              value: node.metrics.memory.percentage,
-              tags: {
-                clusterId,
-                nodeId: node.id,
-              },
-              unit: 'percent',
-            });
-
-            monitoring.recordMetric({
-              name: 'cache.node.connections',
-              value: node.metrics.performance.connections,
-              tags: {
-                clusterId,
-                nodeId: node.id,
-              },
-            });
-
+            // Monitoring disabled - would record node health metrics here
           } catch (error) {
-            node.status = 'error';
-            logger.error('Node health check failed', {
+            node.status = "error";
+            logger.error("Node health check failed", {
               clusterId,
               nodeId: node.id,
               error: String(error),
@@ -1382,11 +1426,11 @@ export class RedisClusterManager {
         // Update cluster status
         const healthPercentage = (healthyNodes / cluster.nodes.length) * 100;
         if (healthPercentage >= 90) {
-          cluster.status = 'healthy';
+          cluster.status = "healthy";
         } else if (healthPercentage >= 60) {
-          cluster.status = 'degraded';
+          cluster.status = "degraded";
         } else {
-          cluster.status = 'offline';
+          cluster.status = "offline";
         }
 
         // Update cluster metrics
@@ -1394,29 +1438,30 @@ export class RedisClusterManager {
         cluster.metrics.usedMemory = usedMemory;
         cluster.metrics.totalConnections = totalConnections;
 
-        const avgHitRate = cluster.nodes
-          .filter(n => n.status === 'connected')
-          .reduce((sum, n) => sum + n.metrics.performance.hitRate, 0) / healthyNodes || 0;
+        const avgHitRate =
+          cluster.nodes
+            .filter((n) => n.status === "connected")
+            .reduce((sum, n) => sum + n.metrics.performance.hitRate, 0) /
+            healthyNodes || 0;
         cluster.metrics.avgHitRate = avgHitRate;
 
-        const avgLatency = cluster.nodes
-          .filter(n => n.status === 'connected')
-          .reduce((sum, n) => sum + n.metrics.performance.avgLatency, 0) / healthyNodes || 0;
+        const avgLatency =
+          cluster.nodes
+            .filter((n) => n.status === "connected")
+            .reduce((sum, n) => sum + n.metrics.performance.avgLatency, 0) /
+            healthyNodes || 0;
         cluster.metrics.avgLatency = avgLatency;
 
-        monitoring.recordMetric({
-          name: 'cache.cluster.health',
-          value: healthPercentage,
-          tags: {
-            clusterId,
-            clusterName: cluster.name,
-          },
-          unit: 'percent',
-        });
+        // Monitoring disabled - would record cluster health metric here
 
         // Update hash ring if cluster topology changed
-        const masterNodes = cluster.nodes.filter(n => n.role === 'master' && n.status === 'connected');
-        if (masterNodes.length !== (this.hashRing.get(clusterId)?.length || 0) / 150) {
+        const masterNodes = cluster.nodes.filter(
+          (n) => n.role === "master" && n.status === "connected"
+        );
+        if (
+          masterNodes.length !==
+          (this.hashRing.get(clusterId)?.length || 0) / 150
+        ) {
           this.updateHashRing(clusterId);
         }
       }
@@ -1430,46 +1475,28 @@ export class RedisClusterManager {
     setInterval(() => {
       // Update global statistics
       const allClusters = Array.from(this.clusters.values());
-      const healthyClusters = allClusters.filter(c => c.status === 'healthy');
+      const healthyClusters = allClusters.filter((c) => c.status === "healthy");
 
       if (healthyClusters.length > 0) {
-        this.stats.memory.used = healthyClusters.reduce((sum, c) => sum + c.metrics.usedMemory, 0);
-        this.stats.memory.available = healthyClusters.reduce((sum, c) => sum + c.metrics.totalMemory, 0) - this.stats.memory.used;
-        this.stats.connections.active = healthyClusters.reduce((sum, c) => sum + c.metrics.totalConnections, 0);
+        this.stats.memory.used = healthyClusters.reduce(
+          (sum, c) => sum + c.metrics.usedMemory,
+          0
+        );
+        this.stats.memory.available =
+          healthyClusters.reduce((sum, c) => sum + c.metrics.totalMemory, 0) -
+          this.stats.memory.used;
+        this.stats.connections.active = healthyClusters.reduce(
+          (sum, c) => sum + c.metrics.totalConnections,
+          0
+        );
 
         // Calculate average performance metrics
         this.stats.performance.avgLatency =
-          healthyClusters.reduce((sum, c) => sum + c.metrics.avgLatency, 0) / healthyClusters.length;
+          healthyClusters.reduce((sum, c) => sum + c.metrics.avgLatency, 0) /
+          healthyClusters.length;
       }
 
-      // Record global metrics
-      monitoring.recordMetric({
-        name: 'cache.global.memory.used',
-        value: this.stats.memory.used,
-        tags: {},
-        unit: 'bytes',
-      });
-
-      monitoring.recordMetric({
-        name: 'cache.global.operations.total',
-        value: this.stats.operations.total,
-        tags: {},
-      });
-
-      monitoring.recordMetric({
-        name: 'cache.global.hit_rate',
-        value: this.stats.operations.hitRate,
-        tags: {},
-        unit: 'percent',
-      });
-
-      monitoring.recordMetric({
-        name: 'cache.global.latency.avg',
-        value: this.stats.performance.avgLatency,
-        tags: {},
-        unit: 'ms',
-      });
-
+      // Monitoring disabled - would record global metrics here
     }, 60000); // Every minute
   }
 
@@ -1479,7 +1506,7 @@ export class RedisClusterManager {
   private startReplicationMonitoring(): void {
     setInterval(() => {
       for (const [clusterId, cluster] of this.clusters.entries()) {
-        const replicas = cluster.nodes.filter(n => n.role === 'replica');
+        const replicas = cluster.nodes.filter((n) => n.role === "replica");
         let syncedReplicas = 0;
         let totalLag = 0;
         let maxLag = 0;
@@ -1493,34 +1520,16 @@ export class RedisClusterManager {
             syncedReplicas++;
           }
 
-          monitoring.recordMetric({
-            name: 'cache.replication.lag',
-            value: lag,
-            tags: {
-              clusterId,
-              nodeId: replica.id,
-            },
-            unit: 'ms',
-          });
+          // Monitoring disabled - would record replication lag metric here
         }
 
         // Update replication statistics
         this.stats.replication.syncedNodes = syncedReplicas;
-        this.stats.replication.lagAvg = replicas.length > 0 ? totalLag / replicas.length : 0;
+        this.stats.replication.lagAvg =
+          replicas.length > 0 ? totalLag / replicas.length : 0;
         this.stats.replication.lagMax = maxLag;
 
-        monitoring.recordMetric({
-          name: 'cache.replication.synced_nodes',
-          value: syncedReplicas,
-          tags: { clusterId },
-        });
-
-        monitoring.recordMetric({
-          name: 'cache.replication.lag.avg',
-          value: this.stats.replication.lagAvg,
-          tags: { clusterId },
-          unit: 'ms',
-        });
+        // Monitoring disabled - would record replication metrics here
       }
     }, 15000); // Every 15 seconds
   }
@@ -1540,20 +1549,22 @@ export class RedisClusterManager {
           this.locks.delete(lockId);
           expiredLocks++;
 
-          logger.debug('Distributed lock expired', {
+          logger.debug("Distributed lock expired", {
             lockId,
             key: lock.key,
             owner: lock.owner,
             duration: now.getTime() - lock.acquired.getTime(),
           });
-
-        } else if (lock.autoRenew && lock.expires.getTime() - now.getTime() < lock.ttl * 0.2) {
+        } else if (
+          lock.autoRenew &&
+          lock.expires.getTime() - now.getTime() < lock.ttl * 0.2
+        ) {
           // Auto-renew lock if less than 20% TTL remaining
           lock.expires = new Date(now.getTime() + lock.ttl);
           lock.renewals++;
           renewedLocks++;
 
-          logger.debug('Distributed lock auto-renewed', {
+          logger.debug("Distributed lock auto-renewed", {
             lockId,
             key: lock.key,
             owner: lock.owner,
@@ -1563,28 +1574,7 @@ export class RedisClusterManager {
         }
       }
 
-      if (expiredLocks > 0) {
-        monitoring.recordMetric({
-          name: 'cache.locks.expired',
-          value: expiredLocks,
-          tags: {},
-        });
-      }
-
-      if (renewedLocks > 0) {
-        monitoring.recordMetric({
-          name: 'cache.locks.renewed',
-          value: renewedLocks,
-          tags: {},
-        });
-      }
-
-      monitoring.recordMetric({
-        name: 'cache.locks.active',
-        value: this.locks.size,
-        tags: {},
-      });
-
+      // Monitoring disabled - would record lock maintenance metrics here
     }, 10000); // Every 10 seconds
   }
 
@@ -1621,7 +1611,7 @@ export class RedisClusterManager {
    */
   getActiveLocks(): DistributedLock[] {
     const now = new Date();
-    return Array.from(this.locks.values()).filter(lock => lock.expires > now);
+    return Array.from(this.locks.values()).filter((lock) => lock.expires > now);
   }
 
   /**
@@ -1629,7 +1619,12 @@ export class RedisClusterManager {
    */
   getClusterTopology(): {
     clusters: number;
-    nodes: { total: number; masters: number; replicas: number; sentinels: number };
+    nodes: {
+      total: number;
+      masters: number;
+      replicas: number;
+      sentinels: number;
+    };
     health: { healthy: number; degraded: number; offline: number };
     shards: number;
     slots: number;
@@ -1641,14 +1636,14 @@ export class RedisClusterManager {
       clusters: clusters.length,
       nodes: {
         total: allNodes.length,
-        masters: allNodes.filter(n => n.role === 'master').length,
-        replicas: allNodes.filter(n => n.role === 'replica').length,
-        sentinels: allNodes.filter(n => n.role === 'sentinel').length,
+        masters: allNodes.filter((n) => n.role === "master").length,
+        replicas: allNodes.filter((n) => n.role === "replica").length,
+        sentinels: allNodes.filter((n) => n.role === "sentinel").length,
       },
       health: {
-        healthy: clusters.filter(c => c.status === 'healthy').length,
-        degraded: clusters.filter(c => c.status === 'degraded').length,
-        offline: clusters.filter(c => c.status === 'offline').length,
+        healthy: clusters.filter((c) => c.status === "healthy").length,
+        degraded: clusters.filter((c) => c.status === "degraded").length,
+        offline: clusters.filter((c) => c.status === "offline").length,
       },
       shards: clusters.reduce((sum, c) => sum + c.configuration.shardCount, 0),
       slots: 16384, // Redis cluster total slots
@@ -1659,4 +1654,4 @@ export class RedisClusterManager {
 }
 
 // Export singleton instance
-export const redisClusterManager = new RedisClusterManager();
+export const redisClusterManager = RedisClusterManager.getInstance();

@@ -1,0 +1,30 @@
+name: pothos-todo-infrastructure
+runtime: nodejs
+description: Enterprise-grade Docker infrastructure for Pothos GraphQL Todo API with Federation
+
+config:
+  environment:
+    description: Deployment environment (development, staging, production)
+    default: development
+  dockerRegistry:
+    description: Docker registry for custom images
+    default: ghcr.io
+  namespace:
+    description: Project namespace for resources
+    default: pothos-todo
+  hiveCdnEndpoint:
+    description: Hive CDN endpoint for GraphQL Federation
+    secret: false
+  hiveCdnKey:
+    description: Hive CDN API key for GraphQL Federation
+    secret: true
+
+template:
+  description: A comprehensive Docker-based infrastructure template for modern GraphQL applications
+  config:
+    pulumi:tags:
+      value:
+        Project: pothos-todo
+        Environment: ${environment}
+        ManagedBy: pulumi
+        Infrastructure: docker

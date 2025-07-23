@@ -1,41 +1,45 @@
 import Redis from 'ioredis';
 import type { Redis as RedisClient, RedisOptions } from 'ioredis';
 import { destr } from 'destr';
-import { env } from '@/config/env.validation.js';
-import { logger } from '@/logger';
-import { AsyncSingletonService } from '@/infrastructure/core/SingletonService.js';
+// import { env } from '@/config/env.validation.js';
+import { logger } from '../../lib/unjs-utils.js';
+// import { AsyncSingletonService } from '@/infrastructure/core/SingletonService.js';
 
 export interface CacheOptions {
   ttl?: number; // Time to live in seconds
   tags?: string[]; // Tags for cache invalidation
 }
 
-export class CacheManager extends AsyncSingletonService<CacheManager> {
+export class CacheManager {
   private client: RedisClient | null = null;
   public isConnected = false;
 
+  private static instance: CacheManager | null = null;
+  
   protected constructor() {
-    super();
+    // Removed super() call
   }
 
   public static async getInstance(): Promise<CacheManager> {
-    return super.getInstanceAsync(async (instance) => {
-      await instance.connect();
-    });
+    if (!CacheManager.instance) {
+      CacheManager.instance = new CacheManager();
+      await CacheManager.instance.connect();
+    }
+    return CacheManager.instance;
   }
 
   public async connect(): Promise<void> {
-    if (this.isConnected || !env.CACHE_ENABLED) {
+    if (this.isConnected) { // || !env.CACHE_ENABLED) {
       return;
     }
 
     try {
       const options: RedisOptions = {
-        host: env.REDIS_HOST,
-        port: env.REDIS_PORT,
-        password: env.REDIS_PASSWORD,
-        db: env.REDIS_DB,
-        keyPrefix: env.REDIS_KEY_PREFIX,
+        host: process.env.REDIS_HOST || 'localhost',
+        port: parseInt(process.env.REDIS_PORT || '6379'),
+        password: process.env.REDIS_PASSWORD,
+        db: parseInt(process.env.REDIS_DB || '0'),
+        keyPrefix: process.env.REDIS_KEY_PREFIX || 'cache:',
         retryStrategy: (times: number) => {
           const delay = Math.min(times * 50, 2000);
           return delay;
@@ -108,7 +112,7 @@ export class CacheManager extends AsyncSingletonService<CacheManager> {
     if (!this.isEnabled()) return false;
 
     try {
-      const ttl = options?.ttl || env.CACHE_DEFAULT_TTL;
+      const ttl = options?.ttl || parseInt(process.env.CACHE_DEFAULT_TTL || '3600');
       const serialized = JSON.stringify(value);
 
       if (ttl > 0) {
@@ -218,7 +222,7 @@ export class CacheManager extends AsyncSingletonService<CacheManager> {
    * Check if cache is enabled and connected
    */
   private isEnabled(): boolean {
-    return env.CACHE_ENABLED && this.isConnected && this.client !== null;
+    return (process.env.CACHE_ENABLED !== 'false') && this.isConnected && this.client !== null;
   }
 
   /**
@@ -231,7 +235,7 @@ export class CacheManager extends AsyncSingletonService<CacheManager> {
       const tagKey = `tag:${tag}`;
       pipeline.sadd(tagKey, key);
       // Set expiration on tag set to match max TTL
-      pipeline.expire(tagKey, env.CACHE_DEFAULT_TTL * 2);
+      pipeline.expire(tagKey, parseInt(process.env.CACHE_DEFAULT_TTL || '3600') * 2);
     }
 
     await pipeline.exec();

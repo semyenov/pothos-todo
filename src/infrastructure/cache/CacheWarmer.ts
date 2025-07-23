@@ -1,12 +1,48 @@
-import { logger } from '@/logger';
-import { DistributedCacheManager } from './DistributedCacheManager';
-import { GraphQLCacheManager } from './GraphQLCacheManager';
-import { AdvancedCacheManager } from './AdvancedCacheManager';
-import { MetricsCollector } from '../observability/MetricsCollector';
-import { DistributedTracing } from '../observability/DistributedTracing';
-import { Container } from '../container/Container';
+import { logger } from '../../lib/unjs-utils.js';
+// import { DistributedCacheManager } from './DistributedCacheManager';
+// import { GraphQLCacheManager } from './GraphQLCacheManager';
+// import { AdvancedCacheManager } from './AdvancedCacheManager';
+// import { MetricsCollector } from '../observability/MetricsCollector';
+// import { DistributedTracing } from '../observability/DistributedTracing';
+// import { Container } from '../container/Container';
 import { hash } from 'ohash';
 import EventEmitter from 'events';
+
+// Temporary interfaces for missing dependencies
+interface DistributedCacheManager {
+  warmCache(patterns: string[]): Promise<void>;
+  preloadPatterns(patterns: string[]): Promise<void>;
+}
+
+interface GraphQLCacheManager {
+  warmGraphQLCache(queries: any[]): Promise<void>;
+  getCachedQuery(query: string, variables: any, context?: any): Promise<any>;
+}
+
+interface AdvancedCacheManager {
+  warmCache(): Promise<void>;
+  predictivePreload(): Promise<void>;
+}
+
+interface MetricsCollector {
+  recordMetric(name: string, value: number, tags?: Record<string, string>): void;
+}
+
+interface DistributedTracing {
+  startTrace(name: string): string | null;
+  finishSpan(spanId: string | null, status: string, error?: Error): void;
+}
+
+interface Container {
+  prisma: {
+    user: {
+      findMany(options: any): Promise<any[]>;
+    };
+    todo: {
+      findMany(options: any): Promise<any[]>;
+    };
+  };
+}
 
 export interface CacheWarmingStrategy {
   name: string;
@@ -86,12 +122,12 @@ export interface PredictiveModel {
 
 export class CacheWarmer extends EventEmitter {
   private static instance: CacheWarmer;
-  private distributedCache: DistributedCacheManager;
-  private graphqlCache: GraphQLCacheManager;
-  private localCache: AdvancedCacheManager;
-  private metrics: MetricsCollector;
-  private tracing: DistributedTracing;
-  private container: Container;
+  private distributedCache: DistributedCacheManager | null;
+  private graphqlCache: GraphQLCacheManager | null;
+  private localCache: AdvancedCacheManager | null;
+  private metrics: MetricsCollector | null;
+  private tracing: DistributedTracing | null;
+  private container: Container | null;
 
   private strategies: Map<string, CacheWarmingStrategy> = new Map();
   private userPatterns: Map<string, UserBehaviorPattern> = new Map();
@@ -121,12 +157,12 @@ export class CacheWarmer extends EventEmitter {
 
   private constructor() {
     super();
-    this.distributedCache = DistributedCacheManager.getInstance();
-    this.graphqlCache = GraphQLCacheManager.getInstance();
-    this.localCache = AdvancedCacheManager.getAdvancedInstance();
-    this.metrics = MetricsCollector.getInstance();
-    this.tracing = DistributedTracing.getInstance();
-    this.container = Container.getInstance();
+    this.distributedCache = null; // DistributedCacheManager.getInstance();
+    this.graphqlCache = null; // GraphQLCacheManager.getInstance();
+    this.localCache = null; // AdvancedCacheManager.getAdvancedInstance();
+    this.metrics = null; // MetricsCollector.getInstance();
+    this.tracing = null; // DistributedTracing.getInstance();
+    this.container = null; // Container.getInstance();
 
     this.setupDefaultStrategies();
     this.initializePredictiveModels();
@@ -696,13 +732,13 @@ export class CacheWarmer extends EventEmitter {
     try {
       const activeUsers = await this.container.prisma.user.findMany({
         where: {
-          lastActiveAt: {
+          updatedAt: {
             gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
           },
         },
         select: { id: true },
         take: 100, // Limit to top 100 active users
-        orderBy: { lastActiveAt: 'desc' },
+        orderBy: { updatedAt: 'desc' },
       });
 
       return activeUsers.map(user => user.id);

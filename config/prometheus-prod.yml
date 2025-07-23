@@ -1,0 +1,144 @@
+# Prometheus configuration for Pothos GraphQL Todo API monitoring - Production
+
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+  external_labels:
+    cluster: 'pothos-todo-prod'
+    environment: 'production'
+    datacenter: 'us-west-2'
+
+# Rule files
+rule_files:
+  - "alert_rules.yml"
+  - "recording_rules.yml"
+  - "sla_rules.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # GraphQL API application metrics - High frequency for production
+  - job_name: 'pothos-graphql-api'
+    static_configs:
+      - targets: ['app:4000']
+    metrics_path: /metrics
+    scrape_interval: 5s
+    scrape_timeout: 3s
+    honor_labels: true
+    params:
+      format: ['prometheus']
+
+  # Hive Gateway federation metrics - Production monitoring
+  - job_name: 'hive-gateway'
+    static_configs:
+      - targets: ['hive-gateway:4000']
+    metrics_path: /metrics
+    scrape_interval: 5s
+    scrape_timeout: 3s
+
+  # PostgreSQL database metrics with enhanced monitoring
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+    metrics_path: /metrics
+    scrape_interval: 15s
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'pg_stat_database_.*'
+        target_label: database_metric
+        replacement: 'true'
+
+  # Redis cluster metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # Qdrant vector database metrics
+  - job_name: 'qdrant'
+    static_configs:
+      - targets: ['qdrant:6333']
+    metrics_path: /metrics
+    scrape_interval: 20s
+
+  # Docker container metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    metrics_path: /metrics
+    scrape_interval: 20s
+
+  # System metrics
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    metrics_path: /metrics
+    scrape_interval: 20s
+
+  # GraphQL Federation specific metrics
+  - job_name: 'federation-metrics'
+    static_configs:
+      - targets: ['app:9464']
+    metrics_path: /metrics
+    scrape_interval: 10s
+    params:
+      format: ['prometheus']
+
+  # Business metrics and SLA monitoring
+  - job_name: 'business-metrics'
+    static_configs:
+      - targets: ['app:4000']
+    metrics_path: /business-metrics
+    scrape_interval: 60s
+
+  # API Gateway metrics (if using external gateway)
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['gateway:8080']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # Load balancer metrics
+  - job_name: 'load-balancer'
+    static_configs:
+      - targets: ['nginx:9113']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+    alert_relabel_configs:
+      - source_labels: [severity]
+        regex: 'critical'
+        target_label: priority
+        replacement: 'P1'
+
+# Remote write configuration for external monitoring
+remote_write:
+  - url: "${PROMETHEUS_REMOTE_WRITE_URL}"
+    basic_auth:
+      username: "${PROMETHEUS_REMOTE_WRITE_USERNAME}"
+      password: "${PROMETHEUS_REMOTE_WRITE_PASSWORD}"
+    queue_config:
+      max_samples_per_send: 1000
+      max_shards: 200
+      capacity: 2500
+
+# Storage configuration - Production optimized
+storage:
+  tsdb:
+    retention.time: 90d
+    retention.size: 100GB
+    wal-compression: true
+    no-lockfile: false

@@ -1,7 +1,6 @@
 import { createPubSub } from '@graphql-yoga/subscription';
 import { logger } from '@/logger';
 import type { Todo, TodoList, User } from '@prisma/client';
-import { SingletonService } from '@/infrastructure/core/SingletonService';
 
 // Define subscription event types
 export interface SubscriptionEvents {
@@ -35,16 +34,19 @@ export interface SubscriptionEvents {
   [key: string]: any;
 }
 
-export class PubSubManager extends SingletonService<PubSubManager> {
+export class PubSubManager {
+  private static instance: PubSubManager | null = null;
   private pubsub = createPubSub();
   private userConnections = new Map<string, Set<string>>(); // userId -> connectionIds
   private listSubscribers = new Map<string, Set<string>>(); // listId -> userIds
 
-  protected constructor() {
-    super(); }
+  private constructor() { }
 
   static getInstance(): PubSubManager {
-    return super.getInstance();
+    if (!PubSubManager.instance) {
+      PubSubManager.instance = new PubSubManager();
+    }
+    return PubSubManager.instance;
   }
 
   // Todo events

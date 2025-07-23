@@ -1,11 +1,41 @@
-import { logger } from '@/logger';
-import { DistributedCacheManager } from './DistributedCacheManager';
-import { AdvancedCacheManager, CacheStrategy } from './AdvancedCacheManager';
-import { MetricsCollector } from '../observability/MetricsCollector';
-import { DistributedTracing } from '../observability/DistributedTracing';
-import { hash } from 'ohash';
-import { parse, validate, execute, GraphQLSchema, OperationDefinitionNode, FieldNode } from 'graphql';
-import EventEmitter from 'events';
+import { logger } from "../../lib/unjs-utils.js";
+// import { DistributedCacheManager } from "./DistributedCacheManager";
+// import { AdvancedCacheManager, CacheStrategy } from "./AdvancedCacheManager";
+// import { MetricsCollector } from "../observability/MetricsCollector";
+// import { DistributedTracing } from "../observability/DistributedTracing";
+import { hash } from "ohash";
+
+// Temporary interfaces for strict typing
+interface DistributedCacheManager {
+  set(key: string, value: any, options?: { ttl?: number; tags?: string[] }): Promise<void>;
+  get<T>(key: string): Promise<T | null>;
+  invalidate(pattern: string, options?: any): Promise<void>;
+}
+
+interface AdvancedCacheManager {
+  set(key: string, value: any, options?: { ttl?: number; tags?: string[] }): Promise<void>;
+  get(key: string): Promise<any>;
+  invalidateByTag(tag: string): Promise<void>;
+}
+
+interface MetricsCollector {
+  recordMetric(name: string, value: number, tags?: Record<string, string>): void;
+  getMetricStats(name: string): Promise<{ avg: number } | null>;
+}
+
+interface DistributedTracing {
+  startTrace(name: string): string | null;
+  finishSpan(spanId: string | null, status: string, error?: Error): void;
+}
+import {
+  parse,
+  validate,
+  execute,
+  GraphQLSchema,
+  type OperationDefinitionNode,
+  type FieldNode,
+} from "graphql";
+import EventEmitter from "events";
 
 export interface GraphQLCacheConfig {
   defaultTTL: number;
@@ -28,7 +58,7 @@ export interface FieldCacheStrategy {
 
 export interface QueryCacheMetadata {
   queryHash: string;
-  operationType: 'query' | 'mutation' | 'subscription';
+  operationType: "query" | "mutation" | "subscription";
   operationName?: string;
   fields: string[];
   complexity: number;
@@ -58,11 +88,14 @@ export interface GraphQLCacheAnalytics {
     hits: number;
     avgComplexity: number;
   }>;
-  fieldCacheStats: Map<string, {
-    hits: number;
-    misses: number;
-    avgTTL: number;
-  }>;
+  fieldCacheStats: Map<
+    string,
+    {
+      hits: number;
+      misses: number;
+      avgTTL: number;
+    }
+  >;
 }
 
 export interface SmartCacheInvalidationRule {
@@ -77,28 +110,36 @@ export interface SmartCacheInvalidationRule {
 export class GraphQLCacheManager extends EventEmitter {
   private static instance: GraphQLCacheManager;
   private config: GraphQLCacheConfig;
-  private distributedCache: DistributedCacheManager;
-  private localCache: AdvancedCacheManager;
+  private distributedCache: DistributedCacheManager | null;
+  private localCache: AdvancedCacheManager | null;
   private schema?: GraphQLSchema;
-  private metrics: MetricsCollector;
-  private tracing: DistributedTracing;
-  
+  private metrics: MetricsCollector | null;
+  private tracing: DistributedTracing | null;
+
   // Cache analytics
-  private queryStats: Map<string, { hits: number; complexity: number; lastUsed: number }> = new Map();
-  private fieldStats: Map<string, { hits: number; misses: number; totalTTL: number }> = new Map();
-  private invalidationRules: Map<string, SmartCacheInvalidationRule> = new Map();
-  
+  private queryStats: Map<
+    string,
+    { hits: number; complexity: number; lastUsed: number }
+  > = new Map();
+  private fieldStats: Map<
+    string,
+    { hits: number; misses: number; totalTTL: number }
+  > = new Map();
+  private invalidationRules: Map<string, SmartCacheInvalidationRule> =
+    new Map();
+
   // Query parsing cache
   private parsedQueries: Map<string, OperationDefinitionNode> = new Map();
-  
+
   private constructor(config: GraphQLCacheConfig) {
     super();
     this.config = config;
-    this.distributedCache = DistributedCacheManager.getInstance();
-    this.localCache = AdvancedCacheManager.getAdvancedInstance();
-    this.metrics = MetricsCollector.getInstance();
-    this.tracing = DistributedTracing.getInstance();
-    
+    // TODO: Initialize cache managers when available
+    this.distributedCache = null; // DistributedCacheManager.getInstance();
+    this.localCache = null; // AdvancedCacheManager.getAdvancedInstance();
+    this.metrics = null; // MetricsCollector.getInstance();
+    this.tracing = null; // DistributedTracing.getInstance();
+
     this.setupDefaultFieldStrategies();
     this.setupInvalidationRules();
   }
@@ -115,7 +156,7 @@ export class GraphQLCacheManager extends EventEmitter {
    */
   public setSchema(schema: GraphQLSchema): void {
     this.schema = schema;
-    logger.info('GraphQL schema set for cache manager');
+    logger.info("GraphQL schema set for cache manager");
   }
 
   /**
@@ -127,20 +168,24 @@ export class GraphQLCacheManager extends EventEmitter {
     response: any,
     context?: any
   ): Promise<void> {
-    const span = this.tracing.startTrace('graphql_cache_set');
-    
+    const span = this.tracing?.startTrace("graphql_cache_set");
+
     try {
       // Parse and analyze query
       const queryAnalysis = await this.analyzeQuery(query, variables);
-      
+
       if (!this.shouldCacheQuery(queryAnalysis, response)) {
-        this.tracing.finishSpan(span, 'ok');
+        this.tracing?.finishSpan(span, "ok");
         return;
       }
 
       // Generate cache key
-      const cacheKey = this.generateQueryCacheKey(query, variables, context?.userId);
-      
+      const cacheKey = this.generateQueryCacheKey(
+        query,
+        variables,
+        (context?.userId as string | undefined)
+      );
+
       // Create cached response
       const cachedResponse: CachedGraphQLResponse = {
         data: response.data,
@@ -148,7 +193,7 @@ export class GraphQLCacheManager extends EventEmitter {
         extensions: response.extensions,
         metadata: {
           ...queryAnalysis,
-          userId: context?.userId,
+          userId: context?.userId ?? undefined,
           timestamp: Date.now(),
           ttl: this.calculateTTL(queryAnalysis),
         },
@@ -157,10 +202,12 @@ export class GraphQLCacheManager extends EventEmitter {
       };
 
       // Cache in distributed cache
-      await this.distributedCache.set(cacheKey, cachedResponse, {
-        ttl: this.calculateTTL(queryAnalysis),
-        tags: this.generateCacheTags(queryAnalysis),
-      });
+      if (this.distributedCache) {
+        await this.distributedCache.set(cacheKey, cachedResponse, {
+          ttl: this.calculateTTL(queryAnalysis),
+          tags: this.generateCacheTags(queryAnalysis),
+        });
+      }
 
       // Update statistics
       this.updateQueryStats(queryAnalysis);
@@ -170,17 +217,19 @@ export class GraphQLCacheManager extends EventEmitter {
         await this.cacheIndividualFields(queryAnalysis, response.data, context);
       }
 
-      this.metrics.recordMetric('graphql_cache_set', 1, {
+      this.metrics?.recordMetric("graphql_cache_set", 1, {
         operationType: queryAnalysis.operationType,
         complexity: queryAnalysis.complexity.toString(),
       });
 
-      this.tracing.finishSpan(span, 'ok');
-      this.emit('query_cached', { queryHash: queryAnalysis.queryHash, ttl: this.calculateTTL(queryAnalysis) });
-      
+      this.tracing?.finishSpan(span, "ok");
+      this.emit("query_cached", {
+        queryHash: queryAnalysis.queryHash,
+        ttl: this.calculateTTL(queryAnalysis),
+      });
     } catch (error) {
-      this.tracing.finishSpan(span, 'error', error as Error);
-      logger.error('Failed to cache GraphQL query', error, { query });
+      this.tracing?.finishSpan(span, "error", error as Error);
+      logger.error("Failed to cache GraphQL query", error, { query });
     }
   }
 
@@ -192,27 +241,35 @@ export class GraphQLCacheManager extends EventEmitter {
     variables: Record<string, any>,
     context?: any
   ): Promise<CachedGraphQLResponse | null> {
-    const span = this.tracing.startTrace('graphql_cache_get');
+    const span = this.tracing?.startTrace("graphql_cache_get");
     const startTime = Date.now();
-    
+
     try {
       // Generate cache key
-      const cacheKey = this.generateQueryCacheKey(query, variables, context?.userId);
-      
+      const cacheKey = this.generateQueryCacheKey(
+        query,
+        variables,
+        (context?.userId as string | undefined)
+      );
+
       // Try to get from cache
-      const cachedResponse = await this.distributedCache.get<CachedGraphQLResponse>(cacheKey);
-      
+      const cachedResponse = this.distributedCache
+        ? await this.distributedCache.get<CachedGraphQLResponse>(cacheKey)
+        : null;
+
       if (!cachedResponse) {
-        this.metrics.recordMetric('graphql_cache_miss', 1);
-        this.tracing.finishSpan(span, 'ok');
+        this.metrics?.recordMetric("graphql_cache_miss", 1);
+        this.tracing?.finishSpan(span, "ok");
         return null;
       }
 
       // Check if cache is still valid
       if (Date.now() > cachedResponse.expiresAt) {
-        await this.distributedCache.invalidate(cacheKey);
-        this.metrics.recordMetric('graphql_cache_expired', 1);
-        this.tracing.finishSpan(span, 'ok');
+        if (this.distributedCache) {
+          await this.distributedCache.invalidate(cacheKey);
+        }
+        this.metrics?.recordMetric("graphql_cache_expired", 1);
+        this.tracing?.finishSpan(span, "ok");
         return null;
       }
 
@@ -224,20 +281,25 @@ export class GraphQLCacheManager extends EventEmitter {
         stats.lastUsed = Date.now();
       }
 
-      this.metrics.recordMetric('graphql_cache_hit', 1, {
+      this.metrics?.recordMetric("graphql_cache_hit", 1, {
         operationType: cachedResponse.metadata.operationType,
       });
 
-      this.metrics.recordMetric('graphql_cache_response_time', Date.now() - startTime);
-      
-      this.tracing.finishSpan(span, 'ok');
-      this.emit('cache_hit', { queryHash, age: Date.now() - cachedResponse.cachedAt });
-      
+      this.metrics?.recordMetric(
+        "graphql_cache_response_time",
+        Date.now() - startTime
+      );
+
+      this.tracing?.finishSpan(span, "ok");
+      this.emit("cache_hit", {
+        queryHash,
+        age: Date.now() - cachedResponse.cachedAt,
+      });
+
       return cachedResponse;
-      
     } catch (error) {
-      this.tracing.finishSpan(span, 'error', error as Error);
-      logger.error('Failed to get cached GraphQL query', error, { query });
+      this.tracing?.finishSpan(span, "error", error as Error);
+      logger.error("Failed to get cached GraphQL query", error, { query });
       return null;
     }
   }
@@ -259,21 +321,28 @@ export class GraphQLCacheManager extends EventEmitter {
       }
 
       const fieldCacheKey = strategy.cacheKey(parent, args, context);
-      
-      await this.localCache.set(fieldCacheKey, result, {
-        ttl: strategy.ttl,
-        tags: [`field:${fieldPath}`],
-      });
+
+      if (this.localCache) {
+        await this.localCache.set(fieldCacheKey, result, {
+          ttl: strategy.ttl,
+          tags: [`field:${fieldPath}`],
+        });
+      }
 
       // Update field statistics
-      const stats = this.fieldStats.get(fieldPath) || { hits: 0, misses: 0, totalTTL: 0 };
+      const stats = this.fieldStats.get(fieldPath) || {
+        hits: 0,
+        misses: 0,
+        totalTTL: 0,
+      };
       stats.totalTTL += strategy.ttl;
       this.fieldStats.set(fieldPath, stats);
 
-      this.metrics.recordMetric('graphql_field_cached', 1, { field: fieldPath });
-      
+      this.metrics?.recordMetric("graphql_field_cached", 1, {
+        field: fieldPath,
+      });
     } catch (error) {
-      logger.error('Failed to cache GraphQL field', error, { fieldPath });
+      logger.error("Failed to cache GraphQL field", error, { fieldPath });
     }
   }
 
@@ -293,23 +362,28 @@ export class GraphQLCacheManager extends EventEmitter {
       }
 
       const fieldCacheKey = strategy.cacheKey(parent, args, context);
-      const result = await this.localCache.get(fieldCacheKey);
+      const result = this.localCache ? await this.localCache.get(fieldCacheKey) : null;
 
       // Update statistics
-      const stats = this.fieldStats.get(fieldPath) || { hits: 0, misses: 0, totalTTL: 0 };
+      const stats = this.fieldStats.get(fieldPath) || {
+        hits: 0,
+        misses: 0,
+        totalTTL: 0,
+      };
       if (result !== null) {
         stats.hits++;
-        this.metrics.recordMetric('graphql_field_hit', 1, { field: fieldPath });
+        this.metrics?.recordMetric("graphql_field_hit", 1, { field: fieldPath });
       } else {
         stats.misses++;
-        this.metrics.recordMetric('graphql_field_miss', 1, { field: fieldPath });
+        this.metrics?.recordMetric("graphql_field_miss", 1, {
+          field: fieldPath,
+        });
       }
       this.fieldStats.set(fieldPath, stats);
 
       return result;
-      
     } catch (error) {
-      logger.error('Failed to get cached GraphQL field', error, { fieldPath });
+      logger.error("Failed to get cached GraphQL field", error, { fieldPath });
       return null;
     }
   }
@@ -325,8 +399,8 @@ export class GraphQLCacheManager extends EventEmitter {
       affectedFields?: string[];
     }
   ): Promise<void> {
-    const span = this.tracing.startTrace('graphql_cache_invalidate');
-    
+    const span = this.tracing.startTrace("graphql_cache_invalidate");
+
     try {
       // Invalidate query cache
       await this.distributedCache.invalidate(pattern, {
@@ -346,17 +420,19 @@ export class GraphQLCacheManager extends EventEmitter {
         await this.processCascadeInvalidation(options.triggerEvent);
       }
 
-      this.metrics.recordMetric('graphql_cache_invalidated', 1, {
+      this.metrics.recordMetric("graphql_cache_invalidated", 1, {
         pattern,
-        event: options?.triggerEvent || 'manual',
+        event: options?.triggerEvent || "manual",
       });
 
-      this.tracing.finishSpan(span, 'ok');
-      this.emit('cache_invalidated', { pattern, trigger: options?.triggerEvent });
-      
+      this.tracing.finishSpan(span, "ok");
+      this.emit("cache_invalidated", {
+        pattern,
+        trigger: options?.triggerEvent,
+      });
     } catch (error) {
-      this.tracing.finishSpan(span, 'error', error as Error);
-      logger.error('GraphQL cache invalidation failed', error, { pattern });
+      this.tracing?.finishSpan(span, "error", error as Error);
+      logger.error("GraphQL cache invalidation failed", error, { pattern });
     }
   }
 
@@ -368,11 +444,11 @@ export class GraphQLCacheManager extends EventEmitter {
       query: string;
       variables?: Record<string, any>;
       context?: any;
-      priority: 'high' | 'medium' | 'low';
+      priority: "high" | "medium" | "low";
     }>
   ): Promise<void> {
-    const span = this.tracing.startTrace('graphql_cache_warm');
-    
+    const span = this.tracing?.startTrace("graphql_cache_warm");
+
     try {
       const warmingTasks = queries.map(async (queryConfig) => {
         try {
@@ -404,20 +480,21 @@ export class GraphQLCacheManager extends EventEmitter {
             );
           }
         } catch (error) {
-          logger.warn('Failed to warm query cache', error, {
+          logger.warn("Failed to warm query cache", error, {
             query: queryConfig.query.substring(0, 100),
           });
         }
       });
 
       await Promise.allSettled(warmingTasks);
-      
-      this.tracing.finishSpan(span, 'ok');
-      logger.info('GraphQL cache warming completed', { queries: queries.length });
-      
+
+      this.tracing?.finishSpan(span, "ok");
+      logger.info("GraphQL cache warming completed", {
+        queries: queries.length,
+      });
     } catch (error) {
-      this.tracing.finishSpan(span, 'error', error as Error);
-      logger.error('GraphQL cache warming failed', error);
+      this.tracing?.finishSpan(span, "error", error as Error);
+      logger.error("GraphQL cache warming failed", error);
     }
   }
 
@@ -426,15 +503,22 @@ export class GraphQLCacheManager extends EventEmitter {
    */
   public async getGraphQLCacheAnalytics(): Promise<GraphQLCacheAnalytics> {
     try {
-      const totalQueries = Array.from(this.queryStats.values())
-        .reduce((sum, stats) => sum + stats.hits, 0);
-      
+      const totalQueries = Array.from(this.queryStats.values()).reduce(
+        (sum, stats) => sum + stats.hits,
+        0
+      );
+
       const cachedQueries = this.queryStats.size;
-      const hitRate = cachedQueries > 0 ? (totalQueries / cachedQueries) * 100 : 0;
+      const hitRate =
+        cachedQueries > 0 ? (totalQueries / cachedQueries) * 100 : 0;
 
       // Calculate response times
-      const avgResponseTime = await this.metrics.getMetricStats('graphql_query_duration');
-      const avgCachedResponseTime = await this.metrics.getMetricStats('graphql_cache_response_time');
+      const avgResponseTime = await this.metrics.getMetricStats(
+        "graphql_query_duration"
+      );
+      const avgCachedResponseTime = await this.metrics.getMetricStats(
+        "graphql_cache_response_time"
+      );
 
       // Top cached queries
       const topCachedQueries = Array.from(this.queryStats.entries())
@@ -447,11 +531,14 @@ export class GraphQLCacheManager extends EventEmitter {
         }));
 
       // Field cache statistics
-      const fieldCacheStats = new Map<string, {
-        hits: number;
-        misses: number;
-        avgTTL: number;
-      }>();
+      const fieldCacheStats = new Map<
+        string,
+        {
+          hits: number;
+          misses: number;
+          avgTTL: number;
+        }
+      >();
 
       for (const [field, stats] of this.fieldStats.entries()) {
         const totalRequests = stats.hits + stats.misses;
@@ -466,14 +553,13 @@ export class GraphQLCacheManager extends EventEmitter {
         totalQueries,
         cachedQueries,
         hitRate,
-        averageResponseTime: avgResponseTime?.avg || 0,
-        averageCachedResponseTime: avgCachedResponseTime?.avg || 0,
+        averageResponseTime: avgResponseTime?.avg ?? 0,
+        averageCachedResponseTime: avgCachedResponseTime?.avg ?? 0,
         topCachedQueries,
         fieldCacheStats,
       };
-      
     } catch (error) {
-      logger.error('Failed to get GraphQL cache analytics', error);
+      logger.error("Failed to get GraphQL cache analytics", error);
       throw error;
     }
   }
@@ -485,7 +571,7 @@ export class GraphQLCacheManager extends EventEmitter {
     variables: Record<string, any>
   ): Promise<QueryCacheMetadata> {
     const queryHash = hash({ query, variables });
-    
+
     // Check if already parsed
     let parsedQuery = this.parsedQueries.get(queryHash);
     if (!parsedQuery) {
@@ -497,10 +583,10 @@ export class GraphQLCacheManager extends EventEmitter {
     // Extract operation info
     const operationType = parsedQuery.operation;
     const operationName = parsedQuery.name?.value;
-    
+
     // Extract fields
     const fields = this.extractFields(parsedQuery.selectionSet);
-    
+
     // Calculate complexity (simplified)
     const complexity = this.calculateQueryComplexity(parsedQuery);
 
@@ -516,20 +602,22 @@ export class GraphQLCacheManager extends EventEmitter {
     };
   }
 
-  private extractFields(selectionSet: any, prefix = ''): string[] {
+  private extractFields(selectionSet: any, prefix = ""): string[] {
     const fields: string[] = [];
-    
+
     for (const selection of selectionSet.selections) {
-      if (selection.kind === 'Field') {
-        const fieldName = prefix ? `${prefix}.${selection.name.value}` : selection.name.value;
+      if (selection.kind === "Field") {
+        const fieldName = prefix
+          ? `${prefix}.${selection.name.value}`
+          : selection.name.value;
         fields.push(fieldName);
-        
+
         if (selection.selectionSet) {
           fields.push(...this.extractFields(selection.selectionSet, fieldName));
         }
       }
     }
-    
+
     return fields;
   }
 
@@ -537,7 +625,7 @@ export class GraphQLCacheManager extends EventEmitter {
     // Simplified complexity calculation
     // In production, use a proper GraphQL complexity analysis library
     let complexity = 1;
-    
+
     const countSelections = (selectionSet: any): number => {
       let count = 0;
       for (const selection of selectionSet.selections) {
@@ -553,14 +641,17 @@ export class GraphQLCacheManager extends EventEmitter {
     return Math.min(complexity, 1000); // Cap at 1000
   }
 
-  private shouldCacheQuery(analysis: QueryCacheMetadata, response: any): boolean {
+  private shouldCacheQuery(
+    analysis: QueryCacheMetadata,
+    response: any
+  ): boolean {
     // Don't cache mutations
-    if (analysis.operationType === 'mutation') {
+    if (analysis.operationType === "mutation") {
       return false;
     }
 
     // Don't cache subscriptions
-    if (analysis.operationType === 'subscription') {
+    if (analysis.operationType === "subscription") {
       return false;
     }
 
@@ -570,8 +661,10 @@ export class GraphQLCacheManager extends EventEmitter {
     }
 
     // Don't cache overly complex queries
-    if (this.config.enableQueryComplexityBasedCaching &&
-        analysis.complexity > this.config.maxCacheableQueryComplexity) {
+    if (
+      this.config.enableQueryComplexityBasedCaching &&
+      analysis.complexity > this.config.maxCacheableQueryComplexity
+    ) {
       return false;
     }
 
@@ -599,11 +692,19 @@ export class GraphQLCacheManager extends EventEmitter {
     }
 
     // Adjust TTL based on fields
-    if (analysis.fields.some(field => field.includes('user') || field.includes('profile'))) {
+    if (
+      analysis.fields.some(
+        (field) => field.includes("user") || field.includes("profile")
+      )
+    ) {
       ttl = Math.min(ttl, 1800); // User data expires faster (30 min)
     }
 
-    if (analysis.fields.some(field => field.includes('stats') || field.includes('analytics'))) {
+    if (
+      analysis.fields.some(
+        (field) => field.includes("stats") || field.includes("analytics")
+      )
+    ) {
       ttl = Math.min(ttl, 300); // Stats expire very fast (5 min)
     }
 
@@ -623,8 +724,10 @@ export class GraphQLCacheManager extends EventEmitter {
     // Add field-based tags
     const fieldTypes = new Set<string>();
     for (const field of analysis.fields) {
-      const topLevelField = field.split('.')[0];
-      fieldTypes.add(topLevelField);
+      const topLevelField = field.split(".")[0];
+      if (topLevelField) {
+        fieldTypes.add(topLevelField);
+      }
     }
 
     for (const fieldType of fieldTypes) {
@@ -640,7 +743,7 @@ export class GraphQLCacheManager extends EventEmitter {
       complexity: analysis.complexity,
       lastUsed: Date.now(),
     };
-    
+
     stats.lastUsed = Date.now();
     this.queryStats.set(analysis.queryHash, stats);
   }
@@ -662,79 +765,83 @@ export class GraphQLCacheManager extends EventEmitter {
   }
 
   private extractFieldValue(data: any, fieldPath: string): any {
-    const parts = fieldPath.split('.');
+    const parts = fieldPath.split(".");
     let current = data;
-    
+
     for (const part of parts) {
-      if (current && typeof current === 'object' && part in current) {
+      if (current && typeof current === "object" && part in current) {
         current = current[part];
       } else {
         return undefined;
       }
     }
-    
+
     return current;
   }
 
   private setupDefaultFieldStrategies(): void {
     // User profile field strategy
-    this.config.fieldCacheStrategies.set('user.profile', {
-      fieldPath: 'user.profile',
+    this.config.fieldCacheStrategies.set("user.profile", {
+      fieldPath: "user.profile",
       ttl: 1800, // 30 minutes
       cacheKey: (parent, args, context) => `user:profile:${context.userId}`,
       shouldCache: (parent, args, context) => !!context.userId,
-      invalidateOn: ['user.updated', 'profile.updated'],
+      invalidateOn: ["user.updated", "profile.updated"],
     });
 
     // Todo list field strategy
-    this.config.fieldCacheStrategies.set('user.todos', {
-      fieldPath: 'user.todos',
+    this.config.fieldCacheStrategies.set("user.todos", {
+      fieldPath: "user.todos",
       ttl: 600, // 10 minutes
-      cacheKey: (parent, args, context) => `user:todos:${context.userId}:${hash(args)}`,
+      cacheKey: (parent, args, context) =>
+        `user:todos:${context.userId}:${hash(args)}`,
       shouldCache: (parent, args, context) => !!context.userId,
-      invalidateOn: ['todo.created', 'todo.updated', 'todo.deleted'],
+      invalidateOn: ["todo.created", "todo.updated", "todo.deleted"],
     });
 
     // AI suggestions field strategy
-    this.config.fieldCacheStrategies.set('generateTaskSuggestions', {
-      fieldPath: 'generateTaskSuggestions',
+    this.config.fieldCacheStrategies.set("generateTaskSuggestions", {
+      fieldPath: "generateTaskSuggestions",
       ttl: 3600, // 1 hour
-      cacheKey: (parent, args, context) => `ai:suggestions:${context.userId}:${hash(args)}`,
+      cacheKey: (parent, args, context) =>
+        `ai:suggestions:${context.userId}:${hash(args)}`,
       shouldCache: (parent, args, context) => !!context.userId,
-      invalidateOn: ['user.preferences.updated'],
+      invalidateOn: ["user.preferences.updated"],
     });
   }
 
   private setupInvalidationRules(): void {
     // User data invalidation rule
-    this.invalidationRules.set('user-updates', {
-      name: 'user-updates',
-      triggerEvents: ['user.updated', 'user.deleted'],
-      affectedPatterns: ['graphql:query:*user*', 'user:*'],
+    this.invalidationRules.set("user-updates", {
+      name: "user-updates",
+      triggerEvents: ["user.updated", "user.deleted"],
+      affectedPatterns: ["graphql:query:*user*", "user:*"],
       delay: 0,
-      cascadeRules: ['user-related-data'],
+      cascadeRules: ["user-related-data"],
     });
 
     // Todo data invalidation rule
-    this.invalidationRules.set('todo-updates', {
-      name: 'todo-updates',
-      triggerEvents: ['todo.created', 'todo.updated', 'todo.deleted'],
-      affectedPatterns: ['graphql:query:*todo*', 'user:todos:*'],
+    this.invalidationRules.set("todo-updates", {
+      name: "todo-updates",
+      triggerEvents: ["todo.created", "todo.updated", "todo.deleted"],
+      affectedPatterns: ["graphql:query:*todo*", "user:todos:*"],
       delay: 1000, // 1 second delay for batch operations
       cascadeRules: [],
     });
 
     // AI data invalidation rule
-    this.invalidationRules.set('ai-updates', {
-      name: 'ai-updates',
-      triggerEvents: ['user.preferences.updated', 'todo.completed'],
-      affectedPatterns: ['ai:*', 'graphql:query:*suggestion*'],
+    this.invalidationRules.set("ai-updates", {
+      name: "ai-updates",
+      triggerEvents: ["user.preferences.updated", "todo.completed"],
+      affectedPatterns: ["ai:*", "graphql:query:*suggestion*"],
       delay: 5000, // 5 second delay for AI data
       cascadeRules: [],
     });
   }
 
-  private async processCascadeInvalidation(triggerEvent: string): Promise<void> {
+  private async processCascadeInvalidation(
+    triggerEvent: string
+  ): Promise<void> {
     for (const [ruleName, rule] of this.invalidationRules.entries()) {
       if (rule.triggerEvents.includes(triggerEvent)) {
         // Apply delay if specified
@@ -759,18 +866,20 @@ export class GraphQLCacheManager extends EventEmitter {
     }
   }
 
-  private async executeInvalidationRule(rule: SmartCacheInvalidationRule): Promise<void> {
+  private async executeInvalidationRule(
+    rule: SmartCacheInvalidationRule
+  ): Promise<void> {
     try {
       for (const pattern of rule.affectedPatterns) {
         await this.distributedCache.invalidate(pattern);
       }
-      
-      logger.debug('Invalidation rule executed', {
+
+      logger.debug("Invalidation rule executed", {
         ruleName: rule.name,
         patterns: rule.affectedPatterns,
       });
     } catch (error) {
-      logger.error('Failed to execute invalidation rule', error, {
+      logger.error("Failed to execute invalidation rule", error, {
         ruleName: rule.name,
       });
     }
@@ -787,10 +896,10 @@ export class GraphQLCacheManager extends EventEmitter {
       this.fieldStats.clear();
       this.invalidationRules.clear();
 
-      logger.info('GraphQL cache manager shutdown completed');
-      this.emit('shutdown');
+      logger.info("GraphQL cache manager shutdown completed");
+      this.emit("shutdown");
     } catch (error) {
-      logger.error('Error during GraphQL cache shutdown', error);
+      logger.error("Error during GraphQL cache shutdown", error);
       throw error;
     }
   }

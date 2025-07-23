@@ -24,6 +24,16 @@ The application has undergone extensive enterprise modernization with the additi
 - **Redis Cluster Caching**: High-performance distributed caching with consistent hashing and intelligent policies
 - **Enterprise API Gateway**: Centralized API management with authentication, rate limiting, and intelligent routing
 - **Production Monitoring**: 360° observability with distributed tracing and automated alerting
+- **Kafka Event Streaming**: Enterprise-grade event streaming with topic management and consumer groups
+- **Real-time Subscriptions**: GraphQL subscriptions with Redis PubSub for live updates
+- **Advanced AI Orchestration**: Multi-provider AI workflows with cost optimization and performance tracking
+- **Blockchain Integration**: Data integrity verification with Proof of Work blockchain
+- **Threat Detection Engine**: ML-based security analysis with real-time monitoring
+- **Intelligent Auto-scaling**: Predictive resource optimization with multiple scaling strategies
+- **Elasticsearch Integration**: Full-text search with personalization and auto-complete
+- **Time-series Database**: High-performance metrics storage with alerting capabilities
+- **CI/CD Orchestration**: Advanced pipeline management with approvals and rollbacks
+- **Data Pipeline Manager**: ETL workflows with lineage tracking and quality monitoring
 
 ## Development Commands
 
@@ -76,7 +86,7 @@ Note: The project uses `docker compose` (not `docker-compose`) for container man
 
 ### Service Management
 ```bash
-# Start all Docker services (PostgreSQL + Qdrant)
+# Start all Docker services (PostgreSQL + Qdrant + Kafka + Redis)
 bun run services:up
 
 # Stop all Docker services
@@ -84,6 +94,12 @@ bun run services:down
 
 # Start only Qdrant (for AI features)
 bun run qdrant:up
+
+# Start federation services in Docker
+bun run federation:docker
+
+# Deploy to cloud infrastructure
+bun run pulumi:up
 ```
 
 ### CLI Commands
@@ -129,6 +145,15 @@ The codebase follows DDD principles with clear separation of concerns:
    - **Monitoring**: Advanced monitoring with anomaly detection and alerting
    - **Caching**: Multi-level distributed caching with predictive warming
    - **Backup & DR**: Enterprise-grade backup management and disaster recovery orchestration
+   - **Streaming**: Kafka event streaming with producer/consumer management
+   - **Projections**: Event projection manager for real-time read models
+   - **Notifications**: Multi-channel notification system with templates
+   - **Blockchain**: Data integrity chain with proof of work consensus
+   - **Scaling**: Intelligent auto-scaling and resource optimization
+   - **Search**: Elasticsearch integration with advanced search capabilities
+   - **Time-series**: High-performance time-series database for metrics
+   - **CI/CD**: Pipeline orchestration with automated deployment workflows
+   - **Pipelines**: ETL data processing with lineage tracking
 
 4. **API Layer** (`src/api/`)
    - **GraphQL Schema**: Pothos-based type-safe schema definitions
@@ -625,10 +650,11 @@ bun test src/tests/performance/
 - Production build: `bun run build:prod`
 
 ### Service Dependencies
-- **Primary Services**: PostgreSQL database, Redis Cluster, Qdrant vector database
-- **External APIs**: OpenAI API for AI features, Anthropic API for alternative AI provider
-- **Infrastructure**: Service registry, message broker, API gateway
-- **Monitoring**: OpenTelemetry collector, Prometheus metrics, alerting system
+- **Primary Services**: PostgreSQL database, Redis Cluster, Qdrant vector database, Kafka message broker
+- **External APIs**: OpenAI API for AI features, Anthropic API for alternative AI provider, Elasticsearch cluster
+- **Infrastructure**: Service registry, message broker, API gateway, time-series database
+- **Monitoring**: OpenTelemetry collector, Prometheus metrics, alerting system, blockchain network
+- **Cloud Services**: Multi-cloud deployment with Pulumi, auto-scaling groups, load balancers
 
 ### Enterprise Deployment Architecture
 - **Microservices Cluster**: Service registry with load balancing and failover
@@ -637,6 +663,11 @@ bun test src/tests/performance/
 - **API Gateway**: Centralized entry point with authentication and rate limiting
 - **Analytics Pipeline**: Real-time data processing with automated reporting
 - **AI/ML Services**: Multi-provider AI routing with cost optimization
+- **Event Streaming**: Kafka cluster with event sourcing and CQRS projections
+- **Security Framework**: Threat detection with blockchain-based audit trails
+- **Auto-scaling Platform**: Intelligent resource optimization with predictive analytics
+- **Search Infrastructure**: Elasticsearch cluster with advanced indexing and query capabilities
+- **CI/CD Platform**: Automated deployment pipelines with comprehensive testing and rollback capabilities
 
 ### Monitoring & Observability
 - **Distributed Tracing**: OpenTelemetry with service mesh integration

@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { createYoga } from "graphql-yoga";
-import { useServer } from "graphql-ws/lib/use/ws";
+import { useServer } from "graphql-ws/use/ws";
 import { WebSocketServer } from "ws";
 import { schema } from "./schema.js";
 import { logger } from "../../lib/unjs-utils.js";

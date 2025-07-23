@@ -1,11 +1,38 @@
-import { logger } from '@/logger';
-import { AdvancedCacheManager, CacheStrategy } from './AdvancedCacheManager';
-import { MetricsCollector } from '../observability/MetricsCollector';
-import { DistributedTracing } from '../observability/DistributedTracing';
+import { logger } from '../../lib/unjs-utils.js';
+import type { CacheStrategy } from './AdvancedCacheManager';
+// import { AdvancedCacheManager } from './AdvancedCacheManager';
+// import { MetricsCollector } from '../observability/MetricsCollector';
+// import { DistributedTracing } from '../observability/DistributedTracing';
 import { hash } from 'ohash';
-import { compress, decompress } from 'lz4';
+// import { compress, decompress } from 'lz4'; // Missing dependency
 import { createHash } from 'crypto';
 import EventEmitter from 'events';
+
+// Temporary interfaces for missing dependencies
+interface AdvancedCacheManager {
+  get<T>(key: string): Promise<T | null>;
+  set<T>(key: string, value: T, options?: any): Promise<void>;
+  del(key: string): Promise<void>;
+  delete(key: string): Promise<void>;
+}
+
+interface MetricsCollector {
+  recordMetric(name: string, value: number, tags?: Record<string, string>): void;
+}
+
+interface DistributedTracing {
+  startTrace(name: string): string | null;
+  finishSpan(spanId: string | null, status: string, error?: Error): void;
+}
+
+// Placeholder compression functions
+function compress(data: Buffer): Buffer {
+  return data; // Placeholder implementation
+}
+
+function decompress(data: Buffer): Buffer {
+  return data; // Placeholder implementation
+}
 
 export interface DistributedCacheConfig {
   nodes: Array<{
@@ -100,9 +127,9 @@ export class DistributedCacheManager extends EventEmitter {
   private replicationStrategies: Map<string, CacheReplicationStrategy> = new Map();
   private invalidationRules: Map<string, SmartCacheInvalidation> = new Map();
   private compressionConfig: CacheCompressionConfig;
-  private localCache: AdvancedCacheManager;
-  private metrics: MetricsCollector;
-  private tracing: DistributedTracing;
+  private localCache: AdvancedCacheManager | null;
+  private metrics: MetricsCollector | null;
+  private tracing: DistributedTracing | null;
   
   // Monitoring intervals
   private healthCheckInterval?: NodeJS.Timeout;
@@ -113,9 +140,9 @@ export class DistributedCacheManager extends EventEmitter {
   private constructor(config: DistributedCacheConfig) {
     super();
     this.config = config;
-    this.localCache = AdvancedCacheManager.getAdvancedInstance();
-    this.metrics = MetricsCollector.getInstance();
-    this.tracing = DistributedTracing.getInstance();
+    this.localCache = null; // AdvancedCacheManager.getAdvancedInstance();
+    this.metrics = null; // MetricsCollector.getInstance();
+    this.tracing = null; // DistributedTracing.getInstance();
     
     this.compressionConfig = {
       algorithm: 'lz4',
@@ -338,7 +365,9 @@ export class DistributedCacheManager extends EventEmitter {
       
       // Invalidate in local cache
       for (const key of keysToInvalidate) {
-        await this.localCache.delete(key);
+        if (this.localCache) {
+          await this.localCache.delete(key);
+        }
       }
 
       // Invalidate in distributed cache
@@ -518,7 +547,7 @@ export class DistributedCacheManager extends EventEmitter {
     
     // For now, return the first valid result
     // In production, you'd implement proper quorum logic
-    return results[0].value;
+    return results[0]?.value;
   }
 
   private async setInDistributedCache<T>(

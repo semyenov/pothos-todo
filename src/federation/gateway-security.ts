@@ -1,6 +1,6 @@
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
-import { useServer } from 'graphql-ws/lib/use/ws';
+import { useServer } from 'graphql-ws/use/ws';
 import { createYoga } from 'graphql-yoga';
 import { logger } from '../lib/unjs-utils.js';
 import chalk from 'chalk';
