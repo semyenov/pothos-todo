@@ -1,4 +1,5 @@
 // Edge Computing & Global Distribution Infrastructure
+export { EdgeComputingSystem } from './EdgeComputing.js';
 export * from './EdgeComputing.js';
 export * from './DataReplication.js';
 export * from './IntelligentCDN.js';

@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../../lib/unjs-utils.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 // Replication configuration and management
 export interface ReplicationNodeConfig {
@@ -43,8 +44,7 @@ export interface ReplicationMetrics {
 }
 
 // Advanced database replication manager
-export class DatabaseReplicationManager {
-  private static instance: DatabaseReplicationManager | null = null;
+export class DatabaseReplicationManager extends SingletonService<DatabaseReplicationManager> {
   private topology: ReplicationTopology;
   private nodes = new Map<string, PrismaClient>();
   private nodeHealth = new Map<string, boolean>();
@@ -54,19 +54,34 @@ export class DatabaseReplicationManager {
   private monitoringInterval: NodeJS.Timeout | null = null;
   private readonly defaultPoolSize = 10;
 
-  private constructor(topology: ReplicationTopology) {
-    this.topology = topology;
-    this.initializeTopology();
+  protected constructor() {
+    super();
+    // Default topology - can be configured later
+    this.topology = {
+      type: 'master-slave',
+      nodes: [],
+      failoverPolicy: {
+        enabled: false,
+        automaticFailover: false,
+        failoverTimeout: 30000,
+        maxFailoverAttempts: 3,
+        promotionCriteria: {
+          minReplicationLag: 1000,
+          requireDataConsistency: true
+        }
+      },
+      consistencyLevel: 'strong'
+    };
   }
 
-  static getInstance(topology?: ReplicationTopology): DatabaseReplicationManager {
-    if (!DatabaseReplicationManager.instance) {
-      if (!topology) {
-        throw new Error('ReplicationTopology required for first initialization');
-      }
-      DatabaseReplicationManager.instance = new DatabaseReplicationManager(topology);
-    }
-    return DatabaseReplicationManager.instance;
+  static getInstance(): DatabaseReplicationManager {
+    return super.getInstance();
+  }
+
+  // Configure the replication topology
+  configureTopology(topology: ReplicationTopology): void {
+    this.topology = topology;
+    this.initializeTopology();
   }
 
   // Initialize replication topology
@@ -179,7 +194,7 @@ export class DatabaseReplicationManager {
       const isHealthy = this.nodeHealth.get(node.id);
       const isReadReplica = node.type.includes('replica') || node.type === 'slave';
       const regionMatch = !preferredRegion || node.region === preferredRegion;
-      
+
       return isHealthy && isReadReplica && node.isActive && regionMatch;
     });
   }
@@ -246,7 +261,7 @@ export class DatabaseReplicationManager {
 
     const selectedReplica = this.selectBestReplica(suitableReplicas);
     const replicaClient = this.nodes.get(selectedReplica.id)!;
-    
+
     return this.executeWithMetrics(selectedReplica.id, () => operation(replicaClient));
   }
 
@@ -363,14 +378,14 @@ export class DatabaseReplicationManager {
         try {
           await client.$queryRaw`SELECT 1`;
           this.nodeHealth.set(nodeId, true);
-          
+
           const metrics = this.nodeMetrics.get(nodeId);
           if (metrics) {
             metrics.connectionStatus = 'connected';
           }
         } catch (error) {
           this.nodeHealth.set(nodeId, false);
-          
+
           const metrics = this.nodeMetrics.get(nodeId);
           if (metrics) {
             metrics.connectionStatus = 'error';
@@ -436,7 +451,7 @@ export class DatabaseReplicationManager {
     const result = await client.$queryRaw<Array<{ position: string }>>`
       SELECT EXTRACT(EPOCH FROM NOW()) AS position
     `;
-    
+
     return result[0]?.position || '0';
   }
 
@@ -446,7 +461,7 @@ export class DatabaseReplicationManager {
     const result = await client.$queryRaw<Array<{ position: string }>>`
       SELECT EXTRACT(EPOCH FROM NOW()) AS position
     `;
-    
+
     return result[0]?.position || '0';
   }
 
@@ -481,15 +496,15 @@ export class DatabaseReplicationManager {
   // Find the best candidate for failover
   private async findFailoverCandidate(): Promise<ReplicationNodeConfig | null> {
     const { promotionCriteria } = this.topology.failoverPolicy;
-    
+
     // Get healthy replicas that can be promoted
     const candidates = this.topology.nodes.filter(node => {
       const isHealthy = this.nodeHealth.get(node.id);
       const canBePromoted = node.type.includes('replica') && node.isActive;
       const metrics = this.nodeMetrics.get(node.id);
       const hasLowLag = metrics ? metrics.replicationLag <= promotionCriteria.minReplicationLag : false;
-      const regionMatch = !promotionCriteria.preferredRegion || 
-                         node.region === promotionCriteria.preferredRegion;
+      const regionMatch = !promotionCriteria.preferredRegion ||
+        node.region === promotionCriteria.preferredRegion;
 
       return isHealthy && canBePromoted && hasLowLag && regionMatch;
     });
@@ -502,16 +517,16 @@ export class DatabaseReplicationManager {
     return candidates.reduce((best, current) => {
       const currentMetrics = this.nodeMetrics.get(current.id);
       const bestMetrics = this.nodeMetrics.get(best.id);
-      
+
       if (!currentMetrics) return best;
       if (!bestMetrics) return current;
 
       if (current.priority > best.priority) return current;
-      if (current.priority === best.priority && 
-          currentMetrics.replicationLag < bestMetrics.replicationLag) {
+      if (current.priority === best.priority &&
+        currentMetrics.replicationLag < bestMetrics.replicationLag) {
         return current;
       }
-      
+
       return best;
     });
   }
@@ -561,16 +576,16 @@ export class DatabaseReplicationManager {
     // Database-specific promotion commands would go here
     // For PostgreSQL: pg_promote()
     // For MySQL: STOP SLAVE; RESET SLAVE ALL;
-    
+
     logger.info(`Promoted node ${candidate.id} to master`);
   }
 
   // Reconfigure replicas to use new master
   private async reconfigureReplicas(newMasterId: string, oldMasterId?: string): Promise<void> {
     const replicaNodes = this.topology.nodes.filter(
-      node => node.id !== newMasterId && 
-              (node.type.includes('replica') || node.type === 'slave') &&
-              node.isActive
+      node => node.id !== newMasterId &&
+        (node.type.includes('replica') || node.type === 'slave') &&
+        node.isActive
     );
 
     const reconfigurationPromises = replicaNodes.map(async (replica) => {
@@ -580,7 +595,7 @@ export class DatabaseReplicationManager {
 
         // Database-specific replication reconfiguration
         // This would involve changing the master connection settings
-        
+
         logger.info(`Reconfigured replica ${replica.id} to use new master ${newMasterId}`);
       } catch (error) {
         logger.error(`Failed to reconfigure replica ${replica.id}:`, error);

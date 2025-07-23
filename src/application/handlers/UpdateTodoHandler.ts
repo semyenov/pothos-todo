@@ -1,13 +1,13 @@
 import { UpdateTodoCommand } from '../commands/UpdateTodoCommand.js';
 import { Todo } from '../../domain/aggregates/Todo.js';
 import type { TodoRepository } from '../../domain/repositories/TodoRepository.js';
-import type { EventPublisher } from '../../infrastructure/events/EventPublisher.js';
+import type { IEventPublisher } from '../../infrastructure/events/EventPublisher.js';
 import { DueDate } from '../../domain/value-objects/DueDate.js';
 
 export class UpdateTodoHandler {
   constructor(
     private readonly todoRepository: TodoRepository,
-    private readonly eventPublisher: EventPublisher
+    private readonly eventPublisher: IEventPublisher
   ) { }
 
   async handle(command: UpdateTodoCommand): Promise<Todo> {

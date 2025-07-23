@@ -2,6 +2,7 @@ import { OpenAI } from 'openai';
 import { logger } from '@/logger';
 import type { PrismaClient, Todo } from '@prisma/client';
 import { Priority } from '../../domain/value-objects/Priority.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface CompletionTimePrediction {
   estimatedHours: number;
@@ -22,20 +23,23 @@ export interface TaskComplexityAnalysis {
   risks: string[];
 }
 
-export class MLPredictionService {
-  private static instance: MLPredictionService | null = null;
+export class MLPredictionService extends SingletonService<MLPredictionService> {
   private openai: OpenAI | null = null;
-  private prisma: PrismaClient;
+  private prisma: PrismaClient | null = null;
 
-  private constructor(prisma: PrismaClient) {
-    this.prisma = prisma;
+  protected constructor() {
+    super();
   }
 
-  static getInstance(prisma: PrismaClient): MLPredictionService {
-    if (!MLPredictionService.instance) {
-      MLPredictionService.instance = new MLPredictionService(prisma);
-    }
-    return MLPredictionService.instance;
+  static async getInstance(): Promise<MLPredictionService> {
+    return super.getInstance();
+  }
+
+  /**
+   * Configure the MLPredictionService with Prisma client
+   */
+  public configure(prisma: PrismaClient): void {
+    this.prisma = prisma;
   }
 
   initialize(apiKey: string): void {
@@ -54,9 +58,11 @@ export class MLPredictionService {
       };
     }
 
+    this.ensureConfigured();
+
     try {
       // Get the todo and user's historical data
-      const todo = await this.prisma.todo.findFirst({
+      const todo = await this.prisma!.todo.findFirst({
         where: { id: todoId, userId }
       });
 
@@ -65,7 +71,7 @@ export class MLPredictionService {
       }
 
       // Get similar completed todos for reference
-      const completedSimilarTodos = await this.prisma.todo.findMany({
+      const completedSimilarTodos = await this.prisma!.todo.findMany({
         where: {
           userId,
           status: 'COMPLETED',
@@ -135,7 +141,7 @@ ${JSON.stringify(completionStats)}`;
 
     try {
       // Get user's priority patterns
-      const userTodos = await this.prisma.todo.findMany({
+      const userTodos = await this.prisma!.todo.findMany({
         where: { userId },
         orderBy: { createdAt: 'desc' },
         take: 50,
@@ -206,8 +212,10 @@ ${JSON.stringify(priorityPatterns)}
       };
     }
 
+    this.ensureConfigured();
+
     try {
-      const todo = await this.prisma.todo.findFirst({
+      const todo = await this.prisma!.todo.findFirst({
         where: { id: todoId, userId },
         include: {
           todoList: true
@@ -220,7 +228,7 @@ ${JSON.stringify(priorityPatterns)}
 
       // Get related todos in the same list
       const relatedTodos = todo.todoListId ?
-        await this.prisma.todo.findMany({
+        await this.prisma!.todo.findMany({
           where: {
             todoListId: todo.todoListId,
             id: { not: todoId }
@@ -286,7 +294,7 @@ ${relatedTodos.map(t => `- ${t.title} (${t.status})`).join('\n')}`;
 
     try {
       // Get recent todos and patterns
-      const recentTodos = await this.prisma.todo.findMany({
+      const recentTodos = await this.prisma!.todo.findMany({
         where: { userId },
         orderBy: { createdAt: 'desc' },
         take: 30,
@@ -424,5 +432,14 @@ Day: ${new Date().toLocaleDateString('en-US', { weekday: 'long' })}`;
       .slice(0, 5)
       .map(([tag]) => tag)
       .join(', ');
+  }
+
+  /**
+   * Ensure the service is configured before use
+   */
+  private ensureConfigured(): void {
+    if (!this.prisma) {
+      throw new Error('MLPredictionService not configured - call configure() first');
+    }
   }
 }

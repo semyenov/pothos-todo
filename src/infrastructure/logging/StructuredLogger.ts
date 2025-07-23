@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'pathe';
 import { env } from '@/config/env.validation.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface LogContext {
   requestId?: string;
@@ -41,15 +42,15 @@ export interface StructuredLogEntry {
   };
 }
 
-export class StructuredLogger {
-  private static instance: StructuredLogger;
+export class StructuredLogger extends SingletonService<StructuredLogger> {
   private logger: ConsolaInstance;
   private contextStorage = new AsyncLocalStorage<LogContext>();
   private logBuffer: StructuredLogEntry[] = [];
   private bufferSize = 1000;
   private flushInterval: NodeJS.Timeout | null = null;
 
-  private constructor() {
+  protected constructor() {
+    super();
     this.logger = createConsola({
       level: this.mapLogLevel(env.LOG_LEVEL),
       formatOptions: {
@@ -70,11 +71,8 @@ export class StructuredLogger {
     }, 5000); // Flush every 5 seconds
   }
 
-  public static getInstance(): StructuredLogger {
-    if (!StructuredLogger.instance) {
-      StructuredLogger.instance = new StructuredLogger();
-    }
-    return StructuredLogger.instance;
+  public static async getInstance(): Promise<StructuredLogger> {
+    return super.getInstance();
   }
 
   /**

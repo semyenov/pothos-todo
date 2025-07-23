@@ -35,7 +35,7 @@ import {
   type OperationDefinitionNode,
   type FieldNode,
 } from "graphql";
-import EventEmitter from "events";
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface GraphQLCacheConfig {
   defaultTTL: number;
@@ -107,14 +107,13 @@ export interface SmartCacheInvalidationRule {
   condition?: (event: any) => boolean;
 }
 
-export class GraphQLCacheManager extends EventEmitter {
-  private static instance: GraphQLCacheManager;
-  private config: GraphQLCacheConfig;
-  private distributedCache: DistributedCacheManager | null;
-  private localCache: AdvancedCacheManager | null;
+export class GraphQLCacheManager extends EventEmitterSingletonService<GraphQLCacheManager> {
+  private config: GraphQLCacheConfig | null = null;
+  private distributedCache: DistributedCacheManager | null = null;
+  private localCache: AdvancedCacheManager | null = null;
   private schema?: GraphQLSchema;
-  private metrics: MetricsCollector | null;
-  private tracing: DistributedTracing | null;
+  private metrics: MetricsCollector | null = null;
+  private tracing: DistributedTracing | null = null;
 
   // Cache analytics
   private queryStats: Map<
@@ -131,8 +130,11 @@ export class GraphQLCacheManager extends EventEmitter {
   // Query parsing cache
   private parsedQueries: Map<string, OperationDefinitionNode> = new Map();
 
-  private constructor(config: GraphQLCacheConfig) {
+  protected constructor() {
     super();
+  }
+
+  public configure(config: GraphQLCacheConfig): void {
     this.config = config;
     // TODO: Initialize cache managers when available
     this.distributedCache = null; // DistributedCacheManager.getInstance();
@@ -144,11 +146,19 @@ export class GraphQLCacheManager extends EventEmitter {
     this.setupInvalidationRules();
   }
 
-  public static getInstance(config?: GraphQLCacheConfig): GraphQLCacheManager {
-    if (!GraphQLCacheManager.instance && config) {
-      GraphQLCacheManager.instance = new GraphQLCacheManager(config);
+  private ensureConfig(): GraphQLCacheConfig {
+    if (!this.config) {
+      throw new Error('GraphQLCacheManager not configured');
     }
-    return GraphQLCacheManager.instance;
+    return this.config;
+  }
+
+  public static getInstance(config?: GraphQLCacheConfig): GraphQLCacheManager {
+    const instance = super.getInstance();
+    if (config && !instance.config) {
+      instance.configure(config);
+    }
+    return instance;
   }
 
   /**
@@ -213,7 +223,7 @@ export class GraphQLCacheManager extends EventEmitter {
       this.updateQueryStats(queryAnalysis);
 
       // Cache individual fields if enabled
-      if (this.config.enableFieldLevelCaching) {
+      if (this.ensureConfig().enableFieldLevelCaching) {
         await this.cacheIndividualFields(queryAnalysis, response.data, context);
       }
 
@@ -315,7 +325,7 @@ export class GraphQLCacheManager extends EventEmitter {
     context: any
   ): Promise<void> {
     try {
-      const strategy = this.config.fieldCacheStrategies.get(fieldPath);
+      const strategy = this.ensureConfig().fieldCacheStrategies.get(fieldPath);
       if (!strategy || !strategy.shouldCache(parent, args, context)) {
         return;
       }
@@ -356,7 +366,7 @@ export class GraphQLCacheManager extends EventEmitter {
     context: any
   ): Promise<any> {
     try {
-      const strategy = this.config.fieldCacheStrategies.get(fieldPath);
+      const strategy = this.ensureConfig().fieldCacheStrategies.get(fieldPath);
       if (!strategy) {
         return null;
       }
@@ -598,7 +608,7 @@ export class GraphQLCacheManager extends EventEmitter {
       complexity,
       variables,
       timestamp: Date.now(),
-      ttl: this.config.defaultTTL,
+      ttl: this.ensureConfig().defaultTTL,
     };
   }
 
@@ -662,8 +672,8 @@ export class GraphQLCacheManager extends EventEmitter {
 
     // Don't cache overly complex queries
     if (
-      this.config.enableQueryComplexityBasedCaching &&
-      analysis.complexity > this.config.maxCacheableQueryComplexity
+      this.ensureConfig().enableQueryComplexityBasedCaching &&
+      analysis.complexity > this.ensureConfig().maxCacheableQueryComplexity
     ) {
       return false;
     }
@@ -684,7 +694,7 @@ export class GraphQLCacheManager extends EventEmitter {
   }
 
   private calculateTTL(analysis: QueryCacheMetadata): number {
-    let ttl = this.config.defaultTTL;
+    let ttl = this.ensureConfig().defaultTTL;
 
     // Adjust TTL based on complexity
     if (analysis.complexity > 50) {
@@ -754,7 +764,7 @@ export class GraphQLCacheManager extends EventEmitter {
     context: any
   ): Promise<void> {
     for (const field of analysis.fields) {
-      const strategy = this.config.fieldCacheStrategies.get(field);
+      const strategy = this.ensureConfig().fieldCacheStrategies.get(field);
       if (strategy) {
         const fieldValue = this.extractFieldValue(data, field);
         if (fieldValue !== undefined) {
@@ -781,7 +791,7 @@ export class GraphQLCacheManager extends EventEmitter {
 
   private setupDefaultFieldStrategies(): void {
     // User profile field strategy
-    this.config.fieldCacheStrategies.set("user.profile", {
+    this.ensureConfig().fieldCacheStrategies.set("user.profile", {
       fieldPath: "user.profile",
       ttl: 1800, // 30 minutes
       cacheKey: (parent, args, context) => `user:profile:${context.userId}`,
@@ -790,7 +800,7 @@ export class GraphQLCacheManager extends EventEmitter {
     });
 
     // Todo list field strategy
-    this.config.fieldCacheStrategies.set("user.todos", {
+    this.ensureConfig().fieldCacheStrategies.set("user.todos", {
       fieldPath: "user.todos",
       ttl: 600, // 10 minutes
       cacheKey: (parent, args, context) =>
@@ -800,7 +810,7 @@ export class GraphQLCacheManager extends EventEmitter {
     });
 
     // AI suggestions field strategy
-    this.config.fieldCacheStrategies.set("generateTaskSuggestions", {
+    this.ensureConfig().fieldCacheStrategies.set("generateTaskSuggestions", {
       fieldPath: "generateTaskSuggestions",
       ttl: 3600, // 1 hour
       cacheKey: (parent, args, context) =>

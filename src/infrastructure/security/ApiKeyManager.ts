@@ -83,11 +83,12 @@ export class ApiKeyManager extends SingletonService<ApiKeyManager> {
 
     // Store in database (simulated with memory for now)
     const cacheKey = `api_key:${apiKeyData.id}`;
-    await this.cache.set(cacheKey, apiKeyData, { ttl: 0 }); // No expiration
+    const cache = await this.getCache();
+    await cache.set(cacheKey, apiKeyData, { ttl: 0 }); // No expiration
 
     // Also store by prefix for quick lookup
     const prefixKey = `api_key_prefix:${keyPrefix}`;
-    await this.cache.set(prefixKey, apiKeyData.id, { ttl: 0 });
+    await cache.set(prefixKey, apiKeyData.id, { ttl: 0 });
 
     logger.info('API key generated', {
       keyId: apiKeyData.id,
@@ -110,13 +111,14 @@ export class ApiKeyManager extends SingletonService<ApiKeyManager> {
 
       // Get API key ID from prefix
       const prefixKey = `api_key_prefix:${keyPrefix}`;
-      const keyId = await this.cache.get<string>(prefixKey);
+      const cache = await this.getCache();
+      const keyId = await cache.get<string>(prefixKey);
 
       if (!keyId) return null;
 
       // Get full API key data
       const cacheKey = `api_key:${keyId}`;
-      const apiKey = await this.cache.get<ApiKey>(cacheKey);
+      const apiKey = await cache.get<ApiKey>(cacheKey);
 
       if (!apiKey) return null;
 
@@ -134,7 +136,7 @@ export class ApiKeyManager extends SingletonService<ApiKeyManager> {
 
       // Update last used timestamp
       apiKey.lastUsedAt = new Date();
-      await this.cache.set(cacheKey, apiKey, { ttl: 0 });
+      await cache.set(cacheKey, apiKey, { ttl: 0 });
 
       return apiKey;
     } catch (error) {
@@ -153,11 +155,12 @@ export class ApiKeyManager extends SingletonService<ApiKeyManager> {
     limit: number;
   }> {
     const now = new Date();
+    const cache = await this.getCache();
     const minuteKey = `rate_limit:${apiKey.id}:${now.getMinutes()}`;
     const dayKey = `rate_limit:${apiKey.id}:${now.toDateString()}`;
 
     // Check minute limit
-    const minuteCount = await this.cache.get<number>(minuteKey) || 0;
+    const minuteCount = await cache.get<number>(minuteKey) || 0;
     const minuteLimit = apiKey.rateLimit.rpm;
 
     if (minuteCount >= minuteLimit) {
@@ -170,7 +173,7 @@ export class ApiKeyManager extends SingletonService<ApiKeyManager> {
     }
 
     // Check daily limit
-    const dayCount = await this.cache.get<number>(dayKey) || 0;
+    const dayCount = await cache.get<number>(dayKey) || 0;
     const dayLimit = apiKey.rateLimit.daily;
 
     if (dayCount >= dayLimit) {
@@ -188,8 +191,8 @@ export class ApiKeyManager extends SingletonService<ApiKeyManager> {
 
     // Increment counters
     await Promise.all([
-      this.cache.set(minuteKey, minuteCount + 1, { ttl: 60 }),
-      this.cache.set(dayKey, dayCount + 1, { ttl: 86400 }), // 24 hours
+      cache.set(minuteKey, minuteCount + 1, { ttl: 60 }),
+      cache.set(dayKey, dayCount + 1, { ttl: 86400 }), // 24 hours
     ]);
 
     // Track usage

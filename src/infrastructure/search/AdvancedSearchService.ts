@@ -1,5 +1,5 @@
 import type { SpanOptions } from '@opentelemetry/api';
-import { AsyncSingletonService } from '@/lib/base/AsyncSingletonService.js';
+import { AsyncSingletonService } from '@/infrastructure/core/AsyncSingletonService.js';
 import { createLogger } from '@/lib/logger.js';
 import { ElasticsearchManager, type SearchQuery, type SearchResponse, type QueryDSL } from './ElasticsearchManager.js';
 import { RedisClusterManager } from '@/infrastructure/cache/RedisClusterManager.js';
@@ -324,10 +324,10 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
       this.elasticsearch = await ElasticsearchManager.getInstance();
       this.redis = RedisClusterManager.getInstance();
       this.tracing = await DistributedTracing.getInstance();
-      
+
       await this.loadSearchTemplates();
       await this.loadUserProfiles();
-      
+
       logger.info('AdvancedSearchService initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize AdvancedSearchService:', error);
@@ -347,46 +347,46 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
     return this.tracing.traceAsync('advanced_search', spanOptions, async () => {
       try {
         const startTime = Date.now();
-        
+
         // Build Elasticsearch query
         const elasticQuery = await this.buildElasticsearchQuery(request);
-        
+
         // Apply personalization
         if (request.context?.userId) {
           await this.applyPersonalization(elasticQuery, request.context.userId);
         }
-        
+
         // Execute search
         const elasticResponse = await this.elasticsearch.search<T>(indexName, elasticQuery);
-        
+
         // Transform response
         const results = await this.transformSearchResponse<T>(elasticResponse, request);
-        
+
         // Add facets if requested
         if (request.options?.facets) {
           results.facets = await this.buildFacets(elasticResponse);
         }
-        
+
         // Add suggestions if requested
         if (request.options?.suggest) {
           results.suggestions = await this.generateSuggestions(request.query, indexName);
         }
-        
+
         // Add spell corrections if requested
         if (request.options?.spell) {
           results.spellCorrections = await this.generateSpellCorrections(request.query);
         }
-        
+
         // Record analytics
         if (request.options?.analytics !== false) {
           await this.recordSearchAnalytics(indexName, request, results, Date.now() - startTime);
         }
-        
+
         // Update user profile
         if (request.context?.userId) {
           await this.updateUserProfile(request.context.userId, request, results);
         }
-        
+
         return results;
       } catch (error) {
         logger.error(`Advanced search failed on index ${indexName}:`, error);
@@ -405,12 +405,12 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
 
     return this.tracing.traceAsync('advanced_multi_search', spanOptions, async () => {
       try {
-        const searchPromises = searches.map(({ index, request }) => 
+        const searchPromises = searches.map(({ index, request }) =>
           this.search<T>(index, request)
         );
-        
+
         const results = await Promise.allSettled(searchPromises);
-        
+
         return results.map((result, index) => {
           if (result.status === 'fulfilled') {
             return result.value;
@@ -443,23 +443,23 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
         if (cached) {
           return cached;
         }
-        
+
         // Build completion query
         const completionQuery = this.buildCompletionQuery(request);
-        
+
         // Execute completion search
         const response = await this.elasticsearch.search(indexName, completionQuery);
-        
+
         // Transform to autocomplete results
         const result: AutoCompleteResult = {
           suggestions: this.extractCompletionSuggestions(response),
           total: response.hits.total.value,
           took: response.took
         };
-        
+
         // Cache results
         await this.redis.setObject(cacheKey, result, 300000); // 5 minutes
-        
+
         return result;
       } catch (error) {
         logger.error(`Autocomplete failed on index ${indexName}:`, error);
@@ -471,10 +471,10 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
   async createSearchTemplate(template: SearchTemplate): Promise<void> {
     try {
       await this.validateSearchTemplate(template);
-      
+
       this.templates.set(template.id, template);
       await this.redis.setObject(`search:template:${template.id}`, template, 86400000 * 30); // 30 days
-      
+
       logger.info(`Search template created: ${template.name} (${template.id})`);
     } catch (error) {
       logger.error('Failed to create search template:', error);
@@ -488,22 +488,22 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
       if (!template) {
         throw new Error(`Search template not found: ${templateId}`);
       }
-      
+
       // Validate parameters
       await this.validateTemplateParameters(template, parameters);
-      
+
       // Substitute parameters in query
       const query = this.substituteTemplateParameters(template.query, parameters);
-      
+
       // Execute search
       const response = await this.elasticsearch.search<T>(indexName, { query });
-      
+
       // Transform response
       const results = await this.transformSearchResponse<T>(response, { query: '', options: {} });
-      
+
       // Update template usage
       await this.updateTemplateUsage(templateId, response.took);
-      
+
       return results;
     } catch (error) {
       logger.error(`Template execution failed for ${templateId}:`, error);
@@ -514,7 +514,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
   async getUserProfile(userId: string): Promise<SearchProfile | null> {
     try {
       let profile = this.profiles.get(userId);
-      
+
       if (!profile) {
         // Try to load from Redis
         profile = await this.redis.getObject<SearchProfile>(`search:profile:${userId}`);
@@ -522,7 +522,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
           this.profiles.set(userId, profile);
         }
       }
-      
+
       return profile || null;
     } catch (error) {
       logger.error(`Failed to get user profile for ${userId}:`, error);
@@ -533,11 +533,11 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
   async updateUserProfile(userId: string, request: SearchRequest, results: SearchResults): Promise<void> {
     try {
       let profile = await this.getUserProfile(userId);
-      
+
       if (!profile) {
         profile = this.createDefaultProfile(userId);
       }
-      
+
       // Update search history
       profile.searchHistory.push({
         query: request.query,
@@ -547,22 +547,22 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
         sessionId: request.context?.sessionId || '',
         source: request.context?.source || 'web'
       });
-      
+
       // Keep only recent history (last 1000 searches)
       if (profile.searchHistory.length > 1000) {
         profile.searchHistory = profile.searchHistory.slice(-1000);
       }
-      
+
       // Update behavior patterns
       await this.updateSearchBehavior(profile, request, results);
-      
+
       // Update personalization
       await this.updatePersonalization(profile, request, results);
-      
+
       // Store profile
       this.profiles.set(userId, profile);
       await this.redis.setObject(`search:profile:${userId}`, profile, 86400000 * 30); // 30 days
-      
+
     } catch (error) {
       logger.error(`Failed to update user profile for ${userId}:`, error);
     }
@@ -577,10 +577,10 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
       minScore: request.options?.minScore,
       explain: request.options?.explain
     };
-    
+
     // Build main query
     query.query = await this.buildMainQuery(request);
-    
+
     // Add filters
     if (request.filters && request.filters.length > 0) {
       query.query = {
@@ -590,22 +590,22 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
         }
       };
     }
-    
+
     // Add sorting
     if (request.sort && request.sort.length > 0) {
       query.sort = this.buildSort(request.sort);
     }
-    
+
     // Add highlighting
     if (request.options?.highlight) {
       query.highlight = this.buildHighlight();
     }
-    
+
     // Add search after for cursor pagination
     if (request.pagination?.searchAfter) {
       query.searchAfter = request.pagination.searchAfter;
     }
-    
+
     return query;
   }
 
@@ -613,9 +613,9 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
     if (!request.query || request.query.trim() === '') {
       return { matchAll: {} };
     }
-    
+
     const searchType = request.options?.searchType || 'standard';
-    
+
     switch (searchType) {
       case 'phrase':
         return this.buildPhraseQuery(request);
@@ -680,7 +680,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
   private buildFilters(filters: SearchFilter[]): QueryDSL[] {
     return filters.map(filter => {
       let filterQuery: QueryDSL;
-      
+
       switch (filter.operator) {
         case 'equals':
           filterQuery = { term: { [filter.field]: { value: filter.value, boost: filter.boost } } };
@@ -709,7 +709,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
         default:
           filterQuery = { term: { [filter.field]: { value: filter.value } } };
       }
-      
+
       return filter.not ? { bool: { mustNot: [filterQuery] } } : filterQuery;
     });
   }
@@ -741,7 +741,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
   private async transformSearchResponse<T>(response: SearchResponse<T>, request: SearchRequest): Promise<SearchResults<T>> {
     const total = response.hits.total;
     const pagination = this.calculatePagination(request.pagination, total.value);
-    
+
     return {
       query: request.query,
       total,
@@ -766,7 +766,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
     const from = pagination?.from || (pagination?.page ? (pagination.page - 1) * size : 0);
     const currentPage = Math.floor(from / size) + 1;
     const totalPages = Math.ceil(total / size);
-    
+
     return {
       currentPage,
       totalPages,
@@ -780,7 +780,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
   private async buildFacets(response: SearchResponse): Promise<SearchFacet[]> {
     // Extract facets from aggregations
     const facets: SearchFacet[] = [];
-    
+
     if (response.aggregations) {
       for (const [key, agg] of Object.entries(response.aggregations)) {
         const facet = this.transformAggregationToFacet(key, agg);
@@ -789,7 +789,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
         }
       }
     }
-    
+
     return facets;
   }
 
@@ -806,7 +806,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
         }))
       };
     }
-    
+
     return null;
   }
 
@@ -819,9 +819,9 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
           size: 5
         }
       };
-      
+
       const response = await this.elasticsearch.suggest(indexName, suggester);
-      
+
       return this.transformSuggestionResponse(response);
     } catch (error) {
       logger.error('Failed to generate suggestions:', error);
@@ -831,7 +831,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
 
   private transformSuggestionResponse(response: any): SearchSuggestion[] {
     const suggestions: SearchSuggestion[] = [];
-    
+
     if (response.suggestions) {
       for (const suggestion of response.suggestions) {
         suggestions.push({
@@ -841,7 +841,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
         });
       }
     }
-    
+
     return suggestions;
   }
 
@@ -854,7 +854,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
   private async applyPersonalization(query: SearchQuery, userId: string): Promise<void> {
     const profile = await this.getUserProfile(userId);
     if (!profile) return;
-    
+
     // Apply user-specific boosts
     if (profile.personalization.boosts && Object.keys(profile.personalization.boosts).length > 0) {
       // Modify query to include personalization boosts
@@ -880,7 +880,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
 
   private extractCompletionSuggestions(response: SearchResponse): AutoCompleteSuggestion[] {
     const suggestions: AutoCompleteSuggestion[] = [];
-    
+
     if (response.suggest?.autocomplete) {
       for (const suggestion of response.suggest.autocomplete) {
         if (suggestion.options) {
@@ -894,7 +894,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
         }
       }
     }
-    
+
     return suggestions;
   }
 
@@ -935,7 +935,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
   private async updateSearchBehavior(profile: SearchProfile, request: SearchRequest, results: SearchResults): Promise<void> {
     // Update behavior metrics
     const history = profile.searchHistory;
-    
+
     if (history.length > 0) {
       profile.behavior.avgQueryLength = history.reduce((sum, h) => sum + h.query.length, 0) / history.length;
       profile.behavior.clickThroughRate = history.filter(h => h.clicked).length / history.length;
@@ -969,9 +969,9 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
         }
       }
     };
-    
+
     this.analyticsBuffer.push(analytics);
-    
+
     // Flush buffer if it gets too large
     if (this.analyticsBuffer.length >= 100) {
       await this.flushAnalytics();
@@ -980,7 +980,7 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
 
   private async flushAnalytics(): Promise<void> {
     if (this.analyticsBuffer.length === 0) return;
-    
+
     try {
       // Store analytics data
       await this.redis.listPush('search:analytics', this.analyticsBuffer);
@@ -1030,33 +1030,33 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
       if (param.required && !(param.name in parameters)) {
         throw new Error(`Required parameter missing: ${param.name}`);
       }
-      
+
       if (param.validation && param.name in parameters) {
         const value = parameters[param.name];
-        
+
         if (param.validation.pattern && typeof value === 'string') {
           const regex = new RegExp(param.validation.pattern);
           if (!regex.test(value)) {
             throw new Error(`Parameter ${param.name} does not match pattern: ${param.validation.pattern}`);
           }
         }
-        
+
         if (param.validation.min !== undefined && typeof value === 'number') {
           if (value < param.validation.min) {
             throw new Error(`Parameter ${param.name} must be at least ${param.validation.min}`);
           }
         }
-        
+
         if (param.validation.max !== undefined && typeof value === 'number') {
           if (value > param.validation.max) {
             throw new Error(`Parameter ${param.name} must be at most ${param.validation.max}`);
           }
         }
-        
+
         if (param.validation.enum && !param.validation.enum.includes(value)) {
           throw new Error(`Parameter ${param.name} must be one of: ${param.validation.enum.join(', ')}`);
         }
-        
+
         if (param.validation.custom && !param.validation.custom(value)) {
           throw new Error(`Parameter ${param.name} failed custom validation`);
         }
@@ -1069,23 +1069,23 @@ export class AdvancedSearchService extends AsyncSingletonService<AdvancedSearchS
     // In a real implementation, you would use a more sophisticated template engine
     const queryString = JSON.stringify(query);
     let substituted = queryString;
-    
+
     for (const [key, value] of Object.entries(parameters)) {
       const placeholder = `{{${key}}}`;
       substituted = substituted.replace(new RegExp(placeholder, 'g'), JSON.stringify(value));
     }
-    
+
     return JSON.parse(substituted);
   }
 
   private async updateTemplateUsage(templateId: string, responseTime: number): Promise<void> {
     const template = this.templates.get(templateId);
     if (!template) return;
-    
+
     template.usage.count++;
     template.usage.lastUsed = new Date();
     template.usage.avgResponseTime = (template.usage.avgResponseTime + responseTime) / 2;
-    
+
     // Store updated template
     await this.redis.setObject(`search:template:${templateId}`, template, 86400000 * 30); // 30 days
   }

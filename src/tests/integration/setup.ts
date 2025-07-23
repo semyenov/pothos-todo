@@ -35,7 +35,6 @@ async function cleanDatabase() {
   await prisma.todo.deleteMany();
   await prisma.todoList.deleteMany();
   await prisma.session.deleteMany();
-  await prisma.account.deleteMany();
   await prisma.user.deleteMany();
 }
 

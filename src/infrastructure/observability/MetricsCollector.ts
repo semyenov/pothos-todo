@@ -5,7 +5,7 @@ import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions'
 import { MeterProvider, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { PrometheusExporter } from '@opentelemetry/exporter-prometheus';
 import { logger } from '@/logger';
-import EventEmitter from 'events';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 import { performance } from 'perf_hooks';
 
 export interface MetricsConfig {
@@ -52,11 +52,18 @@ export interface MetricSnapshot {
   labels: Record<string, string>;
 }
 
-export class MetricsCollector extends EventEmitter {
-  private static instance: MetricsCollector;
+const defaultConfig: MetricsConfig = {
+  serviceName: 'pothos-todo',
+  serviceVersion: '1.0.0',
+  environment: 'development',
+  exportInterval: 30000,
+  enablePrometheus: true,
+  enableOTLP: false
+};
+export class MetricsCollector extends EventEmitterSingletonService {
   private config: MetricsConfig;
   private meter: any;
-  private meterProvider: MeterProvider;
+  private meterProvider: MeterProvider = new MeterProvider();
   private instruments: Map<string, any> = new Map();
   private businessMetrics: BusinessMetric[] = [];
   private metricHistory: Map<string, MetricSnapshot[]> = new Map();
@@ -64,17 +71,25 @@ export class MetricsCollector extends EventEmitter {
   private alertStates: Map<string, { triggered: boolean; since: number }> = new Map();
   private initialized: boolean = false;
 
-  private constructor(config: MetricsConfig) {
+  constructor(config?: MetricsConfig) {
     super();
-    this.config = config;
+    // Default config - can be configured later
+    this.config = config || defaultConfig;
     this.setupMeterProvider();
   }
 
-  public static getInstance(config?: MetricsConfig): MetricsCollector {
-    if (!MetricsCollector.instance && config) {
-      MetricsCollector.instance = new MetricsCollector(config);
-    }
-    return MetricsCollector.instance;
+  // public static override getInstance(config?: MetricsConfig): MetricsCollector {
+  //   const metricsCollector = super.getInstance() as MetricsCollector;
+  //   if (metricsCollector && config) {
+  //     metricsCollector.configure(config);
+  //   }
+  //   return metricsCollector;
+  // }
+
+  // Configure metrics collection
+  public configure(config: MetricsConfig): void {
+    this.config = { ...this.config, ...config };
+    this.setupMeterProvider();
   }
 
   /**
@@ -326,12 +341,12 @@ export class MetricsCollector extends EventEmitter {
       count: values.length,
       sum,
       avg: sum / values.length,
-      min: values[0],
-      max: values[values.length - 1],
+      min: values[0] || 0,
+      max: values[values.length - 1] || 0,
       percentiles: {
-        p50: values[Math.floor(values.length * 0.5)],
-        p95: values[Math.floor(values.length * 0.95)],
-        p99: values[Math.floor(values.length * 0.99)],
+        p50: values[Math.floor(values.length * 0.5)] || 0,
+        p95: values[Math.floor(values.length * 0.95)] || 0,
+        p99: values[Math.floor(values.length * 0.99)] || 0,
       },
     };
   }
@@ -795,5 +810,7 @@ export class MetricsCollector extends EventEmitter {
 
 // Export singleton factory
 export const createMetricsCollector = (config: MetricsConfig) => {
-  return MetricsCollector.getInstance(config);
+  const metricsCollector = new MetricsCollector(config);
+  metricsCollector.configure(config);
+  return metricsCollector;
 };

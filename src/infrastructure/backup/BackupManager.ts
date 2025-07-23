@@ -1,10 +1,11 @@
 import { logger } from '@/logger';
-import { MetricsCollector } from '../observability/MetricsCollector';
-import { DistributedTracing } from '../observability/DistributedTracing';
-import { Container } from '../container/Container';
+import { MetricsCollector } from '../observability/MetricsCollector.js';
+import { DistributedTracing } from '../observability/DistributedTracing.js';
+import { Container } from '../container/Container.js';
 import { createHash } from 'crypto';
-import { compress, decompress } from 'lz4';
+// import { compress, decompress } from 'lz4'; // Optional dependency - fallback to native compression
 import EventEmitter from 'events';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface BackupConfiguration {
   strategy: 'full' | 'incremental' | 'differential' | 'continuous';
@@ -118,12 +119,11 @@ export interface BackupStorage {
   };
 }
 
-export class BackupManager extends EventEmitter {
-  private static instance: BackupManager;
-  private config: BackupConfiguration;
+export class BackupManager extends EventEmitterSingletonService<BackupManager> {
+  private config: BackupConfiguration | null = null;
   private metrics: MetricsCollector;
   private tracing: DistributedTracing;
-  private container: Container;
+  private container: Container | null = null;
   
   private backupMetadata: Map<string, BackupMetadata> = new Map();
   private activeBackups: Map<string, NodeJS.Timeout> = new Map();
@@ -136,24 +136,27 @@ export class BackupManager extends EventEmitter {
   private storageMonitor?: NodeJS.Timeout;
   private healthChecker?: NodeJS.Timeout;
 
-  private constructor(config: BackupConfiguration) {
+  protected constructor() {
     super();
-    this.config = config;
     this.metrics = MetricsCollector.getInstance();
     this.tracing = DistributedTracing.getInstance();
-    this.container = Container.getInstance();
+  }
+
+  public static getInstance(): BackupManager {
+    return super.getInstance();
+  }
+
+  /**
+   * Configure the BackupManager with settings
+   */
+  public async configure(config: BackupConfiguration): Promise<void> {
+    this.config = config;
+    this.container = await Container.getInstance();
     
     this.initializeStorage();
     this.setupScheduler();
     this.loadRecoveryPlans();
     this.startMonitoring();
-  }
-
-  public static getInstance(config?: BackupConfiguration): BackupManager {
-    if (!BackupManager.instance && config) {
-      BackupManager.instance = new BackupManager(config);
-    }
-    return BackupManager.instance;
   }
 
   /**

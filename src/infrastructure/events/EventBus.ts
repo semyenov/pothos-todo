@@ -1,5 +1,6 @@
 import { DomainEvent } from '@/domain/events/DomainEvent.js';
 import { logger } from '@/logger.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface EventBusOptions {
   retryAttempts?: number;
@@ -44,14 +45,31 @@ export interface EventBusAdapter {
  * Advanced Event Bus with support for multiple message brokers
  * and production-ready features like retry, DLQ, and metrics
  */
-export class EventBus {
-  private static instance: EventBus;
+export class EventBus extends SingletonService<EventBus> {
   private adapters: Map<string, EventBusAdapter> = new Map();
   private handlers: Map<string, EventHandler[]> = new Map();
   private options: EventBusOptions;
   private metrics: EventBusMetrics;
 
-  private constructor(options: EventBusOptions = {}) {
+  protected constructor() {
+    super();
+    this.options = {
+      retryAttempts: 3,
+      retryDelay: 1000,
+      deadLetterQueue: true,
+      enableMetrics: true,
+    };
+    this.metrics = new EventBusMetrics();
+  }
+
+  static getInstance(): EventBus {
+    return super.getInstance();
+  }
+
+  /**
+   * Configure the EventBus with options
+   */
+  public configure(options: EventBusOptions = {}): void {
     this.options = {
       retryAttempts: 3,
       retryDelay: 1000,
@@ -59,14 +77,6 @@ export class EventBus {
       enableMetrics: true,
       ...options,
     };
-    this.metrics = new EventBusMetrics();
-  }
-
-  static getInstance(options?: EventBusOptions): EventBus {
-    if (!EventBus.instance) {
-      EventBus.instance = new EventBus(options);
-    }
-    return EventBus.instance;
   }
 
   /**

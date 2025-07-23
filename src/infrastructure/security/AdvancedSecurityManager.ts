@@ -3,6 +3,7 @@ import { MetricsCollector } from '../monitoring/MetricsCollector.js';
 import { CacheManager } from '../cache/CacheManager.js';
 import { hash } from 'ohash';
 import type { H3Event } from 'h3';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface SecurityRule {
   name: string;
@@ -48,13 +49,12 @@ export interface SecurityMetrics {
   threatLevel: 'low' | 'medium' | 'high' | 'critical';
 }
 
-export class AdvancedSecurityManager {
-  private static instance: AdvancedSecurityManager;
+export class AdvancedSecurityManager extends SingletonService<AdvancedSecurityManager> {
   private rules = new Map<string, SecurityRule>();
   private rateLimiters = new Map<string, RateLimitConfig>();
   private securityEvents: SecurityEvent[] = [];
-  private metrics: MetricsCollector;
-  private cache: CacheManager;
+  private metrics: MetricsCollector | null = null;
+  private cache: CacheManager | null = null;
   private monitoringInterval?: NodeJS.Timeout;
 
   // IP reputation tracking
@@ -69,18 +69,37 @@ export class AdvancedSecurityManager {
   private geoBlockedCountries = new Set<string>();
   private geoAllowedCountries = new Set<string>();
 
-  private constructor() {
+  protected constructor() {
+    super();
+  }
+
+  public initialize(): void {
     this.metrics = MetricsCollector.getInstance();
     this.cache = CacheManager.getInstance();
     this.setupDefaultRules();
     this.startSecurityMonitoring();
   }
 
-  public static getInstance(): AdvancedSecurityManager {
-    if (!AdvancedSecurityManager.instance) {
-      AdvancedSecurityManager.instance = new AdvancedSecurityManager();
+  private ensureMetrics(): MetricsCollector {
+    if (!this.metrics) {
+      throw new Error('AdvancedSecurityManager not initialized');
     }
-    return AdvancedSecurityManager.instance;
+    return this.metrics;
+  }
+
+  private ensureCache(): CacheManager {
+    if (!this.cache) {
+      throw new Error('AdvancedSecurityManager not initialized');
+    }
+    return this.cache;
+  }
+
+  public static getInstance(): AdvancedSecurityManager {
+    const instance = super.getInstance();
+    if (!instance.metrics) {
+      instance.initialize();
+    }
+    return instance;
   }
 
   /**
@@ -220,7 +239,7 @@ export class AdvancedSecurityManager {
       }
 
       // Record successful security check
-      this.metrics.recordMetric('security.request.allowed', 1, {
+      this.ensureMetrics().recordMetric('security.request.allowed', 1, {
         ip: this.hashIP(ip),
         userAgent: hash(userAgent),
         endpoint: url,
@@ -235,7 +254,7 @@ export class AdvancedSecurityManager {
       return { allowed: true, action: 'allow' };
     } finally {
       const duration = Date.now() - startTime;
-      this.metrics.recordMetric('security.check.duration', duration);
+      this.ensureMetrics().recordMetric('security.check.duration', duration);
     }
   }
 
@@ -250,7 +269,7 @@ export class AdvancedSecurityManager {
     try {
       // Check cache first
       const cacheKey = `ip_reputation:${hash(ip)}`;
-      let reputation = await this.cache.get<any>(cacheKey);
+      let reputation = await this.ensureCache().get<any>(cacheKey);
 
       if (!reputation) {
         // In a real implementation, you would check external threat intelligence APIs
@@ -258,7 +277,7 @@ export class AdvancedSecurityManager {
         reputation = await this.calculateIPReputation(ip);
         
         // Cache for 1 hour
-        await this.cache.set(cacheKey, reputation, { ttl: 3600 });
+        await this.ensureCache().set(cacheKey, reputation, { ttl: 3600 });
       }
 
       const threshold = 30; // IPs with score below 30 are blocked
@@ -306,7 +325,7 @@ export class AdvancedSecurityManager {
     
     try {
       // Get current request count
-      const current = await this.cache.get<number>(key) || 0;
+      const current = await this.ensureCache().get<number>(key) || 0;
       
       if (current >= config.maxRequests) {
         return {
@@ -321,7 +340,7 @@ export class AdvancedSecurityManager {
       }
 
       // Increment counter
-      await this.cache.set(key, current + 1, { ttl: Math.ceil(config.windowMs / 1000) });
+      await this.ensureCache().set(key, current + 1, { ttl: Math.ceil(config.windowMs / 1000) });
       
       return { allowed: true };
 
@@ -423,7 +442,7 @@ export class AdvancedSecurityManager {
     });
 
     // Record metrics
-    this.metrics.recordMetric('security.event', 1, {
+    this.ensureMetrics().recordMetric('security.event', 1, {
       type: event.type,
       severity: event.severity,
       action: event.action,
@@ -453,7 +472,7 @@ export class AdvancedSecurityManager {
     const throttledRequests = recentEvents.filter(e => e.action === 'throttle').length;
 
     // Get total requests from metrics
-    const totalRequests = await this.metrics.getMetric('security.request.total') || 0;
+    const totalRequests = await this.ensureMetrics().getMetric('security.request.total') || 0;
 
     // Top blocked IPs
     const ipCounts = new Map<string, number>();

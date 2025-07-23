@@ -82,7 +82,7 @@ builder.queryType({
       },
       resolve: async (query, root, args, _ctx) => {
         return prisma.todo.findUnique({
-          where: { id: args.id },
+          where: { id: args.id as string },
         });
       },
     }),
@@ -117,7 +117,7 @@ builder.queryType({
       },
       resolve: async (query, root, args, _ctx) => {
         return prisma.todoList.findUnique({
-          where: { id: args.id },
+          where: { id: args.id as string },
         });
       },
     }),
@@ -153,7 +153,7 @@ builder.objectType('User', {
   fields: (t) => ({
     id: t.id({ 
       resolve: (user) => user.id,
-      external: true,
+      // external: true, // Not supported in field definition
     }),
     todos: t.prismaField({
       type: ['Todo'],

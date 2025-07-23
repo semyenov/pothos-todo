@@ -1,6 +1,6 @@
 import { AdvancedEdgeComputingManager } from './AdvancedEdgeComputingManager.js';
 import { logger } from '@/logger';
-import EventEmitter from 'events';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface CDNOptimizationRule {
   id: string;
@@ -66,8 +66,7 @@ export interface GeoOptimization {
   };
 }
 
-export class IntelligentCDNOptimizer extends EventEmitter {
-  private static instance: IntelligentCDNOptimizer;
+export class IntelligentCDNOptimizer extends EventEmitterSingletonService<IntelligentCDNOptimizer> {
   private edgeManager: AdvancedEdgeComputingManager;
   private optimizationRules: Map<string, CDNOptimizationRule> = new Map();
   private contentOptimization: ContentOptimization;
@@ -76,7 +75,7 @@ export class IntelligentCDNOptimizer extends EventEmitter {
   private optimizationInterval: NodeJS.Timer | null = null;
   private mlModel: any = null; // ML model for intelligent optimization
 
-  private constructor() {
+  protected constructor() {
     super();
     this.initializeDefaultOptimizations();
     this.initializePerformanceMetrics();
@@ -84,10 +83,7 @@ export class IntelligentCDNOptimizer extends EventEmitter {
   }
 
   public static getInstance(): IntelligentCDNOptimizer {
-    if (!IntelligentCDNOptimizer.instance) {
-      IntelligentCDNOptimizer.instance = new IntelligentCDNOptimizer();
-    }
-    return IntelligentCDNOptimizer.instance;
+    return super.getInstance();
   }
 
   /**

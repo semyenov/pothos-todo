@@ -6,7 +6,7 @@ import boxen from 'boxen';
 
 export default class Interactive extends Command {
   static override description = 'Interactive CLI mode for Pothos GraphQL Federation';
-  
+
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
     '<%= config.bin %>',
@@ -19,10 +19,10 @@ export default class Interactive extends Command {
       horizontalLayout: 'default',
       verticalLayout: 'default',
     });
-    
+
     console.log(chalk.cyan(banner));
     console.log(chalk.gray('GraphQL Federation Development Tools\n'));
-    
+
     await this.showMainMenu();
   }
 
@@ -117,7 +117,6 @@ export default class Interactive extends Command {
       case 'exit':
         this.log(chalk.green('👋 Goodbye!'));
         process.exit(0);
-        break;
       default:
         this.log(chalk.red('Unknown action'));
         break;

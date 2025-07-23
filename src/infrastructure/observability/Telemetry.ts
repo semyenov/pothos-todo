@@ -3,13 +3,14 @@ import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import * as resources from '@opentelemetry/resources';
 const Resource = resources.Resource || resources.default?.Resource;
 import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
-import { JaegerExporter } from '@opentelemetry/exporter-jaeger';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { registerInstrumentations } from '@opentelemetry/instrumentation';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { GraphQLInstrumentation } from '@opentelemetry/instrumentation-graphql';
-import { RedisInstrumentation } from '@opentelemetry/instrumentation-redis-4';
+// Redis instrumentation not available - removed
 import { logger } from '@/logger.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface TelemetryConfig {
   serviceName: string;
@@ -23,13 +24,16 @@ export interface TelemetryConfig {
 /**
  * Advanced Telemetry System with OpenTelemetry
  */
-export class TelemetrySystem {
-  private static instance: TelemetrySystem;
-  private provider: NodeTracerProvider;
-  private tracer: Tracer;
-  private config: TelemetryConfig;
+export class TelemetrySystem extends SingletonService<TelemetrySystem> {
+  private provider: NodeTracerProvider | null = null;
+  private tracer: Tracer | null = null;
+  private config: TelemetryConfig | null = null;
 
-  private constructor(config: TelemetryConfig) {
+  protected constructor() {
+    super();
+  }
+
+  public configure(config: TelemetryConfig): void {
     this.config = {
       samplingRate: 1.0,
       enableAutoInstrumentation: true,
@@ -48,37 +52,49 @@ export class TelemetrySystem {
     }
   }
 
-  static initialize(config: TelemetryConfig): TelemetrySystem {
-    if (!TelemetrySystem.instance) {
-      TelemetrySystem.instance = new TelemetrySystem(config);
+  private ensureConfig(): TelemetryConfig {
+    if (!this.config) {
+      throw new Error('TelemetrySystem not configured');
     }
-    return TelemetrySystem.instance;
+    return this.config;
   }
 
-  static getInstance(): TelemetrySystem {
-    if (!TelemetrySystem.instance) {
-      throw new Error('TelemetrySystem not initialized');
+  private ensureTracer(): Tracer {
+    if (!this.tracer) {
+      throw new Error('TelemetrySystem tracer not initialized');
     }
-    return TelemetrySystem.instance;
+    return this.tracer;
+  }
+
+  static initialize(config: TelemetryConfig): TelemetrySystem {
+    const instance = super.getInstance();
+    if (!instance.config) {
+      instance.configure(config);
+    }
+    return instance;
+  }
+
+  static async getInstance(): Promise<TelemetrySystem> {
+    return super.getInstance();
   }
 
   private initializeProvider(): NodeTracerProvider {
     const provider = new NodeTracerProvider({
       resource: new Resource({
-        [SemanticResourceAttributes.SERVICE_NAME]: this.config.serviceName,
-        [SemanticResourceAttributes.SERVICE_VERSION]: this.config.serviceVersion,
-        [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]: this.config.environment,
+        [SemanticResourceAttributes.SERVICE_NAME]: this.ensureConfig().serviceName,
+        [SemanticResourceAttributes.SERVICE_VERSION]: this.ensureConfig().serviceVersion,
+        [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]: this.ensureConfig().environment,
       }),
     });
 
     // Configure Jaeger exporter
-    if (this.config.jaegerEndpoint) {
-      const jaegerExporter = new JaegerExporter({
-        endpoint: this.config.jaegerEndpoint,
+    if (this.ensureConfig().jaegerEndpoint) {
+      const traceExporter = new OTLPTraceExporter({
+        url: this.ensureConfig().jaegerEndpoint || 'http://localhost:4318/v1/traces',
       });
 
       provider.addSpanProcessor(
-        new BatchSpanProcessor(jaegerExporter, {
+        new BatchSpanProcessor(traceExporter, {
           maxQueueSize: 100,
           maxExportBatchSize: 10,
           scheduledDelayMillis: 500,
@@ -106,7 +122,7 @@ export class TelemetrySystem {
           allowValues: true,
           depth: 3,
         }),
-        new RedisInstrumentation(),
+        // Redis instrumentation removed - package not available
       ],
     });
 
@@ -124,7 +140,7 @@ export class TelemetrySystem {
       parent?: any;
     }
   ) {
-    return this.tracer.startSpan(name, {
+    return this.ensureTracer().startSpan(name, {
       kind: options?.kind || SpanKind.INTERNAL,
       attributes: options?.attributes,
     }, options?.parent || context.active());

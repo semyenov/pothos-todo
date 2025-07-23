@@ -4,7 +4,7 @@ import prisma from "../../lib/subgraph-prisma.js";
 import type { Todo, TodoList } from "@prisma/client";
 
 // Create a PubSub instance for this subgraph
-export const pubsub = new PubSub();
+export const pubsub = new PubSub() as PubSub & { asyncIterator: (topics: string[]) => AsyncIterator<any> };
 
 // Subscription topics
 export const TODO_EVENTS = {

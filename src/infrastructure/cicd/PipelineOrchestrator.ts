@@ -1,5 +1,5 @@
 import type { SpanOptions } from '@opentelemetry/api';
-import { AsyncSingletonService } from '@/lib/base/AsyncSingletonService.js';
+import { AsyncSingletonService } from '@/infrastructure/core/AsyncSingletonService.js';
 import { createLogger } from '@/lib/logger.js';
 import { RedisClusterManager } from '@/infrastructure/cache/RedisClusterManager.js';
 import { DistributedTracing } from '@/infrastructure/observability/DistributedTracing.js';
@@ -513,12 +513,12 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
     try {
       this.redis = RedisClusterManager.getInstance();
       this.tracing = await DistributedTracing.getInstance();
-      
+
       await this.loadPipelines();
       await this.loadTemplates();
       await this.loadDeploymentTargets();
       await this.startWorkers();
-      
+
       logger.info('PipelineOrchestrator initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize PipelineOrchestrator:', error);
@@ -538,13 +538,13 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
     return this.tracing.traceAsync('create_pipeline', spanOptions, async () => {
       try {
         await this.validatePipeline(pipeline);
-        
+
         pipeline.metadata.created = new Date();
         pipeline.metadata.lastModified = new Date();
-        
+
         this.pipelines.set(pipeline.id, pipeline);
         await this.redis.setObject(`cicd:pipeline:${pipeline.id}`, pipeline, 86400000 * 30); // 30 days
-        
+
         logger.info(`Pipeline created: ${pipeline.name} (${pipeline.id})`);
       } catch (error) {
         logger.error(`Failed to create pipeline ${pipeline.id}:`, error);
@@ -597,9 +597,9 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
 
         // Add to execution queue
         this.executionQueue.push(execution.id);
-        
+
         logger.info(`Pipeline execution queued: ${pipelineId} (${execution.id})`);
-        
+
         return execution;
       } catch (error) {
         logger.error(`Failed to execute pipeline ${pipelineId}:`, error);
@@ -631,7 +631,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
       execution.duration = execution.endTime.getTime() - execution.startTime.getTime();
 
       await this.storeExecution(execution);
-      
+
       logger.info(`Pipeline execution cancelled: ${executionId}`);
     } catch (error) {
       logger.error(`Failed to cancel execution ${executionId}:`, error);
@@ -642,7 +642,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
   async getExecutionStatus(executionId: string): Promise<PipelineExecution | null> {
     try {
       let execution = this.executions.get(executionId);
-      
+
       if (!execution) {
         // Try to load from storage
         execution = await this.redis.getObject<PipelineExecution>(`cicd:execution:${executionId}`);
@@ -662,17 +662,17 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
     try {
       // Get execution IDs for this pipeline
       const executionIds = await this.redis.getList<string>(`cicd:pipeline:${pipelineId}:executions`) || [];
-      
+
       // Load executions
       const executions: PipelineExecution[] = [];
-      
+
       for (const executionId of executionIds.slice(-limit)) {
         const execution = await this.getExecutionStatus(executionId);
         if (execution) {
           executions.push(execution);
         }
       }
-      
+
       return executions.sort((a, b) => b.number - a.number);
     } catch (error) {
       logger.error(`Failed to get pipeline executions for ${pipelineId}:`, error);
@@ -683,10 +683,10 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
   async createTemplate(template: PipelineTemplate): Promise<void> {
     try {
       await this.validateTemplate(template);
-      
+
       this.templates.set(template.id, template);
       await this.redis.setObject(`cicd:template:${template.id}`, template, 86400000 * 30); // 30 days
-      
+
       logger.info(`Pipeline template created: ${template.name} (${template.id})`);
     } catch (error) {
       logger.error(`Failed to create template ${template.id}:`, error);
@@ -706,14 +706,14 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
 
       // Substitute parameters in template
       const pipeline = this.substituteTemplateParameters(template.pipeline, parameters);
-      
+
       // Generate new ID for pipeline
       pipeline.id = this.generatePipelineId();
       pipeline.metadata.created = new Date();
       pipeline.metadata.lastModified = new Date();
 
       await this.createPipeline(pipeline);
-      
+
       // Update template usage
       template.usage.count++;
       template.usage.lastUsed = new Date();
@@ -729,10 +729,10 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
   async addDeploymentTarget(target: DeploymentTarget): Promise<void> {
     try {
       await this.validateDeploymentTarget(target);
-      
+
       this.targets.set(target.id, target);
       await this.redis.setObject(`cicd:target:${target.id}`, target, 86400000 * 30); // 30 days
-      
+
       logger.info(`Deployment target added: ${target.name} (${target.id})`);
     } catch (error) {
       logger.error(`Failed to add deployment target ${target.id}:`, error);
@@ -743,7 +743,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
   async generateReport(pipelineId: string, timeRange: { start: Date; end: Date }): Promise<PipelineReport> {
     try {
       const executions = await this.getPipelineExecutions(pipelineId);
-      const filteredExecutions = executions.filter(e => 
+      const filteredExecutions = executions.filter(e =>
         e.startTime >= timeRange.start && e.startTime <= timeRange.end
       );
 
@@ -787,13 +787,13 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
       try {
         stage.status = ExecutionStatus.RUNNING;
         stage.startTime = new Date();
-        
+
         await this.storeExecution(execution);
 
         // Check stage conditions
         const pipeline = this.pipelines.get(execution.pipelineId)!;
         const stageDefinition = pipeline.stages.find(s => s.id === stage.stageId)!;
-        
+
         const conditionsPass = await this.evaluateStageConditions(stageDefinition.conditions, execution);
         if (!conditionsPass) {
           stage.status = ExecutionStatus.SUCCESS; // Skip stage
@@ -812,7 +812,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
         // Check if all jobs succeeded
         const allJobsSucceeded = stage.jobs.every(job => job.status === ExecutionStatus.SUCCESS);
         stage.status = allJobsSucceeded ? ExecutionStatus.SUCCESS : ExecutionStatus.FAILURE;
-        
+
         stage.endTime = new Date();
         stage.duration = stage.endTime.getTime() - stage.startTime.getTime();
 
@@ -823,7 +823,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
         stage.status = ExecutionStatus.FAILURE;
         stage.endTime = new Date();
         stage.duration = stage.startTime ? stage.endTime.getTime() - stage.startTime.getTime() : 0;
-        
+
         logger.error(`Stage execution failed: ${stage.name}`, error);
         throw error;
       }
@@ -847,7 +847,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
 
         // Execute job based on type
         const exitCode = await this.executeJobByType(job);
-        
+
         job.exitCode = exitCode;
         job.status = exitCode === 0 ? ExecutionStatus.SUCCESS : ExecutionStatus.FAILURE;
         job.endTime = new Date();
@@ -866,7 +866,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
         job.endTime = new Date();
         job.duration = job.startTime ? job.endTime.getTime() - job.startTime.getTime() : 0;
         job.logs.push(`Job failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        
+
         logger.error(`Job execution failed: ${job.name}`, error);
       }
     });
@@ -875,10 +875,10 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
   private async executeJobByType(job: JobExecution): Promise<number> {
     // Simulate job execution based on type
     // In a real implementation, this would execute actual jobs
-    
+
     const simulatedDuration = Math.random() * 30000 + 5000; // 5-35 seconds
     await this.wait(simulatedDuration);
-    
+
     // Simulate 90% success rate
     return Math.random() < 0.9 ? 0 : 1;
   }
@@ -886,7 +886,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
   private async executeJobsSequentially(jobs: JobExecution[]): Promise<void> {
     for (const job of jobs) {
       await this.executeJob(job);
-      
+
       if (job.status === ExecutionStatus.FAILURE) {
         // Stop execution on first failure
         break;
@@ -909,7 +909,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
       // Wait for at least one job to complete
       if (runningJobs.length > 0) {
         await Promise.race(runningJobs);
-        
+
         // Remove completed jobs
         for (let i = runningJobs.length - 1; i >= 0; i--) {
           const isSettled = await Promise.allSettled([runningJobs[i]]);
@@ -1020,11 +1020,11 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
 
   private resolveVariables(variables: PipelineVariable[]): Record<string, string> {
     const resolved: Record<string, string> = {};
-    
+
     for (const variable of variables) {
       resolved[variable.name] = variable.value;
     }
-    
+
     return resolved;
   }
 
@@ -1056,7 +1056,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
     // Send notifications based on stage configuration
     for (const notification of stageDefinition.configuration.notifications) {
       const event = stage.status === ExecutionStatus.SUCCESS ? NotificationEvent.STAGE_SUCCESS : NotificationEvent.STAGE_FAILURE;
-      
+
       if (notification.events.includes(event)) {
         await this.sendNotification(notification, execution, stage);
       }
@@ -1066,7 +1066,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
   private async sendNotification(config: NotificationConfig, execution: PipelineExecution, stage?: StageExecution): Promise<void> {
     try {
       const message = this.buildNotificationMessage(config, execution, stage);
-      
+
       switch (config.type) {
         case 'email':
           await this.sendEmailNotification(config, message);
@@ -1088,7 +1088,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
   private buildNotificationMessage(config: NotificationConfig, execution: PipelineExecution, stage?: StageExecution): string {
     const pipeline = this.pipelines.get(execution.pipelineId);
     const pipelineName = pipeline?.name || execution.pipelineId;
-    
+
     if (stage) {
       return `Stage "${stage.name}" in pipeline "${pipelineName}" has ${stage.status}`;
     } else {
@@ -1115,12 +1115,12 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
     const totalExecutions = executions.length;
     const successfulExecutions = executions.filter(e => e.status === ExecutionStatus.SUCCESS).length;
     const successRate = totalExecutions > 0 ? (successfulExecutions / totalExecutions) * 100 : 0;
-    
+
     const durations = executions.filter(e => e.duration).map(e => e.duration!);
     const avgDuration = durations.length > 0 ? durations.reduce((sum, d) => sum + d, 0) / durations.length : 0;
-    
+
     // Calculate other metrics...
-    
+
     return {
       totalExecutions,
       successRate,
@@ -1146,15 +1146,15 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
 
   private generateRecommendations(metrics: ReportMetrics, trends: ReportTrend[]): string[] {
     const recommendations: string[] = [];
-    
+
     if (metrics.successRate < 80) {
       recommendations.push('Consider improving pipeline stability - success rate is below 80%');
     }
-    
+
     if (metrics.avgDuration > 3600000) { // 1 hour
       recommendations.push('Pipeline duration is high - consider optimizing job execution');
     }
-    
+
     return recommendations;
   }
 
@@ -1164,7 +1164,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
       const worker = setInterval(async () => {
         await this.processExecutionQueue();
       }, 5000); // Check every 5 seconds
-      
+
       this.workers.add(worker);
     }
   }
@@ -1176,7 +1176,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
 
     const executionId = this.executionQueue.shift()!;
     const execution = this.executions.get(executionId);
-    
+
     if (!execution || execution.status !== ExecutionStatus.QUEUED) {
       return;
     }
@@ -1186,15 +1186,15 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
       await this.storeExecution(execution);
 
       const pipeline = this.pipelines.get(execution.pipelineId)!;
-      
+
       // Execute stages in dependency order
       const sortedStages = this.topologicalSort(pipeline.stages);
-      
+
       for (const stageId of sortedStages) {
         const stageExecution = execution.stages.find(s => s.stageId === stageId)!;
-        
+
         await this.executeStage(execution, stageExecution);
-        
+
         if (stageExecution.status === ExecutionStatus.FAILURE) {
           execution.status = ExecutionStatus.FAILURE;
           break;
@@ -1216,9 +1216,9 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
       execution.status = ExecutionStatus.FAILURE;
       execution.endTime = new Date();
       execution.duration = execution.endTime.getTime() - execution.startTime.getTime();
-      
+
       await this.storeExecution(execution);
-      
+
       logger.error(`Pipeline execution failed: ${executionId}`, error);
     }
   }
@@ -1226,25 +1226,25 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
   private topologicalSort(stages: PipelineStage[]): string[] {
     const visited = new Set<string>();
     const result: string[] = [];
-    
+
     const visit = (stageId: string) => {
       if (visited.has(stageId)) return;
-      
+
       const stage = stages.find(s => s.id === stageId);
       if (!stage) return;
-      
+
       for (const dependency of stage.dependsOn) {
         visit(dependency);
       }
-      
+
       visited.add(stageId);
       result.push(stageId);
     };
-    
+
     for (const stage of stages) {
       visit(stage.id);
     }
-    
+
     return result;
   }
 
@@ -1252,7 +1252,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
     if (!pipeline.id || !pipeline.name || pipeline.stages.length === 0) {
       throw new Error('Pipeline ID, name, and stages are required');
     }
-    
+
     // Validate stage dependencies
     const stageIds = new Set(pipeline.stages.map(s => s.id));
     for (const stage of pipeline.stages) {
@@ -1282,12 +1282,12 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
     // Deep clone and substitute parameters
     const pipelineJson = JSON.stringify(pipeline);
     let substituted = pipelineJson;
-    
+
     for (const [key, value] of Object.entries(parameters)) {
       const placeholder = `{{${key}}}`;
       substituted = substituted.replace(new RegExp(placeholder, 'g'), JSON.stringify(value));
     }
-    
+
     return JSON.parse(substituted);
   }
 
@@ -1299,7 +1299,7 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
 
   private async storeExecution(execution: PipelineExecution): Promise<void> {
     await this.redis.setObject(`cicd:execution:${execution.id}`, execution, 86400000 * 7); // 7 days
-    
+
     // Add to pipeline execution list
     await this.redis.listPush(`cicd:pipeline:${execution.pipelineId}:executions`, execution.id);
   }
@@ -1350,14 +1350,14 @@ export class PipelineOrchestrator extends AsyncSingletonService<PipelineOrchestr
       clearInterval(worker);
     }
     this.workers.clear();
-    
+
     // Cancel any running executions
     for (const execution of this.executions.values()) {
       if (execution.status === ExecutionStatus.RUNNING) {
         await this.cancelExecution(execution.id);
       }
     }
-    
+
     logger.info('PipelineOrchestrator shutdown completed');
   }
 }

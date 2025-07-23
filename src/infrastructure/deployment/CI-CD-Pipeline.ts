@@ -3,14 +3,12 @@
  * Comprehensive deployment automation with Docker, Kubernetes, and cloud integration
  */
 
-import { logger, objectUtils, stringUtils, pathUtils } from '@/lib/unjs-utils.js';
-import { configManager } from '@/config/unjs-config.js';
-import { validationService } from '@/infrastructure/validation/UnJSValidation.js';
+import { httpClient } from '@/infrastructure/http/UnJSHttpClient.js';
 import { monitoring } from '@/infrastructure/observability/AdvancedMonitoring.js';
 import { enterpriseSecurity } from '@/infrastructure/security/EnterpriseSecurity.js';
 import { testingFramework } from '@/infrastructure/testing/TestingFramework.js';
-import { fileSystemService } from '@/infrastructure/filesystem/UnJSFileSystem.js';
-import { httpClient } from '@/infrastructure/http/UnJSHttpClient.js';
+import { validationService } from '@/infrastructure/validation/UnJSValidation.js';
+import { logger, stringUtils } from '@/lib/unjs-utils.js';
 import { z } from 'zod';
 
 export interface DeploymentEnvironment {
@@ -278,7 +276,7 @@ export class CICDPipelineManager {
       deployment.healthChecks = await this.runHealthChecks(environment);
 
       const allHealthy = deployment.healthChecks.every(hc => hc.status === 'healthy');
-      
+
       if (allHealthy) {
         deployment.status = 'success';
         logger.success('Deployment completed successfully', {
@@ -296,7 +294,7 @@ export class CICDPipelineManager {
     } catch (error) {
       deployment.status = 'failed';
       deployment.logs.push(`Deployment failed: ${String(error)}`);
-      
+
       logger.error('Deployment pipeline failed', {
         deploymentId,
         error: String(error),
@@ -354,26 +352,28 @@ export class CICDPipelineManager {
 
     // Build dependency graph
     const dependencyGraph = this.buildDependencyGraph(stages);
-    
+
     // Execute stages in dependency order
     for (const stageLevel of dependencyGraph) {
       const parallelStages = stageLevel.filter(stage => !skipStages.includes(stage.id));
-      
+
       if (parallelStages.length === 0) continue;
 
       if (parallelStages.every(stage => stage.parallel)) {
         // Execute stages in parallel
-        const promises = parallelStages.map(stage => 
+        const promises = parallelStages.map(stage =>
           this.executeStage(stage, environment, variables)
         );
-        
+
         const results = await Promise.allSettled(promises);
-        
+
         results.forEach((result, index) => {
           const stage = parallelStages[index];
+          if (!stage) throw new Error('Pipeline error: stage not found');
+
           const success = result.status === 'fulfilled' && result.value.success;
           stageResults.set(stage.id, success);
-          
+
           if (result.status === 'fulfilled') {
             artifacts.push(...result.value.artifacts);
             logs.push(...result.value.logs);
@@ -386,10 +386,10 @@ export class CICDPipelineManager {
         for (const stage of parallelStages) {
           const result = await this.executeStage(stage, environment, variables);
           stageResults.set(stage.id, result.success);
-          
+
           artifacts.push(...result.artifacts);
           logs.push(...result.logs);
-          
+
           if (!result.success) {
             throw new Error(`Stage ${stage.name} failed: ${result.error}`);
           }
@@ -397,10 +397,10 @@ export class CICDPipelineManager {
       }
 
       // Check if any required stages failed
-      const requiredStagesFailed = parallelStages.some(stage => 
+      const requiredStagesFailed = parallelStages.some(stage =>
         !stage.condition && !stageResults.get(stage.id)
       );
-      
+
       if (requiredStagesFailed) {
         throw new Error('Required pipeline stages failed');
       }
@@ -420,9 +420,9 @@ export class CICDPipelineManager {
     const spanId = monitoring.startTrace(`deploy.stage.${stage.name}`);
     const startTime = Date.now();
 
-    logger.info('Executing pipeline stage', { 
-      stage: stage.name, 
-      type: stage.type 
+    logger.info('Executing pipeline stage', {
+      stage: stage.name,
+      type: stage.type
     });
 
     try {
@@ -453,7 +453,7 @@ export class CICDPipelineManager {
 
     } catch (error) {
       const duration = Date.now() - startTime;
-      
+
       monitoring.finishSpan(spanId, {
         success: false,
         duration,
@@ -485,19 +485,19 @@ export class CICDPipelineManager {
     switch (stage.type) {
       case 'build':
         return await this.runBuildStage(stage, variables, logs, artifacts);
-      
+
       case 'test':
         return await this.runTestStage(stage, logs);
-      
+
       case 'security':
         return await this.runSecurityStage(stage, logs);
-      
+
       case 'deploy':
         return await this.runDeployStage(stage, environment, variables, logs);
-      
+
       case 'validate':
         return await this.runValidationStage(stage, environment, logs);
-      
+
       default:
         return await this.runGenericStage(stage, variables, logs, artifacts);
     }
@@ -518,17 +518,17 @@ export class CICDPipelineManager {
       // Simulate build process
       logs.push('Installing dependencies...');
       await new Promise(resolve => setTimeout(resolve, 2000));
-      
+
       logs.push('Running TypeScript compilation...');
       await new Promise(resolve => setTimeout(resolve, 3000));
-      
+
       logs.push('Building Docker image...');
       const imageTag = `${variables.REGISTRY || 'localhost'}/${variables.IMAGE_NAME || 'app'}:${variables.VERSION}`;
       await new Promise(resolve => setTimeout(resolve, 5000));
-      
+
       logs.push(`Docker image built: ${imageTag}`);
       artifacts.push(imageTag);
-      
+
       logs.push('Build completed successfully');
       return { success: true, artifacts, logs };
 
@@ -551,13 +551,13 @@ export class CICDPipelineManager {
       // Run unit tests
       logs.push('Running unit tests...');
       const unitTestReport = await testingFramework.runTestSuite('unit');
-      
+
       // Run integration tests
       logs.push('Running integration tests...');
       const integrationTestReport = await testingFramework.runTestSuite('integration');
-      
-      const allTestsPassed = unitTestReport.summary.failed === 0 && 
-                           integrationTestReport.summary.failed === 0;
+
+      const allTestsPassed = unitTestReport.summary.failed === 0 &&
+        integrationTestReport.summary.failed === 0;
 
       logs.push(`Unit tests: ${unitTestReport.summary.passed}/${unitTestReport.summary.total} passed`);
       logs.push(`Integration tests: ${integrationTestReport.summary.passed}/${integrationTestReport.summary.total} passed`);
@@ -593,7 +593,7 @@ export class CICDPipelineManager {
       });
 
       logs.push(`Compliance check: ${complianceResult.compliant ? 'PASSED' : 'FAILED'}`);
-      
+
       if (!complianceResult.compliant) {
         complianceResult.results.forEach(result => {
           if (!result.compliant && result.issues) {
@@ -607,10 +607,10 @@ export class CICDPipelineManager {
       await new Promise(resolve => setTimeout(resolve, 3000));
       logs.push('Vulnerability scan completed - No critical issues found');
 
-      return { 
-        success: complianceResult.compliant, 
-        artifacts: [], 
-        logs 
+      return {
+        success: complianceResult.compliant,
+        artifacts: [],
+        logs
       };
 
     } catch (error) {
@@ -634,13 +634,13 @@ export class CICDPipelineManager {
       // Simulate Kubernetes deployment
       logs.push('Updating Kubernetes manifests...');
       await new Promise(resolve => setTimeout(resolve, 2000));
-      
+
       logs.push(`Scaling to ${environment.replicas} replicas...`);
       await new Promise(resolve => setTimeout(resolve, 3000));
-      
+
       logs.push('Rolling out deployment...');
       await new Promise(resolve => setTimeout(resolve, 5000));
-      
+
       logs.push('Deployment completed successfully');
       return { success: true, artifacts: [], logs };
 
@@ -663,7 +663,7 @@ export class CICDPipelineManager {
     try {
       // Check application health
       logs.push(`Checking health endpoint: ${environment.url}${environment.healthCheck.path}`);
-      
+
       const healthResponse = await httpClient.get(
         `${environment.url}${environment.healthCheck.path}`,
         { timeout: environment.healthCheck.timeout }
@@ -704,7 +704,7 @@ export class CICDPipelineManager {
       for (const command of stage.commands) {
         const expandedCommand = this.expandVariables(command, variables);
         logs.push(`Running: ${expandedCommand}`);
-        
+
         // Simulate command execution
         await new Promise(resolve => setTimeout(resolve, 1000));
         logs.push(`Command completed successfully`);
@@ -809,9 +809,9 @@ export class CICDPipelineManager {
     try {
       // Find previous successful deployment
       const previousDeployment = Array.from(this.deployments.values())
-        .filter(d => 
-          d.environment === deployment.environment && 
-          d.status === 'success' && 
+        .filter(d =>
+          d.environment === deployment.environment &&
+          d.status === 'success' &&
           d.startTime < deployment.startTime
         )
         .sort((a, b) => b.startTime.getTime() - a.startTime.getTime())[0];
@@ -820,11 +820,11 @@ export class CICDPipelineManager {
         // Simulate rollback process
         deployment.logs.push('Rolling back to previous version...');
         deployment.logs.push(`Rolling back to version: ${previousDeployment.version}`);
-        
+
         await new Promise(resolve => setTimeout(resolve, 3000));
-        
+
         deployment.logs.push('Rollback completed successfully');
-        
+
         logger.info('Rollback completed', {
           deploymentId,
           previousVersion: previousDeployment.version,
@@ -1135,7 +1135,7 @@ export class CICDPipelineManager {
         const deployment = this.deployments.get(deploymentId);
         if (deployment) {
           const duration = Date.now() - deployment.startTime.getTime();
-          
+
           monitoring.recordMetric({
             name: 'deployment.active.duration',
             value: duration,
@@ -1193,7 +1193,7 @@ export class CICDPipelineManager {
     successRate: number;
   } {
     const deployments = Array.from(this.deployments.values());
-    
+
     const byStatus = deployments.reduce((acc, d) => {
       acc[d.status] = (acc[d.status] || 0) + 1;
       return acc;
@@ -1228,10 +1228,10 @@ export class CICDPipelineManager {
 export const cicdPipeline = new CICDPipelineManager();
 
 // Export types
-export type { 
-  DeploymentEnvironment, 
-  DeploymentResult, 
-  Pipeline, 
-  PipelineStage, 
-  BuildConfiguration 
+export type {
+  BuildConfiguration, DeploymentEnvironment,
+  DeploymentResult,
+  Pipeline,
+  PipelineStage
 };
+

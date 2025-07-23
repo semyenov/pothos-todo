@@ -1,12 +1,12 @@
 import { CompleteTodoCommand } from '../commands/CompleteTodoCommand.js';
 import { Todo } from '../../domain/aggregates/Todo.js';
 import type { TodoRepository } from '../../domain/repositories/TodoRepository.js';
-import type { EventPublisher } from '../../infrastructure/events/EventPublisher.js';
+import type { IEventPublisher } from '../../infrastructure/events/EventPublisher.js';
 
 export class CompleteTodoHandler {
   constructor(
     private readonly todoRepository: TodoRepository,
-    private readonly eventPublisher: EventPublisher
+    private readonly eventPublisher: IEventPublisher
   ) { }
 
   async handle(command: CompleteTodoCommand): Promise<Todo> {

@@ -65,7 +65,7 @@ builder.queryType({
       },
       resolve: async (query, root, args, _ctx) => {
         return prisma.todo.findUnique({
-          where: { id: args.id },
+          where: { id: args.id as string },
         });
       },
     }),
@@ -96,7 +96,7 @@ builder.queryType({
       },
       resolve: async (query, root, args, _ctx) => {
         return prisma.todoList.findUnique({
-          where: { id: args.id },
+          where: { id: args.id as string },
         });
       },
     }),

@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { logger } from '@/logger.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface EncryptionConfig {
   algorithm: string;
@@ -27,13 +28,12 @@ export interface EncryptedData {
  * Provides AES-256-GCM encryption for sensitive data at rest
  * with key derivation using PBKDF2 and secure random IVs.
  */
-export class DataEncryption {
-  private static instance: DataEncryption;
+export class DataEncryption extends SingletonService<DataEncryption> {
   private config: EncryptionConfig;
-  private masterKey: string;
+  private masterKey: string | null = null;
   
-  private constructor(masterKey: string) {
-    this.masterKey = masterKey;
+  protected constructor() {
+    super();
     this.config = {
       algorithm: 'aes-256-gcm',
       keyDerivation: {
@@ -48,14 +48,15 @@ export class DataEncryption {
     };
   }
   
-  static getInstance(masterKey?: string): DataEncryption {
-    if (!DataEncryption.instance) {
-      if (!masterKey) {
-        throw new Error('Master key required for first initialization');
-      }
-      DataEncryption.instance = new DataEncryption(masterKey);
-    }
-    return DataEncryption.instance;
+  static async getInstance(): Promise<DataEncryption> {
+    return super.getInstance();
+  }
+
+  /**
+   * Configure the DataEncryption service with master key
+   */
+  public configure(masterKey: string): void {
+    this.masterKey = masterKey;
   }
   
   /**
@@ -67,9 +68,11 @@ export class DataEncryption {
       const salt = crypto.randomBytes(this.config.keyDerivation.saltLength);
       const iv = crypto.randomBytes(this.config.iv.length);
       
+      this.ensureConfigured();
+      
       // Derive key from master key and salt
       const key = crypto.pbkdf2Sync(
-        this.masterKey,
+        this.masterKey!,
         salt,
         this.config.keyDerivation.iterations,
         this.config.keyDerivation.keyLength,
@@ -364,8 +367,21 @@ export class TLSUtils {
     
     return true;
   }
+
+  /**
+   * Ensure the service is configured before use
+   */
+  private ensureConfigured(): void {
+    if (!this.masterKey) {
+      throw new Error('DataEncryption not configured - call configure() first');
+    }
+  }
 }
 
-// Export singleton with environment-based master key
-const masterKey = process.env.ENCRYPTION_MASTER_KEY || 'development-key-change-in-production';
-export const dataEncryption = DataEncryption.getInstance(masterKey);
+// Export singleton factory with environment-based master key
+export const getDataEncryption = async () => {
+  const masterKey = process.env.ENCRYPTION_MASTER_KEY || 'development-key-change-in-production';
+  const instance = await DataEncryption.getInstance();
+  instance.configure(masterKey);
+  return instance;
+};

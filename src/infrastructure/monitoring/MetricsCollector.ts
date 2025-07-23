@@ -1,6 +1,7 @@
 import { logger } from '@/logger.js';
 import { CacheManager } from '../cache/CacheManager.js';
 import { prismaService } from '@/lib/prisma.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface MetricPoint {
   name: string;
@@ -53,8 +54,7 @@ export interface SystemMetrics {
   };
 }
 
-export class MetricsCollector {
-  private static instance: MetricsCollector;
+export class MetricsCollector extends SingletonService {
   private metrics: MetricPoint[] = [];
   private httpMetrics = new Map<string, number[]>();
   private graphqlMetrics = {
@@ -66,13 +66,12 @@ export class MetricsCollector {
   private requestCounts = new Map<string, number>();
   private collectionInterval?: NodeJS.Timeout;
   
-  private constructor() {}
+  protected constructor() {
+    super();
+  }
   
   public static getInstance(): MetricsCollector {
-    if (!MetricsCollector.instance) {
-      MetricsCollector.instance = new MetricsCollector();
-    }
-    return MetricsCollector.instance;
+    return super.getInstance() as MetricsCollector;
   }
   
   /**

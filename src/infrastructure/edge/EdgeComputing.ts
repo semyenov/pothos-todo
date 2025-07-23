@@ -1,7 +1,7 @@
-import { EventEmitter } from 'events';
 import { logger } from '@/logger.js';
 import { MetricsSystem } from '../observability/Metrics.js';
 import { TelemetrySystem } from '../observability/Telemetry.js';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface EdgeLocation {
   id: string;
@@ -95,26 +95,43 @@ export interface EdgeResponse {
  * Edge Computing Infrastructure
  * Manages distributed edge computing nodes and functions
  */
-export class EdgeComputingSystem extends EventEmitter {
-  private static instance: EdgeComputingSystem;
+export class EdgeComputingSystem extends EventEmitterSingletonService<EdgeComputingSystem> {
   private locations: Map<string, EdgeLocation> = new Map();
   private functions: Map<string, EdgeFunction> = new Map();
   private routingTable: Map<string, string[]> = new Map(); // region -> locationIds
-  private metrics: MetricsSystem;
-  private telemetry: TelemetrySystem;
+  private metrics: MetricsSystem | null = null;
+  private telemetry: TelemetrySystem | null = null;
 
-  private constructor() {
+  protected constructor() {
     super();
-    this.metrics = MetricsSystem.getInstance();
-    this.telemetry = TelemetrySystem.getInstance();
+  }
+
+  public async initialize(): Promise<void> {
+    this.metrics = await MetricsSystem.getInstance();
+    this.telemetry = await TelemetrySystem.getInstance();
     this.initializeEdgeLocations();
   }
 
-  static getInstance(): EdgeComputingSystem {
-    if (!EdgeComputingSystem.instance) {
-      EdgeComputingSystem.instance = new EdgeComputingSystem();
+  private ensureMetrics(): MetricsSystem {
+    if (!this.metrics) {
+      throw new Error('EdgeComputingSystem not initialized');
     }
-    return EdgeComputingSystem.instance;
+    return this.metrics;
+  }
+
+  private ensureTelemetry(): TelemetrySystem {
+    if (!this.telemetry) {
+      throw new Error('EdgeComputingSystem not initialized');
+    }
+    return this.telemetry;
+  }
+
+  static async getInstance(): Promise<EdgeComputingSystem> {
+    const instance = super.getInstance();
+    if (!instance.metrics) {
+      await instance.initialize();
+    }
+    return instance;
   }
 
   /**
@@ -144,7 +161,7 @@ export class EdgeComputingSystem extends EventEmitter {
     const locations = targetLocations || Array.from(this.locations.keys());
     const deployments = new Map<string, EdgeDeployment>();
 
-    await this.telemetry.traceAsync('edge.deploy_function', async () => {
+    await this.ensureTelemetry().traceAsync('edge.deploy_function', async () => {
       const deployPromises = locations.map(async (locationId) => {
         const location = this.locations.get(locationId);
         if (!location || location.status === 'offline') {
@@ -185,14 +202,14 @@ export class EdgeComputingSystem extends EventEmitter {
     }
 
     // Execute function
-    return this.telemetry.traceAsync('edge.execute_function', async () => {
+    return this.ensureTelemetry().traceAsync('edge.execute_function', async () => {
       const startTime = Date.now();
       
       try {
         const response = await this.executeAtLocation(func, request, location);
         
         // Record metrics
-        this.metrics.record('apiLatency', (Date.now() - startTime) / 1000, {
+        this.ensureMetrics().record('apiLatency', (Date.now() - startTime) / 1000, {
           function: func.name,
           location: location.id,
           cached: response.cached,

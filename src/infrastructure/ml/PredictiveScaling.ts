@@ -1,9 +1,9 @@
-import { EventEmitter } from 'events';
 import { logger } from '@/logger.js';
 import { MetricsSystem } from '../observability/Metrics.js';
 import { PerformanceOptimizer } from '../performance/PerformanceOptimizer.js';
 import { EdgeComputingSystem } from '../edge/EdgeComputing.js';
 import { DataReplicationSystem } from '../edge/DataReplication.js';
+import { AsyncEventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface PredictionModel {
   id: string;
@@ -88,9 +88,8 @@ export interface ExternalDataSource {
  * Advanced Predictive Scaling System
  * Uses machine learning to predict resource needs and scale proactively
  */
-export class PredictiveScalingSystem extends EventEmitter {
-  private static instance: PredictiveScalingSystem;
-  private config: PredictiveScalingConfig;
+export class PredictiveScalingSystem extends AsyncEventEmitterSingletonService {
+  private config: PredictiveScalingConfig | null = null;
   private models: Map<string, PredictionModel> = new Map();
   private trainingData: TrainingData[] = [];
   private predictions: ScalingPrediction[] = [];
@@ -107,45 +106,73 @@ export class PredictiveScalingSystem extends EventEmitter {
   };
 
   // Infrastructure components
-  private metrics: MetricsSystem;
-  private performance: PerformanceOptimizer;
-  private edgeComputing: EdgeComputingSystem;
-  private dataReplication: DataReplicationSystem;
+  private metrics: MetricsSystem | null = null;
+  private performance: PerformanceOptimizer | null = null;
+  private edgeComputing: EdgeComputingSystem | null = null;
+  private dataReplication: DataReplicationSystem | null = null;
 
   private trainingTimer?: NodeJS.Timeout;
   private predictionTimer?: NodeJS.Timeout;
   private dataCollectionTimer?: NodeJS.Timeout;
 
-  private constructor(config: PredictiveScalingConfig) {
+  protected constructor() {
     super();
+  }
+
+  public async initialize(config: PredictiveScalingConfig): Promise<void> {
     this.config = config;
     this.metrics = MetricsSystem.getInstance();
     this.performance = PerformanceOptimizer.getInstance();
-    this.edgeComputing = EdgeComputingSystem.getInstance();
+    this.edgeComputing = await EdgeComputingSystem.getInstance();
     this.dataReplication = DataReplicationSystem.getInstance();
 
     this.initializePredictiveScaling();
   }
 
-  static initialize(config: PredictiveScalingConfig): PredictiveScalingSystem {
-    if (!PredictiveScalingSystem.instance) {
-      PredictiveScalingSystem.instance = new PredictiveScalingSystem(config);
-    }
-    return PredictiveScalingSystem.instance;
-  }
-
-  static getInstance(): PredictiveScalingSystem {
-    if (!PredictiveScalingSystem.instance) {
+  private ensureConfig(): PredictiveScalingConfig {
+    if (!this.config) {
       throw new Error('PredictiveScalingSystem not initialized');
     }
-    return PredictiveScalingSystem.instance;
+    return this.config;
+  }
+
+  private ensureMetrics(): MetricsSystem {
+    if (!this.metrics) {
+      throw new Error('PredictiveScalingSystem not initialized');
+    }
+    return this.metrics;
+  }
+
+  private ensurePerformance(): PerformanceOptimizer {
+    if (!this.performance) {
+      throw new Error('PredictiveScalingSystem not initialized');
+    }
+    return this.performance;
+  }
+
+  private ensureEdgeComputing(): EdgeComputingSystem {
+    if (!this.edgeComputing) {
+      throw new Error('PredictiveScalingSystem not initialized');
+    }
+    return this.edgeComputing;
+  }
+
+  private ensureDataReplication(): DataReplicationSystem {
+    if (!this.dataReplication) {
+      throw new Error('PredictiveScalingSystem not initialized');
+    }
+    return this.dataReplication;
+  }
+
+  static async getInstance(): Promise<PredictiveScalingSystem> {
+    return super.getInstanceAsync() as Promise<PredictiveScalingSystem>;
   }
 
   /**
    * Generate scaling predictions
    */
   async generatePredictions(): Promise<ScalingPrediction[]> {
-    if (!this.config.enabled) {
+    if (!this.ensureConfig().enabled) {
       return [];
     }
 
@@ -159,7 +186,7 @@ export class PredictiveScalingSystem extends EventEmitter {
     const features = { ...currentMetrics, ...externalData };
 
     // Generate predictions for each enabled model
-    for (const modelId of this.config.models.enabled) {
+    for (const modelId of this.ensureConfig().models.enabled) {
       const model = this.models.get(modelId);
       if (!model) continue;
 
@@ -174,7 +201,7 @@ export class PredictiveScalingSystem extends EventEmitter {
     }
 
     // Ensemble prediction if enabled
-    if (this.config.models.ensemble && predictions.length > 1) {
+    if (this.ensureConfig().models.ensemble && predictions.length > 1) {
       const ensemblePrediction = this.createEnsemblePrediction(predictions);
       predictions.push(ensemblePrediction);
     }
@@ -188,7 +215,7 @@ export class PredictiveScalingSystem extends EventEmitter {
     }
 
     // Execute auto-scaling if enabled
-    if (this.config.scaling.autoExecute) {
+    if (this.ensureConfig().scaling.autoExecute) {
       await this.executeRecommendations(predictions);
     }
 
@@ -215,7 +242,7 @@ export class PredictiveScalingSystem extends EventEmitter {
     const datasets = this.prepareTrainingDatasets();
 
     // Train each enabled model
-    for (const algorithmName of this.config.models.enabled) {
+    for (const algorithmName of this.ensureConfig().models.enabled) {
       try {
         const algorithm = this.algorithms[algorithmName as keyof typeof this.algorithms];
         if (!algorithm) continue;
@@ -303,9 +330,9 @@ export class PredictiveScalingSystem extends EventEmitter {
         costSavings: 23.5, // Simulated percentage
       },
       features: {
-        internal: this.config.features.metrics.length,
-        external: this.config.features.external.length,
-        engineered: this.config.features.engineered.length,
+        internal: this.ensureConfig().features.metrics.length,
+        external: this.ensureConfig().features.external.length,
+        engineered: this.ensureConfig().features.engineered.length,
       },
     };
   }
@@ -315,27 +342,28 @@ export class PredictiveScalingSystem extends EventEmitter {
    */
   private initializePredictiveScaling(): void {
     logger.info('Initializing predictive scaling system', {
-      enabled: this.config.enabled,
-      horizon: this.config.predictionHorizon,
-      autoExecute: this.config.scaling.autoExecute,
+      enabled: this.ensureConfig().enabled,
+      horizon: this.ensureConfig().predictionHorizon,
+      autoExecute: this.ensureConfig().scaling.autoExecute,
     });
 
     // Start data collection
     this.startDataCollection();
 
     // Start training
-    if (this.config.trainingInterval > 0) {
+    const config = this.ensureConfig();
+    if (config.trainingInterval > 0) {
       this.trainingTimer = setInterval(
         () => this.trainModels(),
-        this.config.trainingInterval
+        config.trainingInterval
       );
     }
 
     // Start predictions
-    if (this.config.predictionInterval > 0) {
+    if (config.predictionInterval > 0) {
       this.predictionTimer = setInterval(
         () => this.generatePredictions(),
-        this.config.predictionInterval
+        config.predictionInterval
       );
     }
 
@@ -378,9 +406,9 @@ export class PredictiveScalingSystem extends EventEmitter {
    * Collect current system metrics
    */
   private async collectCurrentMetrics(): Promise<Record<string, number>> {
-    const perfData = await this.performance.getDashboardData();
-    const edgeAnalytics = await this.edgeComputing.getPerformanceAnalytics();
-    const replicationStatus = this.dataReplication.getReplicationStatus();
+    const perfData = await this.ensurePerformance().getDashboardData();
+    const edgeAnalytics = await this.ensureEdgeComputing().getPerformanceAnalytics();
+    const replicationStatus = this.ensureDataReplication().getReplicationStatus();
 
     return {
       // Performance metrics
@@ -481,9 +509,9 @@ export class PredictiveScalingSystem extends EventEmitter {
     );
 
     for (const point of sortedData) {
-      const featureVector = this.config.features.metrics
-        .concat(this.config.features.external)
-        .concat(this.config.features.engineered)
+      const featureVector = this.ensureConfig().features.metrics
+        .concat(this.ensureConfig().features.external)
+        .concat(this.ensureConfig().features.engineered)
         .map(feature => point.features[feature] || 0);
 
       features.push(featureVector);
@@ -514,9 +542,9 @@ export class PredictiveScalingSystem extends EventEmitter {
       id: `${algorithmName}_${Date.now()}`,
       name: `${algorithmName.toUpperCase()} Model`,
       algorithm: algorithmName as any,
-      features: this.config.features.metrics
-        .concat(this.config.features.external)
-        .concat(this.config.features.engineered),
+      features: this.ensureConfig().features.metrics
+        .concat(this.ensureConfig().features.external)
+        .concat(this.ensureConfig().features.engineered),
       target: 'cpu_usage',
       accuracy,
       lastTrained: new Date(),
@@ -556,7 +584,7 @@ export class PredictiveScalingSystem extends EventEmitter {
 
     return {
       timestamp: new Date(),
-      horizon: this.config.predictionHorizon,
+      horizon: this.ensureConfig().predictionHorizon,
       metric: model.target,
       predicted,
       confidence,
@@ -581,7 +609,7 @@ export class PredictiveScalingSystem extends EventEmitter {
 
     return {
       timestamp: new Date(),
-      horizon: this.config.predictionHorizon,
+      horizon: this.ensureConfig().predictionHorizon,
       metric: 'ensemble_prediction',
       predicted: weightedPrediction,
       confidence: averageConfidence * 1.1, // Ensemble bonus
@@ -658,7 +686,7 @@ export class PredictiveScalingSystem extends EventEmitter {
     // Filter by confidence threshold
     const highConfidenceRecs = allRecommendations.filter(rec => {
       const prediction = predictions.find(p => p.recommendations.includes(rec));
-      return prediction && prediction.confidence > this.config.scaling.confidenceThreshold;
+      return prediction && prediction.confidence > this.ensureConfig().scaling.confidenceThreshold;
     });
 
     for (const rec of highConfidenceRecs) {
@@ -684,10 +712,10 @@ export class PredictiveScalingSystem extends EventEmitter {
       case 'scale_down':
       case 'preemptive_scale':
         // Apply scaling factor limits
-        const limitedMagnitude = Math.min(rec.magnitude, this.config.scaling.maxScaleFactor);
+        const limitedMagnitude = Math.min(rec.magnitude, this.ensureConfig().scaling.maxScaleFactor);
         
         // Execute through performance optimizer
-        await this.performance.autoScale();
+        await this.ensurePerformance().autoScale();
         
         // Emit scaling event
         this.emit('scaling:executed', {

@@ -2,13 +2,13 @@ import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import * as resources from '@opentelemetry/resources';
 import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
-import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
-import { OTLPMetricExporter } from '@opentelemetry/exporter-otlp-grpc';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-otlp-grpc';
+// import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics'; // Package not available
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+// OTLP GRPC exporters not available - using HTTP instead
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-node';
 import { trace, metrics, SpanStatusCode, SpanKind } from '@opentelemetry/api';
-import { logger } from '@/logger';
-import EventEmitter from 'events';
+import { logger } from '@/logger.js';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface ObservabilityConfig {
   serviceName: string;
@@ -45,26 +45,28 @@ export interface CustomSpanOptions {
   kind?: SpanKind;
 }
 
-export class OpenTelemetryService extends EventEmitter {
-  private static instance: OpenTelemetryService;
-  private sdk: NodeSDK;
-  private config: ObservabilityConfig;
+export class OpenTelemetryService extends EventEmitterSingletonService<OpenTelemetryService> {
+  private sdk: NodeSDK | null = null;
+  private config: ObservabilityConfig | null = null;
   private tracer: any;
   private meter: any;
   private customMetrics: Map<string, any> = new Map();
   private initialized: boolean = false;
 
-  private constructor(config: ObservabilityConfig) {
+  protected constructor() {
     super();
-    this.config = config;
-    this.initializeSDK();
   }
 
-  public static getInstance(config?: ObservabilityConfig): OpenTelemetryService {
-    if (!OpenTelemetryService.instance && config) {
-      OpenTelemetryService.instance = new OpenTelemetryService(config);
-    }
-    return OpenTelemetryService.instance;
+  public static getInstance(): OpenTelemetryService {
+    return super.getInstance();
+  }
+
+  /**
+   * Configure the OpenTelemetryService with settings
+   */
+  public configure(config: ObservabilityConfig): void {
+    this.config = config;
+    this.initializeSDK();
   }
 
   /**
@@ -449,20 +451,15 @@ export class OpenTelemetryService extends EventEmitter {
       })
       : undefined;
 
-    const metricExporter = this.config.otlpEndpoint
-      ? new OTLPMetricExporter({
-        url: `${this.config.otlpEndpoint}/v1/metrics`,
-      })
-      : undefined;
+    // Metric exporter disabled - packages not available
+    const metricExporter = undefined;
 
     // Initialize SDK
     this.sdk = new NodeSDK({
       resource,
       traceExporter,
-      metricReader: metricExporter ? new PeriodicExportingMetricReader({
-        exporter: metricExporter,
-        exportIntervalMillis: 30000, // 30 seconds
-      }) : undefined,
+      // Metric reader disabled - packages not available
+      metricReader: undefined,
       instrumentations: [
         getNodeAutoInstrumentations({
           '@opentelemetry/instrumentation-fs': {
@@ -627,5 +624,7 @@ export class OpenTelemetryService extends EventEmitter {
 
 // Export singleton factory
 export const createObservabilityService = (config: ObservabilityConfig) => {
-  return OpenTelemetryService.getInstance(config);
+  const instance = OpenTelemetryService.getInstance();
+  instance.configure(config);
+  return instance;
 };

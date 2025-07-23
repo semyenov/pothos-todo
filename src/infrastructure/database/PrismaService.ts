@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { logger } from '@/logger.js';
 import { env } from '@/config/env.validation.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface PrismaServiceOptions {
   /**
@@ -39,60 +40,75 @@ export interface PrismaServiceOptions {
   enableMetrics?: boolean;
 }
 
-export class PrismaService {
-  private static instance: PrismaService;
-  private prisma: PrismaClient;
+export class PrismaService extends SingletonService<PrismaService> {
+  private prisma: PrismaClient | null = null;
   private connectionCount = 0;
   private queryCount = 0;
   private errorCount = 0;
   private startTime = Date.now();
+  private options: PrismaServiceOptions = defaultPoolConfig;
 
-  private constructor(options: PrismaServiceOptions = {}) {
-    // Configure Prisma with optimized connection pooling
-    this.prisma = new PrismaClient({
-      datasources: {
-        db: {
-          url: env.DATABASE_URL,
-        },
-      },
-      log: this.configureLogging(options),
-      errorFormat: 'pretty',
-    });
-
-    // Set up middleware for metrics and logging
-    this.setupMiddleware(options);
-
-    // Handle connection events
-    this.setupEventHandlers();
+  protected constructor() {
+    super();
   }
 
   /**
    * Get singleton instance
    */
-  public static getInstance(options?: PrismaServiceOptions): PrismaService {
-    if (!PrismaService.instance) {
-      PrismaService.instance = new PrismaService(options);
+  public static getInstance(): PrismaService {
+    return super.getInstance();
+  }
+
+  /**
+   * Configure the PrismaService with options
+   */
+  public configure(options: PrismaServiceOptions = {}): void {
+    this.options = { ...defaultPoolConfig, ...options };
+    
+    if (!this.prisma) {
+      // Configure Prisma with optimized connection pooling
+      this.prisma = new PrismaClient({
+        datasources: {
+          db: {
+            url: env.DATABASE_URL,
+          },
+        },
+        log: this.configureLogging(this.options),
+        errorFormat: 'pretty',
+      });
+
+      // Set up middleware for metrics and logging
+      this.setupMiddleware(this.options);
+
+      // Handle connection events
+      this.setupEventHandlers();
     }
-    return PrismaService.instance;
   }
 
   /**
    * Get Prisma client
    */
   public getClient(): PrismaClient {
-    return this.prisma;
+    if (!this.prisma) {
+      this.configure();
+    }
+    return this.prisma!;
   }
 
   /**
    * Connect to database with retry logic
    */
   public async connect(): Promise<void> {
+    if (!this.prisma) {
+      this.configure();
+    }
+
     const maxRetries = 3;
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        await this.prisma.$connect();
+        await this.prisma!.$connect();
         this.connectionCount++;
         logger.info('Database connected successfully', {
           attempt,
@@ -122,11 +138,13 @@ export class PrismaService {
    * Disconnect from database
    */
   public async disconnect(): Promise<void> {
-    await this.prisma.$disconnect();
-    this.connectionCount--;
-    logger.info('Database disconnected', {
-      connectionCount: this.connectionCount,
-    });
+    if (this.prisma) {
+      await this.prisma.$disconnect();
+      this.connectionCount--;
+      logger.info('Database disconnected', {
+        connectionCount: this.connectionCount,
+      });
+    }
   }
 
   /**
@@ -221,7 +239,7 @@ export class PrismaService {
    * Set up Prisma middleware for metrics and logging
    */
   private setupMiddleware(options: PrismaServiceOptions) {
-    if (options.enableMetrics) {
+    if (options.enableMetrics && this.prisma) {
       this.prisma.$use(async (params, next) => {
         const start = Date.now();
 
@@ -253,6 +271,8 @@ export class PrismaService {
    * Set up event handlers for logging
    */
   private setupEventHandlers() {
+    if (!this.prisma) return;
+
     // @ts-ignore - Prisma event types
     this.prisma.$on('query', (e: any) => {
       if (e.duration > 100) {
@@ -291,11 +311,15 @@ export class PrismaService {
       isolationLevel?: 'ReadUncommitted' | 'ReadCommitted' | 'RepeatableRead' | 'Serializable';
     }
   ): Promise<T> {
+    if (!this.prisma) {
+      this.configure();
+    }
+
     const maxRetries = 3;
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const prisma = this.prisma as PrismaClient;
+      const prisma = this.prisma! as PrismaClient;
       try {
         return await prisma.$transaction<T>(fn, options);
       } catch (error) {
@@ -334,10 +358,14 @@ export class PrismaService {
     latency: number;
     details?: any;
   }> {
+    if (!this.prisma) {
+      this.configure();
+    }
+
     const start = Date.now();
 
     try {
-      await this.prisma.$queryRaw`SELECT 1`;
+      await this.prisma!.$queryRaw`SELECT 1`;
       const latency = Date.now() - start;
 
       return {

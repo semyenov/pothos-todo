@@ -3,6 +3,7 @@ import { MetricsCollector } from '../monitoring/MetricsCollector.js';
 import { hash } from 'ohash';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'pathe';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface EdgeNode {
   id: string;
@@ -159,12 +160,11 @@ export interface EdgeAnalytics {
   };
 }
 
-export class EdgeComputingManager {
-  private static instance: EdgeComputingManager;
+export class EdgeComputingManager extends SingletonService {
   private nodes = new Map<string, EdgeNode>();
   private services = new Map<string, EdgeService>();
   private requests: EdgeRequest[] = [];
-  private metrics: MetricsCollector;
+  private metrics: MetricsCollector | null = null;
   private healthCheckInterval?: NodeJS.Timeout;
   private loadBalancingInterval?: NodeJS.Timeout;
   private analyticsInterval?: NodeJS.Timeout;
@@ -176,7 +176,11 @@ export class EdgeComputingManager {
     reject: (error: Error) => void;
   }> = [];
 
-  private constructor() {
+  protected constructor() {
+    super();
+  }
+
+  public initialize(): void {
     this.metrics = MetricsCollector.getInstance();
     this.setupDefaultNodes();
     this.startHealthMonitoring();
@@ -184,11 +188,19 @@ export class EdgeComputingManager {
     this.startAnalytics();
   }
 
-  public static getInstance(): EdgeComputingManager {
-    if (!EdgeComputingManager.instance) {
-      EdgeComputingManager.instance = new EdgeComputingManager();
+  private ensureMetrics(): MetricsCollector {
+    if (!this.metrics) {
+      throw new Error('EdgeComputingManager not initialized');
     }
-    return EdgeComputingManager.instance;
+    return this.metrics;
+  }
+
+  public static override getInstance(): EdgeComputingManager {
+    const instance = super.getInstance();
+    if (!instance) {
+      throw new Error('EdgeComputingManager not initialized');
+    }
+    return instance as EdgeComputingManager;
   }
 
   /**
@@ -252,7 +264,7 @@ export class EdgeComputingManager {
       capabilities,
     });
 
-    this.metrics.recordMetric('edge.node.registered', 1, {
+    this.ensureMetrics().recordMetric('edge.node.registered', 1, {
       region: location.region,
       country: location.country,
     });
@@ -313,9 +325,9 @@ export class EdgeComputingManager {
       targetNodes: deployment.targetNodes.length,
     });
 
-    this.metrics.recordMetric('edge.service.deployed', 1, {
+    this.ensureMetrics().recordMetric('edge.service.deployed', 1, {
       type,
-      nodes: deployment.targetNodes.length,
+      nodes: deployment.targetNodes.length.toString(),
     });
 
     return service;
@@ -354,14 +366,14 @@ export class EdgeComputingManager {
     try {
       // Find optimal node
       const optimalNode = await this.findOptimalNode(service, request);
-      
+
       if (!optimalNode) {
         throw new Error('No available nodes for service');
       }
 
       // Execute request on node
       const result = await this.executeRequestOnNode(optimalNode, service, request);
-      
+
       const duration = Date.now() - startTime;
 
       // Record request
@@ -382,7 +394,7 @@ export class EdgeComputingManager {
       };
 
       this.requests.push(edgeRequest);
-      
+
       // Keep only recent requests (last 10000)
       if (this.requests.length > 10000) {
         this.requests = this.requests.slice(-10000);
@@ -393,12 +405,12 @@ export class EdgeComputingManager {
       optimalNode.load.cpu = Math.min(100, optimalNode.load.cpu + 0.1);
       optimalNode.updatedAt = new Date();
 
-      this.metrics.recordMetric('edge.request.routed', 1, {
+      this.ensureMetrics().recordMetric('edge.request.routed', 1, {
         serviceId,
         nodeId: optimalNode.id,
         region: optimalNode.location.region,
-        duration,
-        cacheHit: result.cacheHit,
+        duration: duration.toString(),
+        cacheHit: result.cacheHit.toString(),
       });
 
       return {
@@ -416,10 +428,10 @@ export class EdgeComputingManager {
         duration,
       });
 
-      this.metrics.recordMetric('edge.request.error', 1, {
+      this.ensureMetrics().recordMetric('edge.request.error', 1, {
         serviceId,
         error: (error as Error).message,
-        duration,
+        duration: duration.toString(),
       });
 
       throw error;
@@ -441,7 +453,7 @@ export class EdgeComputingManager {
 
     service.status = 'scaling';
     service.config.replicas = targetReplicas;
-    
+
     if (targetNodes) {
       service.deployment.targetNodes = targetNodes;
     }
@@ -455,13 +467,13 @@ export class EdgeComputingManager {
 
       logger.info('Service scaled', {
         serviceId,
-        replicas: targetReplicas,
-        nodes: service.deployment.targetNodes.length,
+        replicas: targetReplicas.toString() || 'unknown',
+        nodes: service.deployment.targetNodes.length.toString() || 'unknown',
       });
 
-      this.metrics.recordMetric('edge.service.scaled', 1, {
+      this.ensureMetrics().recordMetric('edge.service.scaled', 1, {
         serviceId,
-        replicas: targetReplicas,
+        replicas: targetReplicas.toString() || 'unknown',
       });
     }, 2000);
   }
@@ -491,7 +503,7 @@ export class EdgeComputingManager {
     for (const req of filteredRequests) {
       requestsByNode.set(req.nodeId, (requestsByNode.get(req.nodeId) || 0) + 1);
       requestsByService.set(req.serviceId, (requestsByService.get(req.serviceId) || 0) + 1);
-      
+
       const node = this.nodes.get(req.nodeId);
       if (node) {
         const region = node.location.region;
@@ -501,7 +513,7 @@ export class EdgeComputingManager {
 
     // Calculate performance metrics
     const latencies = filteredRequests.map(req => req.duration);
-    const averageLatency = latencies.length > 0 ? 
+    const averageLatency = latencies.length > 0 ?
       latencies.reduce((sum, lat) => sum + lat, 0) / latencies.length : 0;
 
     const sortedLatencies = latencies.sort((a, b) => a - b);
@@ -539,12 +551,12 @@ export class EdgeComputingManager {
     for (const node of allNodes) {
       const region = node.location.region;
       nodeDistribution.set(region, (nodeDistribution.get(region) || 0) + 1);
-      
+
       const regionRequests = filteredRequests.filter(req => {
         const reqNode = this.nodes.get(req.nodeId);
         return reqNode?.location.region === region;
       });
-      
+
       if (regionRequests.length > 0) {
         const avgLatency = regionRequests.reduce((sum, req) => sum + req.duration, 0) / regionRequests.length;
         latencyByRegion.set(region, avgLatency);
@@ -670,7 +682,7 @@ export class EdgeComputingManager {
 
     // Determine target nodes
     let targetNodes: EdgeNode[];
-    
+
     if (service.deployment.targetNodes.includes('auto')) {
       targetNodes = await this.selectOptimalNodes(service);
     } else {
@@ -683,12 +695,12 @@ export class EdgeComputingManager {
     const deploymentPromises = targetNodes.map(async (node) => {
       // Simulate deployment time
       await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
-      
+
       // Add service to node
       if (!node.services.includes(service.id)) {
         node.services.push(service.id);
       }
-      
+
       // Update node load
       node.load.cpu = Math.min(100, node.load.cpu + 5);
       node.load.memory = Math.min(100, node.load.memory + 10);
@@ -724,10 +736,10 @@ export class EdgeComputingManager {
         // Check resource requirements
         const cpuRequired = parseInt(service.config.resources.cpu.replace('m', '')) / 1000;
         const memoryRequired = parseInt(service.config.resources.memory.replace('Mi', ''));
-        
+
         const availableCpu = node.capabilities.cpu * (1 - node.load.cpu / 100);
         const availableMemory = node.capabilities.memory * 1024 * (1 - node.load.memory / 100);
-        
+
         return availableCpu >= cpuRequired && availableMemory >= memoryRequired;
       })
       .filter(node => {
@@ -741,33 +753,33 @@ export class EdgeComputingManager {
     // Score nodes based on multiple factors
     const scoredNodes = availableNodes.map(node => {
       let score = 0;
-      
+
       // Lower load is better
       score += (100 - node.load.cpu) * 0.3;
       score += (100 - node.load.memory) * 0.3;
-      
+
       // Lower latency is better
       score += Math.max(0, 200 - node.latency.toOrigin) * 0.2;
-      
+
       // Prefer nodes in preferred regions
       if (service.deployment.constraints.preferredRegions?.includes(node.location.region)) {
         score += 20;
       }
-      
+
       // Higher uptime is better
       score += Math.min(node.health.uptime / 86400, 30) * 0.2; // Max 30 days contribution
-      
+
       return { node, score };
     });
 
     // Sort by score and select top nodes
     scoredNodes.sort((a, b) => b.score - a.score);
-    
+
     const targetCount = Math.min(
       service.config.replicas,
       Math.max(service.deployment.constraints.minNodes, scoredNodes.length)
     );
-    
+
     return scoredNodes.slice(0, targetCount).map(item => item.node);
   }
 
@@ -789,18 +801,18 @@ export class EdgeComputingManager {
 
     // Filter by geographic constraints
     let eligibleNodes = serviceNodes;
-    
+
     if (request.userLocation) {
       const userCountry = request.userLocation.country;
-      
+
       if (service.routing.geo.include?.length) {
-        eligibleNodes = eligibleNodes.filter(node => 
+        eligibleNodes = eligibleNodes.filter(node =>
           service.routing.geo.include!.includes(node.location.country)
         );
       }
-      
+
       if (service.routing.geo.exclude?.length) {
-        eligibleNodes = eligibleNodes.filter(node => 
+        eligibleNodes = eligibleNodes.filter(node =>
           !service.routing.geo.exclude!.includes(node.location.country)
         );
       }
@@ -808,7 +820,7 @@ export class EdgeComputingManager {
 
     // Filter by routing conditions
     for (const condition of service.routing.conditions) {
-      eligibleNodes = eligibleNodes.filter(node => 
+      eligibleNodes = eligibleNodes.filter(node =>
         this.evaluateRoutingCondition(condition, request, node)
       );
     }
@@ -821,18 +833,18 @@ export class EdgeComputingManager {
     // Score nodes for routing
     const scoredNodes = eligibleNodes.map(node => {
       let score = 0;
-      
+
       // Lower load is better for routing
       score += (100 - node.load.cpu) * 0.4;
       score += (100 - node.load.network) * 0.3;
-      
+
       // Geographic proximity
       if (request.userLocation) {
         const userCountry = request.userLocation.country;
         const userLatency = node.latency.toUsers.get(userCountry) || node.latency.toOrigin;
         score += Math.max(0, 300 - userLatency) * 0.3;
       }
-      
+
       return { node, score };
     });
 
@@ -891,19 +903,19 @@ export class EdgeComputingManager {
       case 'header':
         const headerValue = request.headers[condition.key!];
         return this.evaluateValue(headerValue, condition.value, condition.operator);
-        
+
       case 'query':
         // Simulate query parameter check
         return Math.random() > 0.5;
-        
+
       case 'user_agent':
         const userAgent = request.headers['user-agent'] || '';
         return this.evaluateValue(userAgent, condition.value, condition.operator);
-        
+
       case 'ip_range':
         // Simulate IP range check
         return Math.random() > 0.3;
-        
+
       default:
         return true;
     }
@@ -933,22 +945,22 @@ export class EdgeComputingManager {
       for (const [nodeId, node] of this.nodes.entries()) {
         // Simulate health check
         const isHealthy = Math.random() > 0.05; // 95% uptime
-        
+
         if (isHealthy) {
           node.status = 'online';
           node.health.lastHeartbeat = new Date();
           node.health.uptime += 30; // 30 seconds
-          
+
           // Simulate load fluctuation
           node.load.cpu = Math.max(0, Math.min(100, node.load.cpu + (Math.random() - 0.5) * 10));
           node.load.memory = Math.max(0, Math.min(100, node.load.memory + (Math.random() - 0.5) * 5));
           node.load.network = Math.max(0, Math.min(100, node.load.network + (Math.random() - 0.5) * 15));
-          
+
         } else {
           node.status = 'degraded';
           node.health.errorRate = Math.min(100, node.health.errorRate + 5);
         }
-        
+
         node.updatedAt = new Date();
       }
 
@@ -993,14 +1005,14 @@ export class EdgeComputingManager {
   private startAnalytics(): void {
     this.analyticsInterval = setInterval(async () => {
       const analytics = await this.getEdgeAnalytics();
-      
+
       // Record key metrics
-      this.metrics.recordMetric('edge.analytics.total_requests', analytics.requests.total);
-      this.metrics.recordMetric('edge.analytics.average_latency', analytics.performance.averageLatency);
-      this.metrics.recordMetric('edge.analytics.cache_hit_rate', analytics.performance.cacheHitRate);
-      this.metrics.recordMetric('edge.analytics.error_rate', analytics.performance.errorRate);
-      this.metrics.recordMetric('edge.analytics.healthy_nodes', analytics.capacity.healthyNodes);
-      this.metrics.recordMetric('edge.analytics.cpu_utilization', 
+      this.ensureMetrics().recordMetric('edge.analytics.total_requests', analytics.requests.total);
+      this.ensureMetrics().recordMetric('edge.analytics.average_latency', analytics.performance.averageLatency);
+      this.ensureMetrics().recordMetric('edge.analytics.cache_hit_rate', analytics.performance.cacheHitRate);
+      this.ensureMetrics().recordMetric('edge.analytics.error_rate', analytics.performance.errorRate);
+      this.ensureMetrics().recordMetric('edge.analytics.healthy_nodes', analytics.capacity.healthyNodes);
+      this.ensureMetrics().recordMetric('edge.analytics.cpu_utilization',
         analytics.capacity.totalCPU > 0 ? (analytics.capacity.usedCPU / analytics.capacity.totalCPU) * 100 : 0
       );
 

@@ -1,10 +1,10 @@
 import type { SpanOptions } from '@opentelemetry/api';
-import { AsyncSingletonService } from '@/lib/base/AsyncSingletonService.js';
-import { createLogger } from '@/lib/logger.js';
+import { AsyncSingletonService } from '../core/SingletonService.js';
+import { logger } from '@/logger.js';
 import { RedisClusterManager } from '@/infrastructure/cache/RedisClusterManager.js';
 import { DistributedTracing } from '@/infrastructure/observability/DistributedTracing.js';
 
-const logger = createLogger('ThreatDetectionEngine');
+// Logger imported from @/logger.js
 
 export interface ThreatEvent {
   id: string;
@@ -115,11 +115,11 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
     try {
       this.redis = RedisClusterManager.getInstance();
       this.tracing = await DistributedTracing.getInstance();
-      
+
       await this.loadSecurityRules();
       await this.initializeBehaviorBaselines();
       await this.loadMLModels();
-      
+
       logger.info('ThreatDetectionEngine initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize ThreatDetectionEngine:', error);
@@ -139,11 +139,11 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
     return this.tracing.traceAsync('threat_detection', spanOptions, async () => {
       try {
         const threats: ThreatEvent[] = [];
-        
+
         // Run all detection rules
         for (const rule of this.rules.values()) {
           if (!rule.enabled) continue;
-          
+
           const threat = await this.evaluateRule(rule, request);
           if (threat) {
             threats.push(threat);
@@ -166,10 +166,10 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
 
         // Aggregate and analyze threats
         const analysis = await this.analyzeThreatCollection(threats);
-        
+
         // Store threats for historical analysis
         await this.storeThreatEvents(threats);
-        
+
         // Execute mitigation actions
         await this.executeMitigation(analysis);
 
@@ -185,7 +185,7 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
     try {
       this.rules.set(rule.id, rule);
       await this.redis.setObject(`security:rule:${rule.id}`, rule, 86400000); // 24 hours
-      
+
       logger.info(`Security rule added: ${rule.name} (${rule.id})`);
     } catch (error) {
       logger.error('Failed to add security rule:', error);
@@ -203,7 +203,7 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
       const updated = { ...existing, ...updates };
       this.rules.set(ruleId, updated);
       await this.redis.setObject(`security:rule:${ruleId}`, updated, 86400000);
-      
+
       logger.info(`Security rule updated: ${ruleId}`);
     } catch (error) {
       logger.error('Failed to update security rule:', error);
@@ -215,7 +215,7 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
     try {
       const startTime = Date.now() - timeRange;
       const threatEvents = await this.getThreatEventsByTimeRange(startTime, Date.now());
-      
+
       const metrics: SecurityMetrics = {
         totalThreats: threatEvents.length,
         threatsBlocked: threatEvents.filter(t => t.blocked).length,
@@ -236,10 +236,10 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
     try {
       const userActions = await this.getUserActionHistory(userId, 30); // 30 days
       const baseline = this.calculateBehaviorBaseline(userActions);
-      
+
       this.behaviorBaselines.set(userId, baseline);
       await this.redis.setObject(`security:baseline:${userId}`, baseline, 86400000 * 30); // 30 days
-      
+
       logger.info(`Behavior baseline created for user: ${userId}`);
     } catch (error) {
       logger.error('Failed to create behavior baseline:', error);
@@ -258,7 +258,7 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
 
       // Count recent events of this type
       const recentEvents = await this.getRecentEventCount(rule.type, request.ipAddress, rule.timeWindow);
-      
+
       if (recentEvents >= rule.threshold) {
         const threat: ThreatEvent = {
           id: this.generateThreatId(),
@@ -317,7 +317,7 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
 
   private async runMLDetection(request: SecurityRequest): Promise<ThreatEvent[]> {
     const threats: ThreatEvent[] = [];
-    
+
     try {
       // Payload analysis for injection attacks
       const payloadThreat = await this.detectMaliciousPayload(request);
@@ -337,7 +337,7 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
   private async analyzeThreatCollection(threats: ThreatEvent[]): Promise<ThreatAnalysis> {
     const totalRiskScore = threats.reduce((sum, t) => sum + t.riskScore, 0);
     const maxSeverity = Math.max(...threats.map(t => this.severityToNumber(t.severity)));
-    
+
     const patterns = this.identifyThreatPatterns(threats);
     const recommendations = this.generateRecommendations(threats, patterns);
     const mitigation = this.planMitigation(threats);
@@ -412,7 +412,7 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
 
   private evaluateCondition(condition: SecurityCondition, request: SecurityRequest): boolean {
     const value = this.getRequestField(request, condition.field);
-    
+
     switch (condition.operator) {
       case 'equals':
         return value === condition.value;
@@ -438,7 +438,7 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
       'user_id': request.userId,
       'payload_size': request.payload?.length || 0
     };
-    
+
     return fields[field];
   }
 
@@ -481,11 +481,11 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
 
   private calculateTopThreatTypes(events: ThreatEvent[]): Array<{ type: ThreatType; count: number }> {
     const counts = new Map<ThreatType, number>();
-    
+
     for (const event of events) {
       counts.set(event.type, (counts.get(event.type) || 0) + 1);
     }
-    
+
     return Array.from(counts.entries())
       .map(([type, count]) => ({ type, count }))
       .sort((a, b) => b.count - a.count)
@@ -533,14 +533,14 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
 
   private async detectMaliciousPayload(request: SecurityRequest): Promise<ThreatEvent | null> {
     if (!request.payload) return null;
-    
+
     const maliciousPatterns = [
       /union\s+select/i,
       /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
       /javascript:/i,
       /eval\s*\(/i
     ];
-    
+
     for (const pattern of maliciousPatterns) {
       if (pattern.test(request.payload)) {
         return {
@@ -557,7 +557,7 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
         };
       }
     }
-    
+
     return null;
   }
 
@@ -568,7 +568,7 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
 
   private identifyThreatPatterns(threats: ThreatEvent[]): DetectedPattern[] {
     const patterns: DetectedPattern[] = [];
-    
+
     const typeGroups = new Map<ThreatType, ThreatEvent[]>();
     for (const threat of threats) {
       if (!typeGroups.has(threat.type)) {
@@ -576,45 +576,45 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
       }
       typeGroups.get(threat.type)!.push(threat);
     }
-    
+
     for (const [type, groupThreats] of typeGroups) {
       if (groupThreats.length > 1) {
         patterns.push({
           type: `repeated_${type}`,
           description: `Multiple ${type} threats detected`,
           frequency: groupThreats.length,
-          timespan: Math.max(...groupThreats.map(t => t.timestamp.getTime())) - 
-                   Math.min(...groupThreats.map(t => t.timestamp.getTime()))
+          timespan: Math.max(...groupThreats.map(t => t.timestamp.getTime())) -
+            Math.min(...groupThreats.map(t => t.timestamp.getTime()))
         });
       }
     }
-    
+
     return patterns;
   }
 
   private generateRecommendations(threats: ThreatEvent[], patterns: DetectedPattern[]): string[] {
     const recommendations: string[] = [];
-    
+
     const highRiskThreats = threats.filter(t => t.riskScore > 80);
     if (highRiskThreats.length > 0) {
       recommendations.push('Immediately review high-risk threats and consider blocking affected IPs');
     }
-    
+
     const bruteForceThreats = threats.filter(t => t.type === ThreatType.BRUTE_FORCE);
     if (bruteForceThreats.length > 0) {
       recommendations.push('Implement account lockout policies and consider MFA requirements');
     }
-    
+
     if (patterns.length > 2) {
       recommendations.push('Coordinated attack detected - consider implementing IP blocking and rate limiting');
     }
-    
+
     return recommendations;
   }
 
   private planMitigation(threats: ThreatEvent[]): MitigationAction[] {
     const actions: MitigationAction[] = [];
-    
+
     const criticalThreats = threats.filter(t => t.severity === ThreatSeverity.CRITICAL);
     if (criticalThreats.length > 0) {
       actions.push({
@@ -624,7 +624,7 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
         description: 'Block IP addresses associated with critical threats'
       });
     }
-    
+
     const bruteForceThreats = threats.filter(t => t.type === ThreatType.BRUTE_FORCE);
     if (bruteForceThreats.length > 0) {
       actions.push({
@@ -634,7 +634,7 @@ export class ThreatDetectionEngine extends AsyncSingletonService<ThreatDetection
         description: 'Enable account lockout for affected accounts'
       });
     }
-    
+
     return actions.sort((a, b) => a.priority - b.priority);
   }
 

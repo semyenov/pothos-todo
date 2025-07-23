@@ -1,37 +1,38 @@
 import { logger } from '@/logger.js';
 import { MetricsCollector } from '../monitoring/MetricsCollector.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface CircuitBreakerConfig {
   /**
    * Name of the circuit breaker (for logging/metrics)
    */
   name: string;
-  
+
   /**
    * Number of failures before opening the circuit
    */
   failureThreshold: number;
-  
+
   /**
    * Time window in milliseconds to count failures
    */
   timeWindow: number;
-  
+
   /**
    * Timeout in milliseconds before attempting to close the circuit
    */
   resetTimeout: number;
-  
+
   /**
    * Minimum number of requests in time window before circuit can open
    */
   minimumNumberOfCalls: number;
-  
+
   /**
    * Percentage of failures that will cause the circuit to open
    */
   failureRateThreshold: number;
-  
+
   /**
    * Function to determine if an error should count as a failure
    */
@@ -83,13 +84,13 @@ export class CircuitBreaker {
    */
   async execute<T>(fn: () => Promise<T>): Promise<T> {
     const canExecute = this.canExecute();
-    
+
     if (!canExecute) {
       this.metrics.recordMetric('circuit_breaker.rejected', 1, {
         name: this.config.name,
         state: this.state,
       });
-      
+
       throw new CircuitBreakerError(
         this.config.name,
         `Circuit breaker '${this.config.name}' is ${this.state}. Next attempt allowed at: ${this.nextAttemptTime?.toISOString()}`
@@ -102,22 +103,22 @@ export class CircuitBreaker {
     try {
       const result = await fn();
       this.onSuccess();
-      
+
       this.metrics.recordMetric('circuit_breaker.success', 1, {
         name: this.config.name,
         duration: Date.now() - startTime,
       });
-      
+
       return result;
     } catch (error) {
       this.onFailure(error as Error);
-      
+
       this.metrics.recordMetric('circuit_breaker.failure', 1, {
         name: this.config.name,
         error: (error as Error).message,
         duration: Date.now() - startTime,
       });
-      
+
       throw error;
     }
   }
@@ -131,7 +132,7 @@ export class CircuitBreaker {
     switch (this.state) {
       case CircuitBreakerState.CLOSED:
         return true;
-        
+
       case CircuitBreakerState.OPEN:
         if (this.nextAttemptTime && now >= this.nextAttemptTime) {
           this.state = CircuitBreakerState.HALF_OPEN;
@@ -141,10 +142,10 @@ export class CircuitBreaker {
           return true;
         }
         return false;
-        
+
       case CircuitBreakerState.HALF_OPEN:
         return true;
-        
+
       default:
         return false;
     }
@@ -173,13 +174,13 @@ export class CircuitBreaker {
     const now = new Date();
     this.failureCount++;
     this.lastFailureTime = now;
-    
+
     const isFailure = this.config.isFailure ? this.config.isFailure(error) : true;
-    
+
     if (isFailure) {
       this.failureWindow.push(now);
     }
-    
+
     this.callWindow.push(now);
     this.cleanupTimeWindows();
 
@@ -218,7 +219,7 @@ export class CircuitBreaker {
   private openCircuit(): void {
     this.state = CircuitBreakerState.OPEN;
     this.nextAttemptTime = new Date(Date.now() + this.config.resetTimeout);
-    
+
     this.metrics.recordMetric('circuit_breaker.opened', 1, {
       name: this.config.name,
       failureRate: this.getFailureRate(),
@@ -237,7 +238,7 @@ export class CircuitBreaker {
     this.callWindow = [];
     this.failureWindow = [];
     this.nextAttemptTime = undefined;
-    
+
     this.metrics.recordMetric('circuit_breaker.closed', 1, {
       name: this.config.name,
     });
@@ -248,7 +249,7 @@ export class CircuitBreaker {
    */
   private cleanupTimeWindows(): void {
     const cutoff = new Date(Date.now() - this.config.timeWindow);
-    
+
     this.callWindow = this.callWindow.filter(time => time > cutoff);
     this.failureWindow = this.failureWindow.filter(time => time > cutoff);
   }
@@ -301,17 +302,15 @@ export class CircuitBreaker {
 /**
  * Circuit breaker registry for managing multiple circuit breakers
  */
-export class CircuitBreakerRegistry {
-  private static instance: CircuitBreakerRegistry;
+export class CircuitBreakerRegistry extends SingletonService<CircuitBreakerRegistry> {
   private circuitBreakers = new Map<string, CircuitBreaker>();
 
-  private constructor() {}
+  protected constructor() {
+    super();
+  }
 
   public static getInstance(): CircuitBreakerRegistry {
-    if (!CircuitBreakerRegistry.instance) {
-      CircuitBreakerRegistry.instance = new CircuitBreakerRegistry();
-    }
-    return CircuitBreakerRegistry.instance;
+    return super.getInstance();
   }
 
   /**
@@ -320,13 +319,13 @@ export class CircuitBreakerRegistry {
   public register(config: CircuitBreakerConfig): CircuitBreaker {
     const circuitBreaker = new CircuitBreaker(config);
     this.circuitBreakers.set(config.name, circuitBreaker);
-    
+
     logger.info('Circuit breaker registered', {
       name: config.name,
       failureThreshold: config.failureThreshold,
       timeWindow: config.timeWindow,
     });
-    
+
     return circuitBreaker;
   }
 
@@ -342,11 +341,11 @@ export class CircuitBreakerRegistry {
    */
   public getAllStats(): Record<string, CircuitBreakerStats> {
     const stats: Record<string, CircuitBreakerStats> = {};
-    
+
     for (const [name, circuitBreaker] of this.circuitBreakers.entries()) {
       stats[name] = circuitBreaker.getStats();
     }
-    
+
     return stats;
   }
 
@@ -355,11 +354,11 @@ export class CircuitBreakerRegistry {
    */
   public async execute<T>(name: string, fn: () => Promise<T>): Promise<T> {
     const circuitBreaker = this.circuitBreakers.get(name);
-    
+
     if (!circuitBreaker) {
       throw new Error(`Circuit breaker '${name}' not found`);
     }
-    
+
     return circuitBreaker.execute(fn);
   }
 }
@@ -377,12 +376,12 @@ export const defaultCircuitBreakerConfigs = {
     failureRateThreshold: 50, // 50%
     isFailure: (error: Error) => {
       // Database connection errors should trigger circuit breaker
-      return error.message.includes('connection') || 
-             error.message.includes('timeout') ||
-             error.message.includes('ECONNREFUSED');
+      return error.message.includes('connection') ||
+        error.message.includes('timeout') ||
+        error.message.includes('ECONNREFUSED');
     },
   },
-  
+
   ai: {
     name: 'ai-services',
     failureThreshold: 5,
@@ -393,13 +392,13 @@ export const defaultCircuitBreakerConfigs = {
     isFailure: (error: Error) => {
       // OpenAI rate limits and API errors should trigger circuit breaker
       return error.message.includes('rate limit') ||
-             error.message.includes('quota') ||
-             error.message.includes('API') ||
-             error.message.includes('401') ||
-             error.message.includes('429');
+        error.message.includes('quota') ||
+        error.message.includes('API') ||
+        error.message.includes('401') ||
+        error.message.includes('429');
     },
   },
-  
+
   cache: {
     name: 'cache',
     failureThreshold: 15,
@@ -410,8 +409,8 @@ export const defaultCircuitBreakerConfigs = {
     isFailure: (error: Error) => {
       // Redis connection errors
       return error.message.includes('ECONNREFUSED') ||
-             error.message.includes('Redis') ||
-             error.message.includes('connection');
+        error.message.includes('Redis') ||
+        error.message.includes('connection');
     },
   },
 };

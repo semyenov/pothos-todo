@@ -1,5 +1,5 @@
 import { logger } from '@/logger';
-import EventEmitter from 'events';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 import { createHash, randomBytes } from 'crypto';
 import WebSocket from 'ws';
 
@@ -76,8 +76,7 @@ export interface PresenceInfo {
   timestamp: Date;
 }
 
-export class RealTimeCollaboration extends EventEmitter {
-  private static instance: RealTimeCollaboration;
+export class RealTimeCollaboration extends EventEmitterSingletonService<RealTimeCollaboration> {
   private sessions: Map<string, CollaborationSession> = new Map();
   private userSessions: Map<string, Set<string>> = new Map(); // userId -> sessionIds
   private operations: Map<string, ContentOperation[]> = new Map(); // sessionId -> operations
@@ -87,16 +86,13 @@ export class RealTimeCollaboration extends EventEmitter {
   private webSocketServer: WebSocket.Server | null = null;
   private clientConnections: Map<string, WebSocket> = new Map(); // userId -> connection
 
-  private constructor() {
+  protected constructor() {
     super();
     this.setupCleanupTasks();
   }
 
   public static getInstance(): RealTimeCollaboration {
-    if (!RealTimeCollaboration.instance) {
-      RealTimeCollaboration.instance = new RealTimeCollaboration();
-    }
-    return RealTimeCollaboration.instance;
+    return super.getInstance();
   }
 
   /**

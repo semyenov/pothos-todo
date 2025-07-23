@@ -1,7 +1,7 @@
 import { loadConfig, watchConfig } from 'c12';
 import { defu } from 'defu';
 import { isDevelopment as isDevEnv, isProduction as isProdEnv, isTest as isTestEnv } from 'std-env';
-import type { AppConfig, ConfigResult, ConfigWatchOptions } from '../../config/types.js';
+import type { AppConfig, ConfigWatchOptions } from '../../config/types.js';
 
 // Configuration loader instance
 let configInstance: AppConfig | null = null;

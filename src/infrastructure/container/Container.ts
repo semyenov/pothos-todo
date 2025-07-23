@@ -17,11 +17,11 @@ import { NLPService } from '../ai/NLPService.js';
 import { RAGService } from '../ai/RAGService.js';
 import { MLPredictionService } from '../ai/MLPredictionService.js';
 import { PrismaService } from '../database/PrismaService.js';
+import { SingletonService } from '../core/SingletonService.js';
 import { v4 as uuidv4 } from 'uuid';
 
-export class Container {
+export class Container extends SingletonService<Container> {
   public readonly id: string;
-  private static instance: Container;
 
   private readonly _prismaService: PrismaService;
   private readonly _prisma: PrismaClient;
@@ -44,7 +44,9 @@ export class Container {
   private readonly _deleteTodoHandler: DeleteTodoHandler;
   private readonly _executeNLPCommandHandler: ExecuteNLPCommandHandler;
 
-  private constructor() {
+  protected constructor() {
+    super();
+
     this.id = uuidv4();
     this._prismaService = PrismaService.getInstance();
     this._prisma = this._prismaService.getClient();
@@ -56,8 +58,9 @@ export class Container {
     this._eventStore = new PrismaEventStore(this._prisma);
     this._eventPublisher = new InMemoryEventPublisher(this._eventStore);
     this._eventHandlerRegistry = new EventHandlerRegistry(this._eventPublisher);
-    this._cacheManager = CacheManager.getInstance();
-    this._vectorStore = VectorStore.getInstance();
+    // Async services will be initialized separately
+    this._cacheManager = null as any; // Will be initialized async
+    this._vectorStore = null as any; // Will be initialized async
     this._embeddingService = EmbeddingService.getInstance(this._prisma);
     this._nlpService = NLPService.getInstance();
     this._ragService = RAGService.getInstance(this._embeddingService, this._vectorStore);
@@ -85,10 +88,17 @@ export class Container {
   }
 
   static getInstance(): Container {
-    if (!Container.instance) {
-      Container.instance = new Container();
+    return super.getInstance();
+  }
+
+  // Initialize async services separately
+  async initializeAsyncServices(): Promise<void> {
+    if (!this._cacheManager) {
+      this._cacheManager = await CacheManager.getInstance();
     }
-    return Container.instance;
+    if (!this._vectorStore) {
+      this._vectorStore = await VectorStore.getInstance();
+    }
   }
 
   get prismaService(): PrismaService {

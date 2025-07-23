@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../../lib/unjs-utils.js';
 import { ohash } from 'ohash';
+import { SingletonService } from '../core/SingletonService.js';
 
 // Sharding configuration interface
 export interface ShardConfig {
@@ -37,8 +38,7 @@ export interface ReplicationConfig {
 }
 
 // Database shard manager with enterprise-grade features
-export class DatabaseShardingManager {
-  private static instance: DatabaseShardingManager | null = null;
+export class DatabaseShardingManager extends SingletonService<DatabaseShardingManager> {
   private shards = new Map<string, PrismaClient>();
   private shardConfigs = new Map<string, ShardConfig>();
   private shardHealth = new Map<string, boolean>();
@@ -52,26 +52,29 @@ export class DatabaseShardingManager {
   private replicationConfig: ReplicationConfig;
   private healthCheckInterval: NodeJS.Timeout | null = null;
 
-  private constructor(
-    strategy: ShardingStrategy,
-    replicationConfig: ReplicationConfig
-  ) {
-    this.strategy = strategy;
-    this.replicationConfig = replicationConfig;
+  protected constructor() {
+    super();
+    // Default strategy and config - can be configured later
+    this.strategy = { type: 'hash', keyField: 'id' };
+    this.replicationConfig = {
+      enabled: false,
+      strategy: 'master-slave',
+      readPreference: 'primary',
+      writeConsistency: 'strong',
+      failoverTimeout: 5000,
+      syncInterval: 1000
+    };
     this.startHealthChecking();
   }
 
-  static getInstance(
-    strategy?: ShardingStrategy,
-    replicationConfig?: ReplicationConfig
-  ): DatabaseShardingManager {
-    if (!DatabaseShardingManager.instance) {
-      if (!strategy || !replicationConfig) {
-        throw new Error('ShardingStrategy and ReplicationConfig required for first initialization');
-      }
-      DatabaseShardingManager.instance = new DatabaseShardingManager(strategy, replicationConfig);
-    }
-    return DatabaseShardingManager.instance;
+  static getInstance(): DatabaseShardingManager {
+    return super.getInstance();
+  }
+
+  // Configure the sharding strategy and replication
+  configureSharding(strategy: ShardingStrategy, replicationConfig: ReplicationConfig): void {
+    this.strategy = strategy;
+    this.replicationConfig = replicationConfig;
   }
 
   // Initialize database shards

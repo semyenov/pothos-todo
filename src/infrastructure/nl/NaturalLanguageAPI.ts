@@ -1,10 +1,10 @@
-import { EventEmitter } from 'events';
 import { logger } from '@/logger.js';
 import { AIAssistant } from '../ai/AIAssistant.js';
 import { SemanticSearch } from '../ai/SemanticSearch.js';
 import { VectorStore } from '../ai/VectorStore.js';
 import { schema } from '../../api/server/server.js';
 import { buildSchema, parse, validate, execute, GraphQLSchema } from 'graphql';
+import { AsyncEventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface NLQuery {
   id: string;
@@ -105,32 +105,34 @@ export interface NLAPIConfig {
  * Natural Language API Interface
  * Converts natural language queries to GraphQL and executes them
  */
-export class NaturalLanguageAPI extends EventEmitter {
-  private static instance: NaturalLanguageAPI;
-  private config: NLAPIConfig;
-  private schema: GraphQLSchema;
-  private aiAssistant: AIAssistant;
-  private semanticSearch: SemanticSearch;
-  private vectorStore: VectorStore;
+export class NaturalLanguageAPI extends AsyncEventEmitterSingletonService {
+  private config: NLAPIConfig | null = null;
+  private schema: GraphQLSchema | null = null;
+  private aiAssistant: AIAssistant | null = null;
+  private semanticSearch: SemanticSearch | null = null;
+  private vectorStore: VectorStore | null = null;
 
   // Query processing pipeline
-  private intentClassifier: IntentClassifier;
-  private entityExtractor: EntityExtractor;
-  private queryGenerator: QueryGenerator;
-  private translator?: LanguageTranslator;
+  private intentClassifier: IntentClassifier | null = null;
+  private entityExtractor: EntityExtractor | null = null;
+  private queryGenerator: QueryGenerator | null = null;
+  private translator: LanguageTranslator | null = null;
 
   // Cache and history
   private queryCache: Map<string, ParsedQuery> = new Map();
   private queryHistory: Map<string, NLQuery[]> = new Map(); // userId -> queries
   private commonPatterns: Map<string, number> = new Map();
 
-  private constructor(config: NLAPIConfig) {
+  protected constructor() {
     super();
+  }
+
+  public async initialize(config: NLAPIConfig): Promise<void> {
     this.config = config;
     this.schema = schema;
     this.aiAssistant = AIAssistant.getInstance();
     this.semanticSearch = SemanticSearch.getInstance();
-    this.vectorStore = VectorStore.getInstance();
+    this.vectorStore = await VectorStore.getInstance();
 
     // Initialize processing components
     this.intentClassifier = new IntentClassifier();
@@ -144,18 +146,64 @@ export class NaturalLanguageAPI extends EventEmitter {
     this.initializeNL();
   }
 
-  static initialize(config: NLAPIConfig): NaturalLanguageAPI {
-    if (!NaturalLanguageAPI.instance) {
-      NaturalLanguageAPI.instance = new NaturalLanguageAPI(config);
-    }
-    return NaturalLanguageAPI.instance;
+  static async getInstance(): Promise<NaturalLanguageAPI> {
+    return super.getInstanceAsync() as Promise<NaturalLanguageAPI>;
   }
 
-  static getInstance(): NaturalLanguageAPI {
-    if (!NaturalLanguageAPI.instance) {
+  private ensureConfig(): NLAPIConfig {
+    if (!this.config) {
       throw new Error('NaturalLanguageAPI not initialized');
     }
-    return NaturalLanguageAPI.instance;
+    return this.config;
+  }
+
+  private ensureSchema(): GraphQLSchema {
+    if (!this.schema) {
+      throw new Error('NaturalLanguageAPI not initialized');
+    }
+    return this.schema;
+  }
+
+  private ensureAiAssistant(): AIAssistant {
+    if (!this.aiAssistant) {
+      throw new Error('NaturalLanguageAPI not initialized');
+    }
+    return this.aiAssistant;
+  }
+
+  private ensureSemanticSearch(): SemanticSearch {
+    if (!this.semanticSearch) {
+      throw new Error('NaturalLanguageAPI not initialized');
+    }
+    return this.semanticSearch;
+  }
+
+  private ensureVectorStore(): VectorStore {
+    if (!this.vectorStore) {
+      throw new Error('NaturalLanguageAPI not initialized');
+    }
+    return this.vectorStore;
+  }
+
+  private ensureIntentClassifier(): IntentClassifier {
+    if (!this.intentClassifier) {
+      throw new Error('NaturalLanguageAPI not initialized');
+    }
+    return this.intentClassifier;
+  }
+
+  private ensureEntityExtractor(): EntityExtractor {
+    if (!this.entityExtractor) {
+      throw new Error('NaturalLanguageAPI not initialized');
+    }
+    return this.entityExtractor;
+  }
+
+  private ensureQueryGenerator(): QueryGenerator {
+    if (!this.queryGenerator) {
+      throw new Error('NaturalLanguageAPI not initialized');
+    }
+    return this.queryGenerator;
   }
 
   /**
@@ -166,7 +214,7 @@ export class NaturalLanguageAPI extends EventEmitter {
     context: NLQuery['context'],
     userId?: string
   ): Promise<NLResponse> {
-    if (!this.config.enabled) {
+    if (!this.ensureConfig().enabled) {
       throw new Error('Natural language API is disabled');
     }
 
@@ -181,7 +229,7 @@ export class NaturalLanguageAPI extends EventEmitter {
 
     try {
       // Validate input
-      if (naturalLanguage.length > this.config.limits.maxQueryLength) {
+      if (naturalLanguage.length > this.ensureConfig().limits.maxQueryLength) {
         throw new Error('Query too long');
       }
 
@@ -265,8 +313,8 @@ export class NaturalLanguageAPI extends EventEmitter {
     limit: number = 5
   ): Promise<string[]> {
     // Use semantic search to find similar queries
-    const embedding = await this.semanticSearch.generateEmbedding(partialQuery);
-    const similar = await this.vectorStore.query({
+    const embedding = await this.ensureSemanticSearch().generateEmbedding(partialQuery);
+    const similar = await this.ensureVectorStore().query({
       vector: embedding,
       topK: limit * 2,
       includeMetadata: true,
@@ -365,7 +413,7 @@ export class NaturalLanguageAPI extends EventEmitter {
    */
   private initializeNL(): void {
     logger.info('Initializing natural language API', {
-      features: this.config.features,
+      features: this.ensureConfig().features,
       multiLanguage: !!this.translator,
     });
 
@@ -391,17 +439,17 @@ export class NaturalLanguageAPI extends EventEmitter {
     }
 
     // Step 2: Intent classification
-    const intent = await this.intentClassifier.classify(processedText, nlQuery.context);
+    const intent = await this.ensureIntentClassifier().classify(processedText, nlQuery.context);
 
     // Step 3: Entity extraction
-    const entities = await this.entityExtractor.extract(processedText, nlQuery.context);
+    const entities = await this.ensureEntityExtractor().extract(processedText, nlQuery.context);
 
     // Step 4: Filter and operation extraction
     const filters = await this.extractFilters(processedText, entities);
     const operations = await this.extractOperations(processedText, entities);
 
     // Step 5: GraphQL query generation
-    const { graphqlQuery, variables } = await this.queryGenerator.generate(
+    const { graphqlQuery, variables } = await this.ensureQueryGenerator().generate(
       intent,
       entities,
       filters,
@@ -410,7 +458,7 @@ export class NaturalLanguageAPI extends EventEmitter {
     );
 
     // Step 6: Query validation
-    const errors = validate(this.schema, parse(graphqlQuery));
+    const errors = validate(this.ensureSchema(), parse(graphqlQuery));
     if (errors.length > 0) {
       throw new Error(`Generated invalid GraphQL: ${errors[0].message}`);
     }
@@ -552,7 +600,7 @@ export class NaturalLanguageAPI extends EventEmitter {
   ): Promise<any> {
     try {
       const result = await execute({
-        schema: this.schema,
+        schema: this.ensureSchema(),
         document: parse(query),
         variableValues: variables,
         contextValue: {
@@ -576,7 +624,7 @@ export class NaturalLanguageAPI extends EventEmitter {
     nlQuery: NLQuery,
     result: any
   ): Promise<string> {
-    if (!this.config.features.explanation) {
+    if (!this.ensureConfig().features.explanation) {
       return 'Query executed successfully.';
     }
 
@@ -648,7 +696,7 @@ export class NaturalLanguageAPI extends EventEmitter {
    * Generate suggestions for improving queries
    */
   private async generateSuggestions(nlQuery: NLQuery): Promise<string[]> {
-    if (!this.config.features.suggestions) {
+    if (!this.ensureConfig().features.suggestions) {
       return [];
     }
 
@@ -803,8 +851,8 @@ export class NaturalLanguageAPI extends EventEmitter {
     
     for (const query of commonQueries) {
       try {
-        const embedding = await this.semanticSearch.generateEmbedding(query);
-        await this.vectorStore.upsert([{
+        const embedding = await this.ensureSemanticSearch().generateEmbedding(query);
+        await this.ensureVectorStore().upsert([{
           id: `pattern_${Date.now()}_${Math.random()}`,
           values: embedding,
           metadata: {

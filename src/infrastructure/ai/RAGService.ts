@@ -3,6 +3,7 @@ import { EmbeddingService } from './EmbeddingService.js';
 import { VectorStore } from './VectorStore.js';
 import { logger } from '@/logger.js';
 import type { Todo, PrismaClient } from '@prisma/client';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface RAGContext {
   query: string;
@@ -21,28 +22,28 @@ export interface RAGResponse {
   confidence: number;
 }
 
-export class RAGService {
-  private static instance: RAGService | null = null;
+export class RAGService extends SingletonService<RAGService> {
   private openai: OpenAI | null = null;
-  private embeddingService: EmbeddingService;
-  private vectorStore: VectorStore;
+  private embeddingService: EmbeddingService | null = null;
+  private vectorStore: VectorStore | null = null;
 
-  private constructor(
-    embeddingService: EmbeddingService,
-    vectorStore: VectorStore
-  ) {
-    this.embeddingService = embeddingService;
-    this.vectorStore = vectorStore;
+  protected constructor() {
+    super();
   }
 
-  static getInstance(
+  static async getInstance(): Promise<RAGService> {
+    return super.getInstance();
+  }
+
+  /**
+   * Configure the RAGService with required dependencies
+   */
+  public async configure(
     embeddingService: EmbeddingService,
     vectorStore: VectorStore
-  ): RAGService {
-    if (!RAGService.instance) {
-      RAGService.instance = new RAGService(embeddingService, vectorStore);
-    }
-    return RAGService.instance;
+  ): Promise<void> {
+    this.embeddingService = embeddingService;
+    this.vectorStore = vectorStore;
   }
 
   initialize(apiKey: string): void {
@@ -54,9 +55,11 @@ export class RAGService {
       throw new Error('RAG service not initialized. Please provide OpenAI API key.');
     }
 
+    this.ensureConfigured();
+
     try {
       // Step 1: Retrieve relevant todos using semantic search
-      const relevantTodos = await this.embeddingService.findSimilarTodos(
+      const relevantTodos = await this.embeddingService!.findSimilarTodos(
         context.query,
         context.userId,
         context.maxContextItems || 5
@@ -96,9 +99,11 @@ export class RAGService {
       throw new Error('RAG service not initialized.');
     }
 
+    this.ensureConfigured();
+
     try {
       // Get user's todos for analysis
-      const todos = await this.embeddingService.findSimilarTodos(
+      const todos = await this.embeddingService!.findSimilarTodos(
         'all tasks',
         userId,
         50
@@ -153,15 +158,17 @@ Return a JSON object with:
       throw new Error('RAG service not initialized.');
     }
 
+    this.ensureConfigured();
+
     try {
       // Get the specific todo and related tasks
-      const todo = await this.embeddingService.findSimilarTodos(todoId, userId, 1);
+      const todo = await this.embeddingService!.findSimilarTodos(todoId, userId, 1);
       const todoContent = todo[0]?.content || '';
       if (!todo) {
         throw new Error('Task not found');
       }
 
-      const relatedTodos = await this.embeddingService.findSimilarTodos(
+      const relatedTodos = await this.embeddingService!.findSimilarTodos(
         todoContent,
         userId,
         3
@@ -250,5 +257,14 @@ Always base your answers on the provided context.`;
       })),
       confidence
     };
+  }
+
+  /**
+   * Ensure the service is configured before use
+   */
+  private ensureConfigured(): void {
+    if (!this.embeddingService || !this.vectorStore) {
+      throw new Error('RAGService not configured - call configure() first');
+    }
   }
 }

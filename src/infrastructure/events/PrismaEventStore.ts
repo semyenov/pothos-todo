@@ -1,9 +1,9 @@
 import { PrismaClient, type DomainEvent as PrismaDomainEvent } from '@prisma/client';
-import type { EventStore, StoredEvent } from './EventStore.js';
+import type { IEventStore, StoredEvent } from './EventStore.js';
 import { DomainEvent } from '../../domain/events/DomainEvent.js';
 import type { JsonObject } from '@prisma/client/runtime/library';
 
-export class PrismaEventStore implements EventStore {
+export class PrismaEventStore implements IEventStore {
   constructor(private readonly prisma: PrismaClient) { }
 
   async append(event: DomainEvent): Promise<void> {

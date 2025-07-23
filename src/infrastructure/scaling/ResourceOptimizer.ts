@@ -1,5 +1,5 @@
 import type { SpanOptions } from '@opentelemetry/api';
-import { AsyncSingletonService } from '@/lib/base/AsyncSingletonService.js';
+import { AsyncSingletonService } from '@/infrastructure/core/AsyncSingletonService.js';
 import { createLogger } from '@/lib/logger.js';
 import { RedisClusterManager } from '@/infrastructure/cache/RedisClusterManager.js';
 import { DistributedTracing } from '@/infrastructure/observability/DistributedTracing.js';
@@ -315,11 +315,11 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
       this.redis = RedisClusterManager.getInstance();
       this.tracing = await DistributedTracing.getInstance();
       this.autoScaler = await IntelligentAutoScaler.getInstance();
-      
+
       await this.loadOptimizationStrategies();
       await this.loadResourceProfiles();
       await this.startOptimizationMonitoring();
-      
+
       logger.info('ResourceOptimizer initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize ResourceOptimizer:', error);
@@ -338,10 +338,10 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
     return this.tracing.traceAsync('create_optimization_strategy', spanOptions, async () => {
       try {
         await this.validateOptimizationStrategy(strategy);
-        
+
         this.strategies.set(strategy.id, strategy);
         await this.redis.setObject(`optimization:strategy:${strategy.id}`, strategy, 86400000 * 30); // 30 days
-        
+
         logger.info(`Optimization strategy created: ${strategy.name} (${strategy.id})`);
       } catch (error) {
         logger.error('Failed to create optimization strategy:', error);
@@ -353,10 +353,10 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
   async createResourceProfile(profile: ResourceProfile): Promise<void> {
     try {
       await this.validateResourceProfile(profile);
-      
+
       this.profiles.set(profile.resourceId, profile);
       await this.redis.setObject(`optimization:profile:${profile.resourceId}`, profile, 86400000 * 7); // 7 days
-      
+
       logger.info(`Resource profile created: ${profile.resourceId}`);
     } catch (error) {
       logger.error('Failed to create resource profile:', error);
@@ -374,7 +374,7 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
     return this.tracing.traceAsync('generate_optimization_recommendations', spanOptions, async () => {
       try {
         const recommendations: OptimizationRecommendation[] = [];
-        const profilesToAnalyze = resourceId ? 
+        const profilesToAnalyze = resourceId ?
           [this.profiles.get(resourceId)].filter(Boolean) as ResourceProfile[] :
           Array.from(this.profiles.values());
 
@@ -397,7 +397,7 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
         }
 
         logger.info(`Generated ${recommendations.length} optimization recommendations`);
-        
+
         return recommendations;
       } catch (error) {
         logger.error('Failed to generate optimization recommendations:', error);
@@ -471,11 +471,11 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
       // Analyze current patterns and project future impact
       const currentCost = await this.calculateCurrentResourceCost(profile);
       const currentPerformance = await this.calculateCurrentPerformance(profile);
-      
+
       // Apply predictive models
       const futurePatterns = await this.predictFutureUsagePatterns(profile, timeHorizon);
       const optimizedConfig = await this.calculateOptimalConfiguration(profile, futurePatterns);
-      
+
       const impact: OptimizationImpact = {
         costSavings: Math.max(0, currentCost - optimizedConfig.cost),
         performanceChange: optimizedConfig.performance - currentPerformance,
@@ -494,7 +494,7 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
 
   private async analyzeResourceForOptimization(profile: ResourceProfile): Promise<OptimizationRecommendation[]> {
     const recommendations: OptimizationRecommendation[] = [];
-    
+
     for (const strategy of this.strategies.values()) {
       if (!strategy.enabled || !strategy.targets.includes(profile.resourceType)) {
         continue;
@@ -537,8 +537,8 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
       }
 
       // Skip if no significant impact
-      if (impact.costSavings < strategy.parameters.costThreshold && 
-          impact.performanceChange < strategy.parameters.performanceThreshold) {
+      if (impact.costSavings < strategy.parameters.costThreshold &&
+        impact.performanceChange < strategy.parameters.performanceThreshold) {
         return null;
       }
 
@@ -573,9 +573,9 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
     const currentCost = await this.calculateCurrentResourceCost(profile);
     const rightSizedCost = await this.calculateRightSizedCost(profile);
     const reservedInstanceSavings = await this.calculateReservedInstanceSavings(profile);
-    
+
     const totalSavings = Math.max(0, currentCost - Math.min(rightSizedCost, currentCost - reservedInstanceSavings));
-    
+
     return {
       costSavings: totalSavings,
       performanceChange: -5, // Conservative estimate
@@ -590,7 +590,7 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
     // Analyze performance optimization opportunities
     const bottlenecks = await this.identifyPerformanceBottlenecks(profile);
     const optimizationPotential = bottlenecks.reduce((sum, b) => sum + b.impact, 0);
-    
+
     return {
       costSavings: 0,
       performanceChange: optimizationPotential,
@@ -606,7 +606,7 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
     const currentEfficiency = (profile.baseline.cpu.average + profile.baseline.memory.average) / 2;
     const targetEfficiency = 75; // Target 75% efficiency
     const improvementPotential = Math.max(0, targetEfficiency - currentEfficiency);
-    
+
     return {
       costSavings: improvementPotential * 2, // $2 per efficiency point
       performanceChange: improvementPotential / 2,
@@ -620,7 +620,7 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
   private async analyzeSustainabilityOptimization(profile: ResourceProfile, strategy: OptimizationStrategy): Promise<OptimizationImpact> {
     // Analyze sustainability optimization opportunities
     const carbonReduction = await this.calculateCarbonReduction(profile);
-    
+
     return {
       costSavings: carbonReduction * 0.5, // Carbon pricing
       performanceChange: 0,
@@ -636,7 +636,7 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
     const currentAvailability = profile.baseline.availability.average;
     const targetAvailability = 99.9;
     const improvementPotential = Math.max(0, targetAvailability - currentAvailability);
-    
+
     return {
       costSavings: 0,
       performanceChange: 0,
@@ -650,44 +650,44 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
   private async executeOptimizationSteps(execution: OptimizationExecution, recommendation: OptimizationRecommendation): Promise<void> {
     execution.status = 'running';
     execution.startTime = new Date();
-    
+
     try {
       for (let i = 0; i < recommendation.implementation.steps.length; i++) {
         const step = recommendation.implementation.steps[i];
-        
+
         execution.progress.currentStep = i + 1;
         execution.progress.percentage = Math.round(((i + 1) / recommendation.implementation.steps.length) * 100);
-        
+
         this.logExecution(execution, 'info', `Starting step ${i + 1}: ${step.name}`);
-        
+
         await this.executeOptimizationStep(step);
-        
+
         // Validate step completion
         const validationResult = await this.validateStepCompletion(step, recommendation);
         execution.metrics.validationResults.push(validationResult);
-        
+
         if (!validationResult.passed) {
           throw new Error(`Step validation failed: ${step.name}`);
         }
-        
+
         await this.storeOptimizationExecution(execution);
       }
-      
+
       execution.status = 'completed';
       execution.endTime = new Date();
       this.logExecution(execution, 'info', 'Optimization completed successfully');
-      
+
     } catch (error) {
       execution.status = 'failed';
       execution.endTime = new Date();
       this.logExecution(execution, 'error', `Optimization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      
+
       // Attempt rollback if configured
       if (recommendation.implementation.rollbackPlan && recommendation.parameters.rollbackOnFailure) {
         await this.executeRollback(execution, recommendation);
       }
     }
-    
+
     await this.storeOptimizationExecution(execution);
   }
 
@@ -700,7 +700,7 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
   private async validateStepCompletion(step: ImplementationStep, recommendation: OptimizationRecommendation): Promise<ValidationResult> {
     // Simulate validation
     const passed = Math.random() > 0.1; // 90% success rate
-    
+
     return {
       criterion: step.name,
       expected: 100,
@@ -713,11 +713,11 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
   private async executeRollback(execution: OptimizationExecution, recommendation: OptimizationRecommendation): Promise<void> {
     execution.status = 'rolled_back';
     this.logExecution(execution, 'warn', 'Starting rollback procedure');
-    
+
     for (const step of recommendation.implementation.rollbackPlan.steps) {
       await this.executeOptimizationStep(step);
     }
-    
+
     this.logExecution(execution, 'info', 'Rollback completed');
   }
 
@@ -728,7 +728,7 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
       message,
       data
     };
-    
+
     execution.logs.push(log);
     logger[level](`[Execution ${execution.id}] ${message}`, data);
   }
@@ -788,7 +788,7 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
     if (!strategy.id || !strategy.name) {
       throw new Error('Strategy ID and name are required');
     }
-    
+
     if (strategy.targets.length === 0) {
       throw new Error('At least one target resource type is required');
     }
@@ -899,7 +899,7 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
 
   private async assessOptimizationRisks(strategy: OptimizationStrategy, profile: ResourceProfile, impact: OptimizationImpact): Promise<RiskAssessment> {
     const riskLevel = impact.costSavings > 100 ? 'medium' : 'low';
-    
+
     return {
       overall: riskLevel,
       categories: [
@@ -931,7 +931,7 @@ export class ResourceOptimizer extends AsyncSingletonService<ResourceOptimizer> 
     if (this.monitoringInterval) {
       clearInterval(this.monitoringInterval);
     }
-    
+
     logger.info('ResourceOptimizer shutdown completed');
   }
 }

@@ -1,5 +1,5 @@
 import { logger } from '@/logger';
-import EventEmitter from 'events';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface EdgeNode {
   id: string;
@@ -92,26 +92,27 @@ export interface CacheRule {
   }>;
 }
 
-export class AdvancedEdgeComputingManager extends EventEmitter {
-  private static instance: AdvancedEdgeComputingManager;
+export class AdvancedEdgeComputingManager extends EventEmitterSingletonService<AdvancedEdgeComputingManager> {
   private edgeNodes: Map<string, EdgeNode> = new Map();
   private edgeFunctions: Map<string, EdgeFunction> = new Map();
   private cacheRules: CacheRule[] = [];
-  private cdnConfig: CDNConfig;
+  private cdnConfig: CDNConfig | null = null;
   private healthCheckInterval: NodeJS.Timer | null = null;
   private loadBalancingStrategy: 'round_robin' | 'least_latency' | 'least_load' | 'geo_proximity' = 'geo_proximity';
 
-  private constructor() {
+  protected constructor() {
     super();
-    this.initializeDefaultConfig();
-    this.startHealthChecking();
+  }
+
+  private ensureCdnConfig(): CDNConfig {
+    if (!this.cdnConfig) {
+      throw new Error('AdvancedEdgeComputingManager not initialized');
+    }
+    return this.cdnConfig;
   }
 
   public static getInstance(): AdvancedEdgeComputingManager {
-    if (!AdvancedEdgeComputingManager.instance) {
-      AdvancedEdgeComputingManager.instance = new AdvancedEdgeComputingManager();
-    }
-    return AdvancedEdgeComputingManager.instance;
+    return super.getInstance();
   }
 
   /**
@@ -119,6 +120,8 @@ export class AdvancedEdgeComputingManager extends EventEmitter {
    */
   public async initialize(): Promise<void> {
     try {
+      this.initializeDefaultConfig();
+      this.startHealthChecking();
       await this.discoverEdgeNodes();
       await this.deployDefaultFunctions();
       

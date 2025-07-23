@@ -1,8 +1,8 @@
-import { EventEmitter } from 'events';
 import { logger } from '@/logger.js';
 import { MetricsSystem } from '../observability/Metrics.js';
 import { SelfHealingSystem } from '../autonomous/SelfHealingSystem.js';
 import { VectorStore } from '../ai/VectorStore.js';
+import { AsyncEventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface SynapticConnection {
   id: string;
@@ -356,22 +356,21 @@ export interface TaskOutput {
  * Implements brain-inspired computing with spiking neural networks, synaptic plasticity,
  * and ultra-low power adaptive processing
  */
-export class NeuromorphicProcessor extends EventEmitter {
-  private static instance: NeuromorphicProcessor;
+export class NeuromorphicProcessor extends AsyncEventEmitterSingletonService {
   private networks: Map<string, NeuralNetwork> = new Map();
   private tasks: Map<string, NeuromorphicTask> = new Map();
-  private hardware: NeuromorphicHardware;
+  private hardware: NeuromorphicHardware | null = null;
   
   // System integrations
-  private metrics: MetricsSystem;
-  private selfHealing: SelfHealingSystem;
-  private vectorStore: VectorStore;
+  private metrics: MetricsSystem | null = null;
+  private selfHealing: SelfHealingSystem | null = null;
+  private vectorStore: VectorStore | null = null;
 
   // Processing engines
-  private spikeProcessor: SpikeProcessor;
-  private plasticityEngine: PlasticityEngine;
-  private energyManager: EnergyManager;
-  private memoryManager: MemoryManager;
+  private spikeProcessor: SpikeProcessor | null = null;
+  private plasticityEngine: PlasticityEngine | null = null;
+  private energyManager: EnergyManager | null = null;
+  private memoryManager: MemoryManager | null = null;
 
   // Real-time processing
   private processingLoop?: NodeJS.Timeout;
@@ -388,27 +387,78 @@ export class NeuromorphicProcessor extends EventEmitter {
     adaptability: 0,
   };
 
-  private constructor() {
+  protected constructor() {
     super();
+  }
+
+  public async initialize(): Promise<void> {
     this.metrics = MetricsSystem.getInstance();
     this.selfHealing = SelfHealingSystem.getInstance();
-    this.vectorStore = VectorStore.getInstance();
+    this.vectorStore = await VectorStore.getInstance();
 
     this.initializeNeuromorphicSystem();
   }
 
-  static initialize(): NeuromorphicProcessor {
-    if (!NeuromorphicProcessor.instance) {
-      NeuromorphicProcessor.instance = new NeuromorphicProcessor();
-    }
-    return NeuromorphicProcessor.instance;
-  }
-
-  static getInstance(): NeuromorphicProcessor {
-    if (!NeuromorphicProcessor.instance) {
+  private ensureMetrics(): MetricsSystem {
+    if (!this.metrics) {
       throw new Error('NeuromorphicProcessor not initialized');
     }
-    return NeuromorphicProcessor.instance;
+    return this.metrics;
+  }
+
+  private ensureSelfHealing(): SelfHealingSystem {
+    if (!this.selfHealing) {
+      throw new Error('NeuromorphicProcessor not initialized');
+    }
+    return this.selfHealing;
+  }
+
+  private ensureVectorStore(): VectorStore {
+    if (!this.vectorStore) {
+      throw new Error('NeuromorphicProcessor not initialized');
+    }
+    return this.vectorStore;
+  }
+
+  private ensureHardware(): NeuromorphicHardware {
+    if (!this.hardware) {
+      throw new Error('NeuromorphicProcessor hardware not initialized');
+    }
+    return this.hardware;
+  }
+
+  private ensureSpikeProcessor(): SpikeProcessor {
+    if (!this.spikeProcessor) {
+      throw new Error('NeuromorphicProcessor spike processor not initialized');
+    }
+    return this.spikeProcessor;
+  }
+
+  private ensurePlasticityEngine(): PlasticityEngine {
+    if (!this.plasticityEngine) {
+      throw new Error('NeuromorphicProcessor plasticity engine not initialized');
+    }
+    return this.plasticityEngine;
+  }
+
+  private ensureEnergyManager(): EnergyManager {
+    if (!this.energyManager) {
+      throw new Error('NeuromorphicProcessor energy manager not initialized');
+    }
+    return this.energyManager;
+  }
+
+  private ensureMemoryManager(): MemoryManager {
+    if (!this.memoryManager) {
+      throw new Error('NeuromorphicProcessor memory manager not initialized');
+    }
+    return this.memoryManager;
+  }
+
+  static async getInstance(): Promise<NeuromorphicProcessor> {
+    return super.getInstanceAsync(async (instance) => {
+      await instance.initialize();
+    }) as Promise<NeuromorphicProcessor>;
   }
 
   /**
@@ -879,7 +929,7 @@ export class NeuromorphicProcessor extends EventEmitter {
     // Initialize processing engines
     this.spikeProcessor = new SpikeProcessor(this.hardware);
     this.plasticityEngine = new PlasticityEngine();
-    this.energyManager = new EnergyManager(this.hardware.powerBudget);
+    this.energyManager = new EnergyManager(this.ensureHardware().powerBudget);
     this.memoryManager = new MemoryManager();
 
     // Start processing loops
@@ -892,10 +942,10 @@ export class NeuromorphicProcessor extends EventEmitter {
     this.setupSystemMonitoring();
 
     logger.info('Neuromorphic system initialized', {
-      cores: this.hardware.cores,
-      neuronsPerCore: this.hardware.neuronsPerCore,
-      totalCapacity: this.hardware.cores * this.hardware.neuronsPerCore,
-      powerBudget: this.hardware.powerBudget + 'mW',
+      cores: this.ensureHardware().cores,
+      neuronsPerCore: this.ensureHardware().neuronsPerCore,
+      totalCapacity: this.ensureHardware().cores * this.ensureHardware().neuronsPerCore,
+      powerBudget: this.ensureHardware().powerBudget + 'mW',
     });
   }
 
@@ -1190,17 +1240,17 @@ export class NeuromorphicProcessor extends EventEmitter {
   private setupSystemMonitoring(): void {
     // Monitor system health
     this.on('network:created', (event) => {
-      this.metrics.recordCounter('neuromorphic_networks_created', 1, { name: event.network.name });
+      this.ensureMetrics().recordCounter('neuromorphic_networks_created', 1, { name: event.network.name });
     });
 
     this.on('processing:completed', (result) => {
-      this.metrics.recordHistogram('neuromorphic_processing_time', result.processingTime, { networkId: result.networkId });
-      this.metrics.recordHistogram('neuromorphic_energy_consumed', result.energyConsumed, { networkId: result.networkId });
+      this.ensureMetrics().recordHistogram('neuromorphic_processing_time', result.processingTime, { networkId: result.networkId });
+      this.ensureMetrics().recordHistogram('neuromorphic_energy_consumed', result.energyConsumed, { networkId: result.networkId });
     });
 
     this.on('training:completed', (result) => {
-      this.metrics.recordHistogram('neuromorphic_training_epochs', result.epochs, { networkId: result.networkId });
-      this.metrics.recordGauge('neuromorphic_final_accuracy', result.accuracy.slice(-1)[0], { networkId: result.networkId });
+      this.ensureMetrics().recordHistogram('neuromorphic_training_epochs', result.epochs, { networkId: result.networkId });
+      this.ensureMetrics().recordGauge('neuromorphic_final_accuracy', result.accuracy.slice(-1)[0], { networkId: result.networkId });
     });
   }
 

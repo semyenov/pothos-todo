@@ -1,6 +1,7 @@
 import { logger } from '@/logger.js';
 import { PrismaClientKnownRequestError, PrismaClientValidationError } from '@prisma/client/runtime/library';
 import { GraphQLError } from 'graphql';
+import { SingletonService } from './SingletonService.js';
 
 /**
  * Base error class for domain-specific errors
@@ -68,16 +69,13 @@ export interface ErrorContext {
 /**
  * Centralized error handler for consistent error handling across the application
  */
-export class ErrorHandler {
-  private static instance: ErrorHandler;
-
-  private constructor() {}
+export class ErrorHandler extends SingletonService<ErrorHandler> {
+  protected constructor() {
+    super();
+  }
 
   static getInstance(): ErrorHandler {
-    if (!ErrorHandler.instance) {
-      ErrorHandler.instance = new ErrorHandler();
-    }
-    return ErrorHandler.instance;
+    return super.getInstance();
   }
 
   /**

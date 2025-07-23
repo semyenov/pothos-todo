@@ -1,7 +1,7 @@
-import { AsyncSingletonService } from '@/infrastructure/core/SingletonService';
-import { KafkaEventStream, StreamEvent } from '@/infrastructure/streaming/KafkaEventStream';
-import { RedisClusterManager } from '@/infrastructure/cache/RedisClusterManager';
-import { logger } from '@/logger';
+import { AsyncSingletonService } from '@/infrastructure/core/SingletonService.js';
+import { KafkaEventStream, type StreamEvent } from '@/infrastructure/streaming/KafkaEventStream.js';
+import { RedisClusterManager } from '@/infrastructure/cache/RedisClusterManager.js';
+import { logger } from '@/logger.js';
 import { ErrorHandler } from '@/infrastructure/core/ErrorHandler';
 import { nanoid } from 'nanoid';
 import { OpenAI } from 'openai';

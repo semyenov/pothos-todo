@@ -1,12 +1,12 @@
 import { logger } from '../../lib/unjs-utils.js';
-import type { CacheStrategy } from './AdvancedCacheManager';
+import type { CacheStrategy } from './AdvancedCacheManager.js';
 // import { AdvancedCacheManager } from './AdvancedCacheManager';
 // import { MetricsCollector } from '../observability/MetricsCollector';
 // import { DistributedTracing } from '../observability/DistributedTracing';
 import { hash } from 'ohash';
 // import { compress, decompress } from 'lz4'; // Missing dependency
 import { createHash } from 'crypto';
-import EventEmitter from 'events';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 // Temporary interfaces for missing dependencies
 interface AdvancedCacheManager {
@@ -119,17 +119,16 @@ export interface AdvancedCacheMetrics {
   }>;
 }
 
-export class DistributedCacheManager extends EventEmitter {
-  private static instance: DistributedCacheManager;
-  private config: DistributedCacheConfig;
+export class DistributedCacheManager extends EventEmitterSingletonService<DistributedCacheManager> {
+  private config: DistributedCacheConfig | null = null;
   private nodes: Map<string, CacheClusterNode> = new Map();
   private partitions: Map<string, CachePartition> = new Map();
   private replicationStrategies: Map<string, CacheReplicationStrategy> = new Map();
   private invalidationRules: Map<string, SmartCacheInvalidation> = new Map();
   private compressionConfig: CacheCompressionConfig;
-  private localCache: AdvancedCacheManager | null;
-  private metrics: MetricsCollector | null;
-  private tracing: DistributedTracing | null;
+  private localCache: AdvancedCacheManager | null = null;
+  private metrics: MetricsCollector | null = null;
+  private tracing: DistributedTracing | null = null;
   
   // Monitoring intervals
   private healthCheckInterval?: NodeJS.Timeout;
@@ -137,19 +136,21 @@ export class DistributedCacheManager extends EventEmitter {
   private metricsInterval?: NodeJS.Timeout;
   private partitionRebalanceInterval?: NodeJS.Timeout;
 
-  private constructor(config: DistributedCacheConfig) {
+  protected constructor() {
     super();
-    this.config = config;
-    this.localCache = null; // AdvancedCacheManager.getAdvancedInstance();
-    this.metrics = null; // MetricsCollector.getInstance();
-    this.tracing = null; // DistributedTracing.getInstance();
-    
     this.compressionConfig = {
       algorithm: 'lz4',
       minSize: 1024, // 1KB
       compressionRatio: 0.7,
       enableAdaptive: true,
     };
+  }
+
+  public configure(config: DistributedCacheConfig): void {
+    this.config = config;
+    this.localCache = null; // AdvancedCacheManager.getAdvancedInstance();
+    this.metrics = null; // MetricsCollector.getInstance();
+    this.tracing = null; // DistributedTracing.getInstance();
 
     this.initializeCluster();
     this.setupReplicationStrategies();
@@ -157,11 +158,19 @@ export class DistributedCacheManager extends EventEmitter {
     this.startMonitoring();
   }
 
-  public static getInstance(config?: DistributedCacheConfig): DistributedCacheManager {
-    if (!DistributedCacheManager.instance && config) {
-      DistributedCacheManager.instance = new DistributedCacheManager(config);
+  private ensureConfig(): DistributedCacheConfig {
+    if (!this.config) {
+      throw new Error('DistributedCacheManager not configured');
     }
-    return DistributedCacheManager.instance;
+    return this.config;
+  }
+
+  public static getInstance(config?: DistributedCacheConfig): DistributedCacheManager {
+    const instance = super.getInstance();
+    if (config && !instance.config) {
+      instance.configure(config);
+    }
+    return instance;
   }
 
   /**
@@ -170,7 +179,7 @@ export class DistributedCacheManager extends EventEmitter {
   private async initializeCluster(): Promise<void> {
     try {
       // Initialize nodes
-      for (const nodeConfig of this.config.nodes) {
+      for (const nodeConfig of this.ensureConfig().nodes) {
         const nodeId = `${nodeConfig.host}:${nodeConfig.port}`;
         const node: CacheClusterNode = {
           id: nodeId,
@@ -194,7 +203,7 @@ export class DistributedCacheManager extends EventEmitter {
       logger.info('Distributed cache cluster initialized', {
         nodes: this.nodes.size,
         partitions: this.partitions.size,
-        replicationFactor: this.config.replicationFactor,
+        replicationFactor: this.ensureConfig().replicationFactor,
       });
 
       this.emit('cluster_initialized');
@@ -217,7 +226,7 @@ export class DistributedCacheManager extends EventEmitter {
       const endRange = ((i + 1) * 256 - 1).toString(16).padStart(4, '0');
       
       // Assign nodes using consistent hashing
-      const primaryNodes = this.selectNodesForPartition(partitionId, this.config.replicationFactor);
+      const primaryNodes = this.selectNodesForPartition(partitionId, this.ensureConfig().replicationFactor);
       const replicationNodes = this.selectReplicationNodes(primaryNodes);
       
       const partition: CachePartition = {
@@ -658,7 +667,7 @@ export class DistributedCacheManager extends EventEmitter {
     // Eventual consistency strategy
     this.replicationStrategies.set('eventual', {
       name: 'eventual',
-      replicationFactor: Math.min(2, this.config.replicationFactor),
+      replicationFactor: Math.min(2, this.ensureConfig().replicationFactor),
       writeConsistency: 'one',
       readConsistency: 'one',
       repairStrategy: 'anti_entropy',

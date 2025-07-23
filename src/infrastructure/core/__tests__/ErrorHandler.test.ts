@@ -9,7 +9,7 @@ import {
   ForbiddenError,
   ConflictError,
   errorHandler,
-} from '../ErrorHandler';
+} from '../ErrorHandler.js';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { GraphQLError } from 'graphql';
 

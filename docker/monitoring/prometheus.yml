@@ -4,40 +4,40 @@ global:
 
 scrape_configs:
   # Hive Gateway metrics
-  - job_name: 'hive-gateway'
+  - job_name: "hive-gateway"
     static_configs:
-      - targets: ['hive-gateway:4000']
-    metrics_path: '/metrics'
+      - targets: ["hive-gateway:4000"]
+    metrics_path: "/metrics"
 
   # User Subgraph metrics
-  - job_name: 'user-subgraph'
+  - job_name: "user-subgraph"
     static_configs:
-      - targets: ['user-subgraph:4001']
-    metrics_path: '/metrics'
+      - targets: ["user-subgraph:4001"]
+    metrics_path: "/metrics"
 
   # Todo Subgraph metrics
-  - job_name: 'todo-subgraph'
+  - job_name: "todo-subgraph"
     static_configs:
-      - targets: ['todo-subgraph:4002']
-    metrics_path: '/metrics'
+      - targets: ["todo-subgraph:4002"]
+    metrics_path: "/metrics"
 
   # AI Subgraph metrics
-  - job_name: 'ai-subgraph'
+  - job_name: "ai-subgraph"
     static_configs:
-      - targets: ['ai-subgraph:4003']
-    metrics_path: '/metrics'
+      - targets: ["ai-subgraph:4003"]
+    metrics_path: "/metrics"
 
   # PostgreSQL exporter
-  - job_name: 'postgres'
+  - job_name: "postgres"
     static_configs:
-      - targets: ['postgres-exporter:9187']
+      - targets: ["postgres-exporter:9187"]
 
   # Redis exporter
-  - job_name: 'redis'
+  - job_name: "redis"
     static_configs:
-      - targets: ['redis-exporter:9121']
+      - targets: ["redis-exporter:9121"]
 
   # Node exporter for system metrics
-  - job_name: 'node'
+  - job_name: "node"
     static_configs:
-      - targets: ['node-exporter:9100']
+      - targets: ["node-exporter:9100"]

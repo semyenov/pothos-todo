@@ -1,6 +1,7 @@
 import { logger } from '@/logger.js';
 import { CacheManager } from '../cache/CacheManager.js';
 import { MetricsCollector } from '../monitoring/MetricsCollector.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface ThrottleConfig {
   /**
@@ -274,20 +275,17 @@ export class RequestThrottling {
 /**
  * Throttle registry for managing multiple throttle configurations
  */
-export class ThrottleRegistry {
-  private static instance: ThrottleRegistry;
+export class ThrottleRegistry extends SingletonService<ThrottleRegistry> {
   private throttling: RequestThrottling;
   private configs = new Map<string, ThrottleConfig>();
 
-  private constructor() {
+  protected constructor() {
+    super();
     this.throttling = new RequestThrottling();
   }
 
   public static getInstance(): ThrottleRegistry {
-    if (!ThrottleRegistry.instance) {
-      ThrottleRegistry.instance = new ThrottleRegistry();
-    }
-    return ThrottleRegistry.instance;
+    return super.getInstance();
   }
 
   /**

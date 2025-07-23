@@ -1,6 +1,6 @@
 import { logger } from '@/logger';
 import { QdrantClient } from '@qdrant/js-client-rest';
-import type { EmbeddingResult } from './EmbeddingService';
+import type { EmbeddingResult } from './EmbeddingService.js';
 import { AsyncSingletonService } from '@/infrastructure/core/SingletonService.js';
 
 export interface VectorSearchOptions {

@@ -1,4 +1,4 @@
-import { EventEmitter } from 'events';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 import { logger } from '@/logger.js';
 import { SystemIntegration } from '../SystemIntegration.js';
 import { MetricsSystem } from '../observability/Metrics.js';
@@ -21,7 +21,7 @@ export interface HealingAction {
   cooldown?: number; // milliseconds
 }
 
-export type HealingActionType = 
+export type HealingActionType =
   | 'restart_service'
   | 'scale_resources'
   | 'failover_traffic'
@@ -81,9 +81,8 @@ export interface LearningModel {
  * Autonomous Self-Healing System
  * Implements intelligent, automated recovery from failures and degradation
  */
-export class SelfHealingSystem extends EventEmitter {
-  private static instance: SelfHealingSystem;
-  private config: AutonomousConfig;
+export class SelfHealingSystem extends EventEmitterSingletonService<SelfHealingSystem> {
+  private config: AutonomousConfig | null = null;
   private healingActions: Map<string, HealingAction> = new Map();
   private activeActions: Map<string, { action: HealingAction; startTime: Date }> = new Map();
   private actionHistory: Array<{
@@ -95,23 +94,32 @@ export class SelfHealingSystem extends EventEmitter {
   private learningModel: LearningModel;
 
   // System components
-  private system: SystemIntegration;
-  private metrics: MetricsSystem;
-  private anomalyDetection: AnomalyDetectionSystem;
-  private threatDetection: ThreatDetectionSystem;
-  private edgeComputing: EdgeComputingSystem;
-  private dataReplication: DataReplicationSystem;
-  private performanceOptimizer: PerformanceOptimizer;
+  private system: SystemIntegration | null = null;
+  private metrics: MetricsSystem | null = null;
+  private anomalyDetection: AnomalyDetectionSystem | null = null;
+  private threatDetection: ThreatDetectionSystem | null = null;
+  private edgeComputing: EdgeComputingSystem | null = null;
+  private dataReplication: DataReplicationSystem | null = null;
+  private performanceOptimizer: PerformanceOptimizer | null = null;
   private chaosEngineering?: ChaosEngineeringSystem;
 
   private monitoringInterval?: NodeJS.Timeout;
   private learningInterval?: NodeJS.Timeout;
 
-  private constructor(config: AutonomousConfig) {
+  protected constructor() {
     super();
+    this.learningModel = {
+      actionSuccessRates: new Map(),
+      conditionPatterns: new Map(),
+      environmentalFactors: new Map(),
+      seasonalPatterns: [],
+    };
+  }
+
+  public async configure(config: AutonomousConfig): Promise<void> {
     this.config = config;
     this.system = SystemIntegration.getInstance();
-    this.metrics = MetricsSystem.getInstance();
+    this.metrics = await MetricsSystem.getInstance();
     this.anomalyDetection = AnomalyDetectionSystem.getInstance();
     this.threatDetection = ThreatDetectionSystem.getInstance();
     this.edgeComputing = EdgeComputingSystem.getInstance();
@@ -124,28 +132,26 @@ export class SelfHealingSystem extends EventEmitter {
       // Chaos engineering not initialized
     }
 
-    this.learningModel = {
-      actionSuccessRates: new Map(),
-      conditionPatterns: new Map(),
-      environmentalFactors: new Map(),
-      seasonalPatterns: [],
-    };
-
     this.initializeSelfHealing();
   }
 
-  static initialize(config: AutonomousConfig): SelfHealingSystem {
-    if (!SelfHealingSystem.instance) {
-      SelfHealingSystem.instance = new SelfHealingSystem(config);
+  private ensureConfig(): AutonomousConfig {
+    if (!this.config) {
+      throw new Error('SelfHealingSystem not configured');
     }
-    return SelfHealingSystem.instance;
+    return this.config;
+  }
+
+  static async initialize(config: AutonomousConfig): Promise<SelfHealingSystem> {
+    const instance = super.getInstance();
+    if (!instance.config) {
+      await instance.configure(config);
+    }
+    return instance;
   }
 
   static getInstance(): SelfHealingSystem {
-    if (!SelfHealingSystem.instance) {
-      throw new Error('SelfHealingSystem not initialized');
-    }
-    return SelfHealingSystem.instance;
+    return super.getInstance();
   }
 
   /**
@@ -153,7 +159,7 @@ export class SelfHealingSystem extends EventEmitter {
    */
   registerHealingAction(action: HealingAction): void {
     this.healingActions.set(action.id, action);
-    
+
     // Initialize success rate tracking
     if (!this.learningModel.actionSuccessRates.has(action.id)) {
       this.learningModel.actionSuccessRates.set(action.id, 0.5); // Start neutral
@@ -179,7 +185,7 @@ export class SelfHealingSystem extends EventEmitter {
       description?: string;
     }
   ): Promise<HealingResult[]> {
-    if (!this.config.enabled) {
+    if (!this.ensureConfig().enabled) {
       logger.info('Self-healing disabled, skipping trigger', { trigger });
       return [];
     }
@@ -188,7 +194,7 @@ export class SelfHealingSystem extends EventEmitter {
 
     // Find applicable healing actions
     const candidateActions = await this.findApplicableActions(trigger, context);
-    
+
     if (candidateActions.length === 0) {
       logger.info('No applicable healing actions found', { trigger });
       return [];
@@ -200,7 +206,7 @@ export class SelfHealingSystem extends EventEmitter {
     // Apply safeguards and concurrency limits
     const actionsToExecute = rankedActions
       .filter(action => this.canExecuteAction(action))
-      .slice(0, this.config.maxConcurrentActions);
+      .slice(0, this.ensureConfig().maxConcurrentActions);
 
     if (actionsToExecute.length === 0) {
       logger.warn('All healing actions filtered out by safeguards', { trigger });
@@ -209,10 +215,10 @@ export class SelfHealingSystem extends EventEmitter {
 
     // Execute healing actions
     const results: HealingResult[] = [];
-    
+
     for (const action of actionsToExecute) {
       try {
-        if (this.config.requireApproval && context.severity === 'critical') {
+        if (this.ensureConfig().requireApproval && context.severity === 'critical') {
           logger.warn('Critical healing action requires approval', {
             action: action.id,
             type: action.type,
@@ -225,7 +231,7 @@ export class SelfHealingSystem extends EventEmitter {
         results.push(result);
 
         // Update learning model
-        if (this.config.learningEnabled) {
+        if (this.ensureConfig().learningEnabled) {
           this.updateLearningModel(action, result, context);
         }
 
@@ -312,13 +318,13 @@ export class SelfHealingSystem extends EventEmitter {
       .reduce((sum, h) => sum + (h.result.improvement || 0), 0);
 
     return {
-      enabled: this.config.enabled,
+      enabled: this.ensureConfig().enabled,
       activeActions: this.activeActions.size,
       totalActions: this.healingActions.size,
       successRate,
-      lastHealing: this.actionHistory.length > 0 ? 
+      lastHealing: this.actionHistory.length > 0 ?
         this.actionHistory[this.actionHistory.length - 1].timestamp : undefined,
-      learningEnabled: this.config.learningEnabled,
+      learningEnabled: this.ensureConfig().learningEnabled,
       insights: {
         topActions,
         commonTriggers,
@@ -332,8 +338,8 @@ export class SelfHealingSystem extends EventEmitter {
    */
   private initializeSelfHealing(): void {
     logger.info('Initializing autonomous self-healing system', {
-      aggressiveness: this.config.aggressiveness,
-      learningEnabled: this.config.learningEnabled,
+      aggressiveness: this.ensureConfig().aggressiveness,
+      learningEnabled: this.ensureConfig().learningEnabled,
     });
 
     // Register standard healing actions
@@ -366,7 +372,7 @@ export class SelfHealingSystem extends EventEmitter {
         const beforeMetrics = await this.captureMetrics();
         await this.performanceOptimizer.autoScale();
         const afterMetrics = await this.captureMetrics();
-        
+
         return {
           success: true,
           message: 'Resources scaled to handle increased load',
@@ -396,15 +402,15 @@ export class SelfHealingSystem extends EventEmitter {
       description: 'Clear caches when memory usage is high',
       execute: async () => {
         const beforeMemory = process.memoryUsage();
-        
+
         // Force garbage collection
         if (global.gc) {
           global.gc();
         }
-        
+
         const afterMemory = process.memoryUsage();
         const improvement = ((beforeMemory.heapUsed - afterMemory.heapUsed) / beforeMemory.heapUsed) * 100;
-        
+
         return {
           success: true,
           message: 'Memory pressure relieved',
@@ -439,7 +445,7 @@ export class SelfHealingSystem extends EventEmitter {
         // Get analytics to identify failed locations
         const analytics = await this.edgeComputing.getPerformanceAnalytics();
         let failedLocations = 0;
-        
+
         for (const [locationId, metrics] of analytics.byLocation) {
           if (metrics.errorRate > 0.5) { // 50% error rate
             logger.warn(`Marking edge location ${locationId} as degraded`);
@@ -447,7 +453,7 @@ export class SelfHealingSystem extends EventEmitter {
             failedLocations++;
           }
         }
-        
+
         return {
           success: failedLocations > 0,
           message: `Failed over ${failedLocations} edge locations`,
@@ -476,13 +482,13 @@ export class SelfHealingSystem extends EventEmitter {
       description: 'Rebalance database load when replication lag is high',
       execute: async () => {
         const beforeStatus = this.dataReplication.getReplicationStatus();
-        
+
         // Resolve conflicts to reduce lag
         const resolved = await this.dataReplication.resolveConflicts();
-        
+
         const afterStatus = this.dataReplication.getReplicationStatus();
         const improvement = ((beforeStatus.totalLag - afterStatus.totalLag) / beforeStatus.totalLag) * 100;
-        
+
         return {
           success: resolved > 0,
           message: `Resolved ${resolved} conflicts, reduced lag`,
@@ -512,12 +518,12 @@ export class SelfHealingSystem extends EventEmitter {
       execute: async () => {
         const threats = this.threatDetection.getAnomalyHistory({ limit: 10 });
         const criticalThreats = threats.filter(t => t.severity === 'critical');
-        
+
         if (criticalThreats.length > 0) {
           logger.error('Critical security threats detected, initiating containment', {
             threats: criticalThreats.length,
           });
-          
+
           // In production, would isolate affected components
           return {
             success: true,
@@ -526,7 +532,7 @@ export class SelfHealingSystem extends EventEmitter {
             duration: 2000,
           };
         }
-        
+
         return {
           success: false,
           message: 'No critical threats found',
@@ -565,7 +571,7 @@ export class SelfHealingSystem extends EventEmitter {
   private async performHealthChecks(): Promise<void> {
     // Check system health
     const systemHealth = await this.system.getSystemHealth();
-    
+
     if (systemHealth.status === 'degraded' || systemHealth.status === 'critical') {
       await this.triggerHealing('system_degradation', {
         severity: systemHealth.status === 'critical' ? 'critical' : 'high',
@@ -577,7 +583,7 @@ export class SelfHealingSystem extends EventEmitter {
 
     // Check performance metrics
     const perfData = await this.performanceOptimizer.getDashboardData();
-    
+
     if (perfData.current.responseTime.p95 > 1000) {
       await this.triggerHealing('high_response_time', {
         severity: 'medium',
@@ -588,11 +594,11 @@ export class SelfHealingSystem extends EventEmitter {
     }
 
     // Check anomalies
-    const recentAnomalies = this.anomalyDetection.getAnomalyHistory({ 
+    const recentAnomalies = this.anomalyDetection.getAnomalyHistory({
       limit: 5,
       since: new Date(Date.now() - 300000), // Last 5 minutes
     });
-    
+
     if (recentAnomalies.length > 3) {
       await this.triggerHealing('anomaly_cluster', {
         severity: 'high',
@@ -610,14 +616,14 @@ export class SelfHealingSystem extends EventEmitter {
     context: any
   ): Promise<HealingAction[]> {
     const applicable: HealingAction[] = [];
-    
+
     for (const action of this.healingActions.values()) {
       // Check if action matches trigger
       if (action.trigger !== trigger) continue;
-      
+
       // Check if action is on cooldown
       if (this.isOnCooldown(action)) continue;
-      
+
       // Check conditions
       let allConditionsMet = true;
       for (const condition of action.conditions) {
@@ -633,12 +639,12 @@ export class SelfHealingSystem extends EventEmitter {
           break;
         }
       }
-      
+
       if (allConditionsMet) {
         applicable.push(action);
       }
     }
-    
+
     return applicable;
   }
 
@@ -661,18 +667,18 @@ export class SelfHealingSystem extends EventEmitter {
    */
   private calculateActionScore(action: HealingAction, context: any): number {
     let score = 0;
-    
+
     // Base score from success rate
     const successRate = this.learningModel.actionSuccessRates.get(action.id) || 0.5;
     score += successRate * 100;
-    
+
     // Severity matching
     const severityValues = { low: 1, medium: 2, high: 3, critical: 4 };
     const severityMatch = severityValues[action.severity] === severityValues[context.severity];
     if (severityMatch) score += 50;
-    
+
     // Aggressiveness factor
-    switch (this.config.aggressiveness) {
+    switch (this.ensureConfig().aggressiveness) {
       case 'aggressive':
         score += (action.severity === 'high' || action.severity === 'critical') ? 25 : 0;
         break;
@@ -683,14 +689,14 @@ export class SelfHealingSystem extends EventEmitter {
         score += action.severity === 'medium' ? 25 : 0;
         break;
     }
-    
+
     // Recency bias - prefer actions that haven't been used recently
     const lastUsed = this.getLastUsed(action.id);
     if (lastUsed) {
       const hoursSinceLastUse = (Date.now() - lastUsed.getTime()) / (1000 * 60 * 60);
       score += Math.min(hoursSinceLastUse * 5, 50); // Max 50 points for recency
     }
-    
+
     return score;
   }
 
@@ -702,18 +708,18 @@ export class SelfHealingSystem extends EventEmitter {
     if (this.activeActions.has(action.id)) {
       return false;
     }
-    
+
     // Check cooldown
     if (this.isOnCooldown(action)) {
       return false;
     }
-    
+
     // Check confidence threshold
     const successRate = this.learningModel.actionSuccessRates.get(action.id) || 0.5;
-    if (successRate < this.config.safeguards.minConfidence / 100) {
+    if (successRate < this.ensureConfig().safeguards.minConfidence / 100) {
       return false;
     }
-    
+
     return true;
   }
 
@@ -722,44 +728,44 @@ export class SelfHealingSystem extends EventEmitter {
    */
   private async executeHealingAction(action: HealingAction): Promise<HealingResult> {
     const startTime = Date.now();
-    
+
     logger.info('Executing healing action', {
       id: action.id,
       type: action.type,
       severity: action.severity,
     });
-    
+
     // Track active action
     this.activeActions.set(action.id, { action, startTime: new Date() });
-    
+
     try {
       // Execute the action
       const result = await action.execute();
       result.duration = Date.now() - startTime;
-      
+
       // Set cooldown
       if (action.cooldown) {
-        const cooldownEnd = new Date(Date.now() + action.cooldown * this.config.cooldownMultiplier);
+        const cooldownEnd = new Date(Date.now() + action.cooldown * this.ensureConfig().cooldownMultiplier);
         this.cooldowns.set(action.id, cooldownEnd);
       }
-      
+
       // Record in history
       this.actionHistory.push({
         action,
         result,
         timestamp: new Date(),
       });
-      
+
       // Emit success event
       this.emit('action:executed', { action, result });
-      
+
       logger.info('Healing action completed', {
         id: action.id,
         success: result.success,
         improvement: result.improvement,
         duration: result.duration,
       });
-      
+
       return result;
     } catch (error) {
       const result: HealingResult = {
@@ -767,9 +773,9 @@ export class SelfHealingSystem extends EventEmitter {
         message: `Action failed: ${error}`,
         duration: Date.now() - startTime,
       };
-      
+
       // Try rollback if available
-      if (this.config.safeguards.rollbackOnFailure && action.rollback) {
+      if (this.ensureConfig().safeguards.rollbackOnFailure && action.rollback) {
         try {
           await action.rollback();
           result.message += ' (rolled back)';
@@ -779,7 +785,7 @@ export class SelfHealingSystem extends EventEmitter {
           logger.error('Rollback failed', { id: action.id, error: rollbackError });
         }
       }
-      
+
       this.emit('action:failed', { action, result, error });
       return result;
     } finally {
@@ -797,15 +803,15 @@ export class SelfHealingSystem extends EventEmitter {
     context: any
   ): void {
     const actionId = action.id;
-    
+
     // Update success rate with exponential moving average
     const currentRate = this.learningModel.actionSuccessRates.get(actionId) || 0.5;
     const newRate = result.success ? 1 : 0;
     const alpha = 0.1; // Learning rate
     const updatedRate = (1 - alpha) * currentRate + alpha * newRate;
-    
+
     this.learningModel.actionSuccessRates.set(actionId, updatedRate);
-    
+
     // Update environmental factors
     const hour = new Date().getHours();
     const timeKey = `hour_${hour}`;
@@ -828,10 +834,10 @@ export class SelfHealingSystem extends EventEmitter {
    */
   private analyzePatternsAndOptimize(): void {
     logger.info('Analyzing healing patterns for optimization');
-    
+
     // Analyze time-based patterns
     const hourlySuccess = new Map<number, { success: number; total: number }>();
-    
+
     for (const history of this.actionHistory) {
       const hour = history.timestamp.getHours();
       const stats = hourlySuccess.get(hour) || { success: 0, total: 0 };
@@ -839,7 +845,7 @@ export class SelfHealingSystem extends EventEmitter {
       if (history.result.success) stats.success++;
       hourlySuccess.set(hour, stats);
     }
-    
+
     // Update seasonal patterns
     this.learningModel.seasonalPatterns = Array.from(hourlySuccess.entries()).map(([hour, stats]) => ({
       time: `${hour}:00`,
@@ -860,7 +866,7 @@ export class SelfHealingSystem extends EventEmitter {
         description: 'System degradation detected',
       });
     });
-    
+
     // Listen to anomaly detection
     this.anomalyDetection.on('anomaly:critical', (anomaly: any) => {
       this.triggerHealing('critical_anomaly', {
@@ -870,7 +876,7 @@ export class SelfHealingSystem extends EventEmitter {
         metrics: { [anomaly.metricName]: anomaly.value },
       });
     });
-    
+
     // Listen to threat detection
     this.threatDetection.on('threat:detected', (threat: any) => {
       this.triggerHealing('security_threat', {
@@ -908,11 +914,11 @@ export class SelfHealingSystem extends EventEmitter {
 
   private calculateImprovement(before: Record<string, number>, after: Record<string, number>): number {
     // Simple improvement calculation
-    const responseTimeImprovement = before.responseTime > 0 ? 
+    const responseTimeImprovement = before.responseTime > 0 ?
       ((before.responseTime - after.responseTime) / before.responseTime) * 100 : 0;
-    const errorRateImprovement = before.errorRate > 0 ? 
+    const errorRateImprovement = before.errorRate > 0 ?
       ((before.errorRate - after.errorRate) / before.errorRate) * 100 : 0;
-    
+
     return Math.max(0, (responseTimeImprovement + errorRateImprovement) / 2);
   }
 
@@ -933,7 +939,7 @@ export class SelfHealingSystem extends EventEmitter {
     if (this.learningInterval) {
       clearInterval(this.learningInterval);
     }
-    
+
     logger.info('Self-healing system shutdown complete');
   }
 }

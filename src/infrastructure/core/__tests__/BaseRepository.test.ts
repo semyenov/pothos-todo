@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, mock } from 'bun:test';
-import { BaseRepository } from '../BaseRepository';
+import { BaseRepository } from '../BaseRepository.js';
 import { PrismaClient } from '@prisma/client';
 
 // Mock domain entity

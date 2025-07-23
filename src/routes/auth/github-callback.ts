@@ -1,7 +1,7 @@
 import { getGitHub, getOAuthState, validateOAuthState, handleGitHubOAuth, generateSessionToken, createSession, setSessionTokenCookie, type GitHubUserInfo } from '@/lib/auth';
 import type { OAuth2Tokens } from 'arctic';
 import { type H3Event } from 'h3';
-import { ofetch } from 'ofetch';
+import { $fetch } from '@/lib/fetch-wrapper.js';
 
 /**
  * Handle GitHub OAuth callback using H3
@@ -40,7 +40,7 @@ export async function handleGitHubCallback(event: H3Event): Promise<Response> {
 		// Fetch user information from GitHub API
 		let githubUserInfo: GitHubUserInfo;
 		try {
-			const userData = await ofetch('https://api.github.com/user', {
+			const userData = await $fetch('https://api.github.com/user', {
 				headers: {
 					Authorization: `Bearer ${tokens.accessToken()}`,
 					'User-Agent': 'Pothos-Todo-App',
@@ -53,7 +53,7 @@ export async function handleGitHubCallback(event: H3Event): Promise<Response> {
 			let email = userData.email;
 			if (!email) {
 				try {
-					const emails = await ofetch('https://api.github.com/user/emails', {
+					const emails = await $fetch('https://api.github.com/user/emails', {
 						headers: {
 							Authorization: `Bearer ${tokens.accessToken()}`,
 							'User-Agent': 'Pothos-Todo-App',

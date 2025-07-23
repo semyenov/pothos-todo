@@ -66,7 +66,7 @@ export async function startTodoSubgraph() {
       {
         execute: (args: any) => args.rootValue.execute(args),
         subscribe: (args: any) => args.rootValue.subscribe(args),
-        onSubscribe: async (ctx, msg) => {
+        onSubscribe: async (ctx, msg: any) => {
           const { schema, execute, subscribe, contextFactory, parse, validate } =
             yoga.getEnveloped({
               ...ctx,

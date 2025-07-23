@@ -2,6 +2,7 @@ import { logger } from '@/logger.js';
 import type { User } from '@/domain/aggregates/User.js';
 import type { Todo } from '@prisma/client';
 import { CacheManager } from '../cache/CacheManager.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface PolicyContext {
   user: User | null;
@@ -24,21 +25,30 @@ export type PolicyFunction = (context: PolicyContext) => PolicyResult | Promise<
 /**
  * Dynamic policy-based authorization engine
  */
-export class PolicyEngine {
-  private static instance: PolicyEngine;
+export class PolicyEngine extends SingletonService<PolicyEngine> {
   private policies = new Map<string, PolicyFunction[]>();
   private fieldPolicies = new Map<string, Map<string, PolicyFunction[]>>();
-  private cache = CacheManager.getInstance();
+  private cache: CacheManager | null = null;
 
-  private constructor() {
+  protected constructor() {
+    super();
+    this.initializeCache();
     this.registerDefaultPolicies();
   }
 
-  static getInstance(): PolicyEngine {
-    if (!PolicyEngine.instance) {
-      PolicyEngine.instance = new PolicyEngine();
+  private async initializeCache() {
+    this.cache = await CacheManager.getInstance();
+  }
+
+  private ensureCache(): CacheManager {
+    if (!this.cache) {
+      throw new Error('PolicyEngine cache not initialized');
     }
-    return PolicyEngine.instance;
+    return this.cache;
+  }
+
+  static async getInstance(): Promise<PolicyEngine> {
+    return super.getInstance();
   }
 
   /**
@@ -70,7 +80,7 @@ export class PolicyEngine {
   async evaluate(context: PolicyContext): Promise<PolicyResult> {
     // Check cache first
     const cacheKey = this.getCacheKey(context);
-    const cached = await this.cache.get<PolicyResult>(cacheKey);
+    const cached = await this.ensureCache().get<PolicyResult>(cacheKey);
     if (cached) return cached;
 
     // Get applicable policies
@@ -92,7 +102,7 @@ export class PolicyEngine {
     const finalResult = this.combineResults(results);
 
     // Cache result
-    await this.cache.set(cacheKey, finalResult, { ttl: 60 }); // 1 minute cache
+    await this.ensureCache().set(cacheKey, finalResult, { ttl: 60 }); // 1 minute cache
 
     // Log authorization decision
     logger.debug('Authorization decision', {

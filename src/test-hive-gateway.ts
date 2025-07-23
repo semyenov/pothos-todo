@@ -39,12 +39,8 @@ Please configure the following environment variables in your .env file:
 
   try {
     // Initialize Hive Gateway service
-    const hiveGateway = HiveGatewayService.getInstance();
+    const hiveGateway = await HiveGatewayService.getInstance();
     logger.info('Hive Gateway service instance created');
-
-    // Initialize the gateway
-    await hiveGateway.initialize();
-    logger.info('Hive Gateway initialized successfully');
 
     // Check health
     const isHealthy = await hiveGateway.isHealthy();

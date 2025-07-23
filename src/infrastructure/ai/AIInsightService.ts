@@ -3,6 +3,7 @@ import { logger } from '@/logger.js';
 import type { PrismaClient } from '@prisma/client';
 import { EmbeddingService } from './EmbeddingService.js';
 import { MLPredictionService } from './MLPredictionService.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface ProductivityInsight {
   type: 'productivity' | 'pattern' | 'optimization' | 'achievement' | 'warning';
@@ -41,22 +42,30 @@ export interface SmartRecommendation {
  * Provides intelligent insights about user productivity, work patterns,
  * and actionable recommendations for improvement.
  */
-export class AIInsightService {
-  private static instance: AIInsightService;
+export class AIInsightService extends SingletonService<AIInsightService> {
   private openai: OpenAI | null = null;
-  private embeddingService: EmbeddingService;
-  private mlService: MLPredictionService;
+  private embeddingService: EmbeddingService | null = null;
+  private mlService: MLPredictionService | null = null;
+  private prisma: PrismaClient | null = null;
 
-  private constructor(private prisma: PrismaClient) {
-    this.embeddingService = EmbeddingService.getInstance(prisma);
-    this.mlService = MLPredictionService.getInstance(prisma);
+  protected constructor() {
+    super();
   }
 
-  static getInstance(prisma: PrismaClient): AIInsightService {
-    if (!AIInsightService.instance) {
-      AIInsightService.instance = new AIInsightService(prisma);
-    }
-    return AIInsightService.instance;
+  static async getInstance(): Promise<AIInsightService> {
+    return super.getInstance();
+  }
+
+  /**
+   * Configure the AIInsightService with dependencies
+   */
+  public async configure(prisma: PrismaClient): Promise<void> {
+    this.prisma = prisma;
+    this.embeddingService = await EmbeddingService.getInstance();
+    await this.embeddingService.configure(prisma);
+    
+    this.mlService = await MLPredictionService.getInstance();
+    this.mlService.configure(prisma);
   }
 
   initialize(apiKey: string): void {
@@ -73,10 +82,12 @@ export class AIInsightService {
    */
   async generateProductivityInsights(userId: string): Promise<ProductivityInsight[]> {
     try {
+      this.ensureConfigured();
+
       const insights: ProductivityInsight[] = [];
 
       // Get user's task data for analysis
-      const recentTodos = await this.prisma.todo.findMany({
+      const recentTodos = await this.prisma!.todo.findMany({
         where: { userId },
         orderBy: { createdAt: 'desc' },
         take: 100,
@@ -527,6 +538,19 @@ Improvement areas: ${workPattern.improvementAreas.join(', ')}`;
     
     return base;
   }
+
+  /**
+   * Ensure the service is configured before use
+   */
+  private ensureConfigured(): void {
+    if (!this.prisma || !this.embeddingService || !this.mlService) {
+      throw new Error('AIInsightService not configured - call configure() first');
+    }
+  }
 }
 
-export const aiInsightService = (prisma: PrismaClient) => AIInsightService.getInstance(prisma);
+export const aiInsightService = async (prisma: PrismaClient) => {
+  const service = await AIInsightService.getInstance();
+  await service.configure(prisma);
+  return service;
+};

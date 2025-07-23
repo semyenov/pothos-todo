@@ -11,6 +11,23 @@ import { getServerConfig, getCacheConfig } from '../../config/index.js';
 import type { GraphQLSchema } from 'graphql';
 import { AsyncSingletonService } from '@/infrastructure/core/SingletonService';
 
+export interface IHiveGatewayService {
+  gateway: Gateway | null;
+  initialized: boolean;
+  metricsCollector: MetricsCollector | null;
+  redisManager: RedisClusterManager | null;
+  getGateway: () => Gateway;
+  getSchema: () => Promise<GraphQLSchema>;
+  start: (port: number) => Promise<void>;
+  stop: () => Promise<void>;
+  isHealthy: () => Promise<boolean>;
+  getMetrics: () => {
+    initialized: boolean;
+    healthy: Promise<boolean>;
+  };
+  clearAllInstances: () => void;
+}
+
 /**
  * HiveGatewayService - Manages the GraphQL Hive Gateway instance
  * 
@@ -20,7 +37,7 @@ import { AsyncSingletonService } from '@/infrastructure/core/SingletonService';
  * - CDN-based schema distribution
  * - Integration with existing infrastructure
  */
-export class HiveGatewayService extends AsyncSingletonService<HiveGatewayService> {
+export class HiveGatewayService extends AsyncSingletonService<IHiveGatewayService> {
   private gateway: Gateway | null = null;
   private initialized = false;
   private metricsCollector: MetricsCollector;
@@ -32,11 +49,12 @@ export class HiveGatewayService extends AsyncSingletonService<HiveGatewayService
     this.redisManager = RedisClusterManager.getInstance();
   }
 
-  public static getInstance(): HiveGatewayService {
-    if (!HiveGatewayService.instance) {
-      HiveGatewayService.instance = new HiveGatewayService();
-    }
-    return HiveGatewayService.instance;
+  public static async getInstance(): Promise<IHiveGatewayService> {
+    return super.getInstanceAsync(async (instance) => {
+      const gatewayService = new HiveGatewayService();
+      await gatewayService.initialize();
+      return gatewayService;
+    });
   }
 
   /**
@@ -58,7 +76,7 @@ export class HiveGatewayService extends AsyncSingletonService<HiveGatewayService
       this.gateway = createGateway({
         // Gateway identification
         name: 'pothos-todo-gateway',
-        
+
         // Supergraph configuration from CDN
         supergraph: () => ({
           type: 'hive',
@@ -255,12 +273,12 @@ export class HiveGatewayService extends AsyncSingletonService<HiveGatewayService
     }
 
     const gateway = this.getGateway();
-    
+
     // Start the server
     await gateway.listen(port);
-    
+
     logger.info(`Hive Gateway listening on http://localhost:${port}/graphql`);
-    
+
     // Record startup metric
     this.metricsCollector.recordGauge('gateway.running', 1, {
       port: port.toString(),
@@ -274,10 +292,10 @@ export class HiveGatewayService extends AsyncSingletonService<HiveGatewayService
     if (this.gateway) {
       // Gateway stop logic would go here
       logger.info('Stopping Hive Gateway...');
-      
+
       // Record shutdown metric
       this.metricsCollector.recordGauge('gateway.running', 0);
-      
+
       this.gateway = null;
       this.initialized = false;
     }

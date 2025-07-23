@@ -1,5 +1,5 @@
 import { logger } from '@/logger';
-import EventEmitter from 'events';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 import { createHash } from 'crypto';
 
 export interface LogEntry {
@@ -81,9 +81,8 @@ export interface StructuredLogConfig {
   }>;
 }
 
-export class LogAggregation extends EventEmitter {
-  private static instance: LogAggregation;
-  private config: StructuredLogConfig;
+export class LogAggregation extends EventEmitterSingletonService<LogAggregation> {
+  private config: StructuredLogConfig | null = null;
   private logs: LogEntry[] = [];
   private logIndex: Map<string, number[]> = new Map(); // field -> log indices
   private duplicateTracker: Map<string, { count: number; firstSeen: number; lastSeen: number }> = new Map();
@@ -91,17 +90,28 @@ export class LogAggregation extends EventEmitter {
   private alertStates: Map<string, { lastTriggered: number; cooldownUntil: number }> = new Map();
   private cleanupInterval: NodeJS.Timer | null = null;
 
-  private constructor(config: StructuredLogConfig) {
+  protected constructor() {
     super();
+  }
+
+  public configure(config: StructuredLogConfig): void {
     this.config = config;
     this.setupCleanupSchedule();
   }
 
-  public static getInstance(config?: StructuredLogConfig): LogAggregation {
-    if (!LogAggregation.instance && config) {
-      LogAggregation.instance = new LogAggregation(config);
+  private ensureConfig(): StructuredLogConfig {
+    if (!this.config) {
+      throw new Error('LogAggregation not configured');
     }
-    return LogAggregation.instance;
+    return this.config;
+  }
+
+  public static getInstance(config?: StructuredLogConfig): LogAggregation {
+    const instance = super.getInstance();
+    if (config && !instance.config) {
+      instance.configure(config);
+    }
+    return instance;
   }
 
   /**
@@ -113,13 +123,13 @@ export class LogAggregation extends EventEmitter {
       const fingerprint = this.createLogFingerprint(logData);
 
       // Check deduplication
-      if (this.config.enableDeduplication && this.shouldDeduplicate(fingerprint)) {
+      if (this.ensureConfig().enableDeduplication && this.shouldDeduplicate(fingerprint)) {
         this.updateDuplicateCount(fingerprint);
         return;
       }
 
       // Apply sampling if enabled
-      if (this.config.enableSampling && !this.shouldSample()) {
+      if (this.ensureConfig().enableSampling && !this.shouldSample()) {
         return;
       }
 
@@ -135,7 +145,7 @@ export class LogAggregation extends EventEmitter {
       this.updateIndex(logEntry);
 
       // Check size limits
-      if (this.logs.length > this.config.maxLogSize) {
+      if (this.logs.length > this.ensureConfig().maxLogSize) {
         this.rotateLogs();
       }
 
@@ -190,8 +200,8 @@ export class LogAggregation extends EventEmitter {
 
     // Filter by time range
     if (query.timeRange) {
-      results = results.filter(log => 
-        log.timestamp >= query.timeRange!.start && 
+      results = results.filter(log =>
+        log.timestamp >= query.timeRange!.start &&
         log.timestamp <= query.timeRange!.end
       );
     }
@@ -218,7 +228,7 @@ export class LogAggregation extends EventEmitter {
     // Apply pagination
     const offset = query.offset || 0;
     const limit = query.limit || 100;
-    
+
     return results.slice(offset, offset + limit);
   }
 
@@ -229,7 +239,7 @@ export class LogAggregation extends EventEmitter {
     let logs = this.logs;
 
     if (timeRange) {
-      logs = logs.filter(log => 
+      logs = logs.filter(log =>
         log.timestamp >= timeRange.start && log.timestamp <= timeRange.end
       );
     }
@@ -280,14 +290,14 @@ export class LogAggregation extends EventEmitter {
   /**
    * Get log alert status
    */
-  public getLogAlerts(): Array<LogAlert & { 
+  public getLogAlerts(): Array<LogAlert & {
     status: 'active' | 'triggered' | 'cooldown';
     lastTriggered?: number;
   }> {
     return Array.from(this.alerts.values()).map(alert => {
       const state = this.alertStates.get(alert.id)!;
       const now = Date.now();
-      
+
       let status: 'active' | 'triggered' | 'cooldown' = 'active';
       if (state.cooldownUntil > now) {
         status = 'cooldown';
@@ -320,7 +330,7 @@ export class LogAggregation extends EventEmitter {
     };
 
     let searchPattern: RegExp;
-    
+
     if (opts.regex) {
       try {
         searchPattern = new RegExp(pattern, opts.caseSensitive ? 'g' : 'gi');
@@ -344,7 +354,7 @@ export class LogAggregation extends EventEmitter {
     return logs.filter(log => {
       return opts.fields!.some(field => {
         let content = '';
-        
+
         if (field === 'message') {
           content = log.message;
         } else if (field === 'metadata') {
@@ -377,7 +387,7 @@ export class LogAggregation extends EventEmitter {
       case 'csv':
         const headers = ['timestamp', 'level', 'service', 'message', 'traceId', 'userId'];
         const csvRows = [headers.join(',')];
-        
+
         logs.forEach(log => {
           const row = headers.map(header => {
             const value = (log as any)[header] || '';
@@ -385,7 +395,7 @@ export class LogAggregation extends EventEmitter {
           });
           csvRows.push(row.join(','));
         });
-        
+
         return csvRows.join('\n');
 
       default:
@@ -503,7 +513,7 @@ export class LogAggregation extends EventEmitter {
   }
 
   private shouldSample(): boolean {
-    return Math.random() < this.config.sampleRate;
+    return Math.random() < this.ensureConfig().sampleRate;
   }
 
   private generateLogId(): string {
@@ -533,9 +543,9 @@ export class LogAggregation extends EventEmitter {
   }
 
   private rotateLogs(): void {
-    const keepCount = Math.floor(this.config.maxLogSize * 0.7);
+    const keepCount = Math.floor(this.ensureConfig().maxLogSize * 0.7);
     this.logs = this.logs.slice(-keepCount);
-    
+
     // Rebuild index
     this.logIndex.clear();
     this.logs.forEach((log, index) => {
@@ -573,7 +583,7 @@ export class LogAggregation extends EventEmitter {
     if (query.module && logEntry.module !== query.module) return false;
     if (query.traceId && logEntry.traceId !== query.traceId) return false;
     if (query.userId && logEntry.userId !== query.userId) return false;
-    
+
     if (query.search) {
       const searchLower = query.search.toLowerCase();
       if (!logEntry.message.toLowerCase().includes(searchLower)) return false;
@@ -677,7 +687,7 @@ export class LogAggregation extends EventEmitter {
       if (!buckets.has(bucket)) {
         buckets.set(bucket, { count: 0, errors: 0 });
       }
-      
+
       const bucketData = buckets.get(bucket)!;
       bucketData.count++;
       if (log.level === 'error') {
@@ -768,7 +778,7 @@ export class LogAggregation extends EventEmitter {
   }
 
   private exportLog(logEntry: LogEntry): void {
-    this.config.exportTargets.forEach(target => {
+    this.ensureConfig().exportTargets.forEach(target => {
       try {
         switch (target.type) {
           case 'file':
@@ -797,7 +807,7 @@ export class LogAggregation extends EventEmitter {
   }
 
   private performCleanup(): void {
-    const cutoffTime = Date.now() - (this.config.retentionPeriod * 24 * 60 * 60 * 1000);
+    const cutoffTime = Date.now() - (this.ensureConfig().retentionPeriod * 24 * 60 * 60 * 1000);
 
     // Remove old logs
     const initialCount = this.logs.length;

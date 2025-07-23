@@ -1,9 +1,10 @@
-import { TelemetrySystem, TelemetryConfig } from './Telemetry.js';
-import { MetricsSystem, MetricsConfig, BusinessMetrics } from './Metrics.js';
-import { AnomalyDetectionSystem, AnomalyDetectorConfig } from './AnomalyDetection.js';
-import { SLOMonitoringSystem, SLO, ErrorBudgetPolicy } from './SLOMonitoring.js';
-import { AlertingSystem, AlertRule, AlertCorrelation } from './AlertingSystem.js';
+import { TelemetrySystem, type TelemetryConfig } from './Telemetry.js';
+import { MetricsSystem, type MetricsConfig, type BusinessMetrics } from './Metrics.js';
+import { AnomalyDetectionSystem, type AnomalyDetectorConfig } from './AnomalyDetection.js';
+import { SLOMonitoringSystem, type SLO, type ErrorBudgetPolicy } from './SLOMonitoring.js';
+import { AlertingSystem, type AlertRule, type AlertCorrelation } from './AlertingSystem.js';
 import { logger } from '@/logger.js';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface ObservabilityConfig {
   serviceName: string;
@@ -25,18 +26,20 @@ export interface ObservabilityConfig {
 /**
  * Central coordinator for all observability components
  */
-export class ObservabilityCoordinator {
-  private static instance: ObservabilityCoordinator;
-  
-  private telemetry: TelemetrySystem;
-  private metrics: MetricsSystem;
-  private anomalyDetection: AnomalyDetectionSystem;
-  private sloMonitoring: SLOMonitoringSystem;
-  private alerting: AlertingSystem;
-  private config: ObservabilityConfig;
+export class ObservabilityCoordinator extends EventEmitterSingletonService<ObservabilityCoordinator> {
+  private telemetry: TelemetrySystem | null = null;
+  private metrics: MetricsSystem | null = null;
+  private anomalyDetection: AnomalyDetectionSystem | null = null;
+  private sloMonitoring: SLOMonitoringSystem | null = null;
+  private alerting: AlertingSystem | null = null;
+  private config: ObservabilityConfig | null = null;
   private initialized = false;
 
-  private constructor(config: ObservabilityConfig) {
+  protected constructor() {
+    super();
+  }
+
+  public async configure(config: ObservabilityConfig): Promise<void> {
     this.config = config;
     
     // Initialize systems
@@ -59,18 +62,23 @@ export class ObservabilityCoordinator {
     this.alerting = AlertingSystem.getInstance();
   }
 
-  static initialize(config: ObservabilityConfig): ObservabilityCoordinator {
-    if (!ObservabilityCoordinator.instance) {
-      ObservabilityCoordinator.instance = new ObservabilityCoordinator(config);
+  private ensureConfig(): ObservabilityConfig {
+    if (!this.config) {
+      throw new Error('ObservabilityCoordinator not configured');
     }
-    return ObservabilityCoordinator.instance;
+    return this.config;
+  }
+
+  static async initialize(config: ObservabilityConfig): Promise<ObservabilityCoordinator> {
+    const instance = super.getInstance();
+    if (!instance.config) {
+      await instance.configure(config);
+    }
+    return instance;
   }
 
   static getInstance(): ObservabilityCoordinator {
-    if (!ObservabilityCoordinator.instance) {
-      throw new Error('ObservabilityCoordinator not initialized');
-    }
-    return ObservabilityCoordinator.instance;
+    return super.getInstance();
   }
 
   /**

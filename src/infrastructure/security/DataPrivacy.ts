@@ -10,6 +10,7 @@ import {
 } from 'crypto';
 import { promisify } from 'util';
 import { logger } from '@/logger.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 const scryptAsync = promisify(scrypt);
 
@@ -69,15 +70,18 @@ export interface DataSubjectRequest {
  * Data Privacy and Encryption System
  * Implements encryption, anonymization, and privacy controls
  */
-export class DataPrivacySystem {
-  private static instance: DataPrivacySystem;
-  private config: EncryptionConfig;
+export class DataPrivacySystem extends SingletonService<DataPrivacySystem> {
+  private config: EncryptionConfig | null = null;
   private encryptionKeys: Map<string, Buffer> = new Map();
   private dataClassifications: Map<string, DataClassification> = new Map();
   private privacyPolicies: Map<string, PrivacyPolicy> = new Map();
-  private keyPair: { publicKey: string; privateKey: string };
+  private keyPair: { publicKey: string; privateKey: string } | null = null;
 
-  private constructor(config: Partial<EncryptionConfig> = {}) {
+  protected constructor() {
+    super();
+  }
+
+  public configure(config: Partial<EncryptionConfig> = {}): void {
     this.config = {
       algorithm: 'aes-256-gcm',
       keyDerivation: {
@@ -110,18 +114,34 @@ export class DataPrivacySystem {
     this.initializeDataClassifications();
   }
 
-  static initialize(config?: Partial<EncryptionConfig>): DataPrivacySystem {
-    if (!DataPrivacySystem.instance) {
-      DataPrivacySystem.instance = new DataPrivacySystem(config);
+  private ensureConfig(): EncryptionConfig {
+    if (!this.config) {
+      throw new Error('DataPrivacySystem not configured');
     }
-    return DataPrivacySystem.instance;
+    return this.config;
+  }
+
+  private ensureKeyPair(): { publicKey: string; privateKey: string } {
+    if (!this.keyPair) {
+      throw new Error('DataPrivacySystem keyPair not initialized');
+    }
+    return this.keyPair;
+  }
+
+  static initialize(config?: Partial<EncryptionConfig>): DataPrivacySystem {
+    const instance = super.getInstance();
+    if (!instance.config) {
+      instance.configure(config);
+    }
+    return instance;
   }
 
   static getInstance(): DataPrivacySystem {
-    if (!DataPrivacySystem.instance) {
-      throw new Error('DataPrivacySystem not initialized');
+    const instance = super.getInstance();
+    if (!instance.config) {
+      instance.configure();
     }
-    return DataPrivacySystem.instance;
+    return instance;
   }
 
   /**
@@ -132,11 +152,11 @@ export class DataPrivacySystem {
       throw new Error('Public data should not be encrypted');
     }
 
-    const salt = randomBytes(this.config.keyDerivation.saltLength);
+    const salt = randomBytes(this.ensureConfig().keyDerivation.saltLength);
     const key = await this.deriveKey('master-key', salt);
     const iv = randomBytes(16);
 
-    const cipher = createCipheriv(this.config.algorithm, key, iv);
+    const cipher = createCipheriv(this.ensureConfig().algorithm, key, iv);
     
     let encrypted = cipher.update(data, 'utf8', 'base64');
     encrypted += cipher.final('base64');
@@ -147,7 +167,7 @@ export class DataPrivacySystem {
       data: encrypted + '.' + authTag.toString('base64'),
       iv: iv.toString('base64'),
       salt: salt.toString('base64'),
-      algorithm: this.config.algorithm,
+      algorithm: this.ensureConfig().algorithm,
       timestamp: new Date(),
       keyId: 'master-key',
     };
@@ -176,7 +196,7 @@ export class DataPrivacySystem {
    * Encrypt with public key (asymmetric)
    */
   encryptAsymmetric(data: string): string {
-    const encrypted = publicEncrypt(this.keyPair.publicKey, Buffer.from(data));
+    const encrypted = publicEncrypt(this.ensureKeyPair().publicKey, Buffer.from(data));
     return encrypted.toString('base64');
   }
 
@@ -185,7 +205,7 @@ export class DataPrivacySystem {
    */
   decryptAsymmetric(encryptedData: string): string {
     const decrypted = privateDecrypt(
-      this.keyPair.privateKey,
+      this.ensureKeyPair().privateKey,
       Buffer.from(encryptedData, 'base64')
     );
     return decrypted.toString('utf8');
@@ -427,7 +447,7 @@ export class DataPrivacySystem {
     const key = (await scryptAsync(
       masterKey,
       salt,
-      this.config.keyDerivation.keyLength
+      this.ensureConfig().keyDerivation.keyLength
     )) as Buffer;
 
     this.encryptionKeys.set(keyId + salt.toString('base64'), key);

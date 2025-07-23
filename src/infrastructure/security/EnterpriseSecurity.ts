@@ -10,7 +10,7 @@ import { monitoring } from '@/infrastructure/observability/AdvancedMonitoring.js
 import { z } from 'zod';
 import type { H3Event } from 'h3';
 
-export interface SecurityEvent {
+export interface ISecurityEvent {
   id: string;
   type: 'authentication' | 'authorization' | 'threat' | 'compliance' | 'audit';
   severity: 'low' | 'medium' | 'high' | 'critical';
@@ -25,7 +25,7 @@ export interface SecurityEvent {
   blocked: boolean;
 }
 
-export interface ThreatPattern {
+export interface IThreatPattern {
   id: string;
   name: string;
   pattern: RegExp | string;
@@ -37,7 +37,7 @@ export interface ThreatPattern {
   windowMs?: number;
 }
 
-export interface AuditLog {
+export interface IAuditLog {
   id: string;
   timestamp: Date;
   userId?: string;
@@ -57,7 +57,7 @@ export interface AuditLog {
   metadata?: Record<string, any>;
 }
 
-export interface ComplianceRule {
+export interface IComplianceRule {
   id: string;
   name: string;
   regulation: 'GDPR' | 'HIPAA' | 'SOX' | 'PCI_DSS' | 'CCPA' | 'SOC2';
@@ -70,10 +70,10 @@ export interface ComplianceRule {
  * Enterprise-grade security system
  */
 export class EnterpriseSecuritySystem {
-  private securityEvents: Map<string, SecurityEvent[]> = new Map();
-  private threatPatterns: Map<string, ThreatPattern> = new Map();
-  private auditLogs: AuditLog[] = [];
-  private complianceRules: Map<string, ComplianceRule> = new Map();
+  private securityEvents: Map<string, ISecurityEvent[]> = new Map();
+  private threatPatterns: Map<string, IThreatPattern> = new Map();
+  private auditLogs: IAuditLog[] = [];
+  private complianceRules: Map<string, IComplianceRule> = new Map();
   private rateLimitStore: Map<string, { count: number; resetTime: number; blocked: boolean }> = new Map();
   private bruteForceTracker: Map<string, { attempts: number; lastAttempt: Date; blocked: boolean }> = new Map();
   private retentionPeriod = 90 * 24 * 60 * 60 * 1000; // 90 days
@@ -95,11 +95,11 @@ export class EnterpriseSecuritySystem {
       severity: z.enum(['low', 'medium', 'high', 'critical']),
       userId: z.string().optional(),
       sessionId: z.string().optional(),
-      ip: z.string().ip(),
+      ip: z.ipv4(),
       userAgent: z.string(),
       resource: z.string().optional(),
       action: z.string().optional(),
-      details: z.record(z.any()),
+      details: z.record(z.string(), z.any()),
       blocked: z.boolean().default(false),
     });
 
@@ -114,11 +114,11 @@ export class EnterpriseSecuritySystem {
         after: z.any().optional(),
         fields: z.array(z.string()).optional(),
       }).optional(),
-      ip: z.string().ip(),
+      ip: z.ipv4(),
       userAgent: z.string(),
       success: z.boolean(),
       error: z.string().optional(),
-      metadata: z.record(z.any()).optional(),
+      metadata: z.record(z.string(), z.any()).optional(),
     });
 
     validationService.registerSchema('securityEvent', securityEventSchema);
@@ -184,10 +184,10 @@ export class EnterpriseSecuritySystem {
           monitoring.recordMetric({
             name: 'security.threat.blocked',
             value: 1,
-            tags: { 
-              ip, 
+            tags: {
+              ip,
               type: threatResult.patterns[0]?.type || 'unknown',
-              severity: threatResult.severity 
+              severity: threatResult.severity
             },
           });
 
@@ -244,7 +244,7 @@ export class EnterpriseSecuritySystem {
    * Check rate limiting
    */
   private checkRateLimit(
-    ip: string, 
+    ip: string,
     resource: string,
     config: { max: number; windowMs: number } = { max: 100, windowMs: 60000 }
   ): { blocked: boolean; count: number; windowMs: number } {
@@ -268,10 +268,10 @@ export class EnterpriseSecuritySystem {
       logger.warn('Rate limit exceeded', { ip, resource, count: limit.count });
     }
 
-    return { 
-      blocked: limit.blocked, 
-      count: limit.count, 
-      windowMs: config.windowMs 
+    return {
+      blocked: limit.blocked,
+      count: limit.count,
+      windowMs: config.windowMs
     };
   }
 
@@ -281,7 +281,7 @@ export class EnterpriseSecuritySystem {
   private async detectThreats(event: H3Event): Promise<{
     blocked: boolean;
     severity: 'low' | 'medium' | 'high' | 'critical';
-    patterns: ThreatPattern[];
+    patterns: IThreatPattern[];
     payload?: any;
   }> {
     const url = event.node.req.url || '';
@@ -298,7 +298,7 @@ export class EnterpriseSecuritySystem {
       }
     }
 
-    const detectedPatterns: ThreatPattern[] = [];
+    const detectedPatterns: IThreatPattern[] = [];
     let maxSeverity: 'low' | 'medium' | 'high' | 'critical' = 'low';
     let shouldBlock = false;
 
@@ -349,7 +349,7 @@ export class EnterpriseSecuritySystem {
    * Check individual threat pattern
    */
   private async checkThreatPattern(
-    pattern: ThreatPattern,
+    pattern: IThreatPattern,
     context: {
       url: string;
       method: string;
@@ -362,27 +362,27 @@ export class EnterpriseSecuritySystem {
     switch (pattern.type) {
       case 'sql_injection':
         return this.checkSQLInjection(url, body);
-      
+
       case 'xss':
         return this.checkXSS(url, body);
-      
+
       case 'csrf':
         return this.checkCSRF(headers, method);
-      
+
       case 'brute_force':
         return this.checkBruteForce(context);
-      
+
       case 'suspicious_behavior':
         return this.checkSuspiciousBehavior(context);
-      
+
       default:
         // Pattern-based check
         if (pattern.pattern instanceof RegExp) {
-          return pattern.pattern.test(url) || 
-                 pattern.pattern.test(JSON.stringify(body) || '');
+          return pattern.pattern.test(url) ||
+            pattern.pattern.test(JSON.stringify(body) || '');
         } else {
-          return url.includes(pattern.pattern) || 
-                 (JSON.stringify(body) || '').includes(pattern.pattern);
+          return url.includes(pattern.pattern) ||
+            (JSON.stringify(body) || '').includes(pattern.pattern);
         }
     }
   }
@@ -456,8 +456,8 @@ export class EnterpriseSecuritySystem {
   /**
    * Record security event
    */
-  async recordSecurityEvent(event: Omit<SecurityEvent, 'id' | 'timestamp'>): Promise<string> {
-    const securityEvent: SecurityEvent = {
+  async recordSecurityEvent(event: Omit<ISecurityEvent, 'id' | 'timestamp'>): Promise<string> {
+    const securityEvent: ISecurityEvent = {
       id: stringUtils.random(12),
       timestamp: new Date(),
       ...event,
@@ -495,8 +495,8 @@ export class EnterpriseSecuritySystem {
   /**
    * Record audit log
    */
-  async recordAuditLog(log: Omit<AuditLog, 'id' | 'timestamp'>): Promise<string> {
-    const auditLog: AuditLog = {
+  async recordAuditLog(log: Omit<IAuditLog, 'id' | 'timestamp'>): Promise<string> {
+    const auditLog: IAuditLog = {
       id: stringUtils.random(12),
       timestamp: new Date(),
       ...log,
@@ -534,10 +534,10 @@ export class EnterpriseSecuritySystem {
   /**
    * Register threat pattern
    */
-  registerThreatPattern(pattern: Omit<ThreatPattern, 'id'>): string {
+  registerThreatPattern(pattern: Omit<IThreatPattern, 'id'>): string {
     const id = stringUtils.random(8);
     this.threatPatterns.set(id, { id, ...pattern });
-    
+
     logger.info('Threat pattern registered', { id, name: pattern.name, type: pattern.type });
     return id;
   }
@@ -545,10 +545,10 @@ export class EnterpriseSecuritySystem {
   /**
    * Register compliance rule
    */
-  registerComplianceRule(rule: Omit<ComplianceRule, 'id'>): string {
+  registerComplianceRule(rule: Omit<IComplianceRule, 'id'>): string {
     const id = stringUtils.random(8);
     this.complianceRules.set(id, { id, ...rule });
-    
+
     logger.info('Compliance rule registered', { id, name: rule.name, regulation: rule.regulation });
     return id;
   }
@@ -559,7 +559,7 @@ export class EnterpriseSecuritySystem {
   async runComplianceCheck(context: any): Promise<{
     compliant: boolean;
     results: Array<{
-      rule: ComplianceRule;
+      rule: IComplianceRule;
       compliant: boolean;
       issues?: string[];
     }>;
@@ -583,18 +583,18 @@ export class EnterpriseSecuritySystem {
         }
 
       } catch (error) {
-        logger.error('Compliance check error', { 
-          ruleId: rule.id, 
-          ruleName: rule.name, 
-          error 
+        logger.error('Compliance check error', {
+          ruleId: rule.id,
+          ruleName: rule.name,
+          error
         });
-        
+
         results.push({
           rule,
           compliant: false,
           issues: [`Check failed: ${String(error)}`],
         });
-        
+
         overallCompliant = false;
       }
     }
@@ -768,7 +768,7 @@ export class EnterpriseSecuritySystem {
     // Generate security health metrics every minute
     setInterval(() => {
       const dashboard = this.getSecurityDashboard();
-      
+
       monitoring.recordMetric({
         name: 'security.events.total',
         value: dashboard.events.total,
@@ -828,7 +828,7 @@ export class EnterpriseSecuritySystem {
   private getClientIP(event: H3Event): string {
     const forwarded = event.node.req.headers['x-forwarded-for'];
     if (forwarded) {
-      return (forwarded as string).split(',')[0].trim();
+      return (forwarded as string).split(',')[0]?.trim() || 'unknown';
     }
     return event.node.req.socket?.remoteAddress || 'unknown';
   }
@@ -846,6 +846,3 @@ export class EnterpriseSecuritySystem {
 
 // Export singleton instance
 export const enterpriseSecurity = new EnterpriseSecuritySystem();
-
-// Export types
-export type { SecurityEvent, ThreatPattern, AuditLog, ComplianceRule };

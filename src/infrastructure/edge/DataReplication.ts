@@ -138,7 +138,7 @@ export class DataReplicationSystem extends EventEmitter {
     const targetNodes = this.getTargetNodes(event);
 
     // Replicate based on strategy
-    switch (this.strategy.type) {
+    switch (strategy.type) {
       case 'sync':
         await this.syncReplicate(event, targetNodes);
         break;
@@ -151,7 +151,7 @@ export class DataReplicationSystem extends EventEmitter {
     }
 
     // Check for conflicts
-    if (this.strategy.consistency === 'eventual') {
+    if (strategy.consistency === 'eventual') {
       await this.checkConflicts(event);
     }
   }
@@ -254,7 +254,7 @@ export class DataReplicationSystem extends EventEmitter {
       timeout?: number;
     } = {}
   ): Promise<any> {
-    const consistency = options.consistency || this.strategy.consistency;
+    const consistency = options.consistency || strategy.consistency;
 
     if (consistency === 'strong') {
       // Query primary node
@@ -382,7 +382,7 @@ export class DataReplicationSystem extends EventEmitter {
       .filter(node => node.status === 'active' && node.id !== event.sourceNode);
 
     // Apply partitioning if configured
-    if (this.strategy.partitioning) {
+    if (strategy.partitioning) {
       return this.applyPartitioning(event, activeNodes);
     }
 
@@ -521,7 +521,8 @@ export class DataReplicationSystem extends EventEmitter {
    * Resolve conflict based on strategy
    */
   private async resolveConflict(conflict: Conflict): Promise<any> {
-    switch (this.strategy.conflictResolution) {
+    const strategy = this.ensureStrategy();
+    switch (strategy.conflictResolution) {
       case 'lww': // Last Write Wins
         return conflict.versions
           .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0].data;
@@ -533,14 +534,14 @@ export class DataReplicationSystem extends EventEmitter {
         return this.mergeCRDT(conflict.versions);
       
       case 'custom':
-        if (this.strategy.conflictResolution === 'custom') {
+        if (strategy.conflictResolution === 'custom') {
           // Use custom resolver if provided
           return conflict;
         }
         throw new Error('No custom resolver provided');
       
       default:
-        throw new Error(`Unknown conflict resolution strategy: ${this.strategy.conflictResolution}`);
+        throw new Error(`Unknown conflict resolution strategy: ${strategy.conflictResolution}`);
     }
   }
 
@@ -683,7 +684,7 @@ export class DataReplicationSystem extends EventEmitter {
     event: ReplicationEvent,
     nodes: ReplicationNode[]
   ): ReplicationNode[] {
-    if (!this.strategy.partitioning) return nodes;
+    if (!strategy.partitioning) return nodes;
 
     // Find the partition for this event
     const partition = this.findPartition(event);
@@ -700,10 +701,10 @@ export class DataReplicationSystem extends EventEmitter {
    * Find partition for event
    */
   private findPartition(event: ReplicationEvent): Partition | null {
-    if (!this.strategy.partitioning) return null;
+    if (!strategy.partitioning) return null;
 
     // Simple implementation - in reality would use partition key
-    return this.strategy.partitioning.partitions[0] || null;
+    return strategy.partitioning.partitions[0] || null;
   }
 
   /**

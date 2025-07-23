@@ -1,8 +1,9 @@
 import { logger } from '@/logger.js';
+import { AsyncSingletonService } from './core/SingletonService.js';
 import { EventBus } from './events/EventBus.js';
-import type   { EventStore } from './events/EventStore.js';
+import type { IEventStore } from './events/EventStore.js';
 import { CommandBus } from './cqrs/CommandBus.js';
-import { QueryBus } from './cqrs/QueryBus.js'; 
+import { QueryBus } from './cqrs/QueryBus.js';
 import { ProjectionEngine } from './cqrs/ProjectionEngine.js';
 import { SagaOrchestrator } from './sagas/SagaOrchestrator.js';
 import { TelemetrySystem } from './observability/Telemetry.js';
@@ -69,14 +70,13 @@ export interface SystemConfig {
  * Unified System Integration
  * Orchestrates all infrastructure components
  */
-export class SystemIntegration {
-  private static instance: SystemIntegration;
-  private config: SystemConfig;
+export class SystemIntegration extends AsyncSingletonService<SystemIntegration> {
+  private config: SystemConfig | null = null;
   private initialized = false;
 
   // Core Infrastructure
   private eventBus!: EventBus;
-  private eventStore!: EventStore;
+  private eventStore!: IEventStore;
   private commandBus!: CommandBus;
   private queryBus!: QueryBus;
   private projectionEngine!: ProjectionEngine;
@@ -124,29 +124,32 @@ export class SystemIntegration {
   private workflowEngine!: WorkflowEngine;
   private integrationHub!: IntegrationHub;
 
-  private constructor(config: SystemConfig) {
-    this.config = config;
+  protected constructor() {
+    super();
   }
 
   static async initialize(config: SystemConfig): Promise<SystemIntegration> {
-    if (!SystemIntegration.instance) {
-      SystemIntegration.instance = new SystemIntegration(config);
-      await SystemIntegration.instance.initializeSystem();
-    }
-    return SystemIntegration.instance;
+    return super.getInstanceAsync(async (instance) => {
+      instance.config = config;
+      await instance.initializeSystem();
+    });
   }
 
   static getInstance(): SystemIntegration {
-    if (!SystemIntegration.instance) {
-      throw new Error('SystemIntegration not initialized');
+    if (!AsyncSingletonService.isInitialized('SystemIntegration')) {
+      throw new Error('SystemIntegration not initialized - call initialize() first');
     }
-    return SystemIntegration.instance;
+    return super.getInstance() as SystemIntegration;
   }
 
   /**
    * Initialize all system components
    */
   private async initializeSystem(): Promise<void> {
+    if (!this.config) {
+      throw new Error('SystemIntegration config not set');
+    }
+
     logger.info('Initializing integrated system...', { config: this.config });
 
     try {
@@ -295,7 +298,7 @@ export class SystemIntegration {
 
     // Alerting
     this.alerting = AlertingSystem.getInstance();
-    
+
     logger.info('Observability systems initialized');
   }
 
@@ -315,7 +318,7 @@ export class SystemIntegration {
 
     // Compliance Automation
     this.compliance = ComplianceAutomationSystem.getInstance();
-    
+
     // Register compliance frameworks
     for (const framework of this.config.security.complianceFrameworks) {
       await this.registerComplianceFramework(framework);
@@ -628,12 +631,12 @@ export class SystemIntegration {
 
     // Get cache performance
     const cacheStats = this.cdn.getCacheStats();
-    
+
     // Purge if hit rate is too low
     for (const [locationId, stats] of cacheStats) {
       if (stats.hitRate < 0.3) {
         logger.info(`Low cache hit rate at ${locationId}, warming cache...`);
-        
+
         // Warm cache with predicted content
         await this.cdn.warmupCache([
           {
@@ -657,8 +660,8 @@ export class SystemIntegration {
     const components: Record<string, { status: string; message?: string }> = {};
 
     // Check core components
-    components.eventBus = this.eventBus ? 
-      { status: 'healthy' } : 
+    components.eventBus = this.eventBus ?
+      { status: 'healthy' } :
       { status: 'unavailable' };
 
     // Check observability
@@ -685,7 +688,7 @@ export class SystemIntegration {
     // Determine overall status
     const statuses = Object.values(components).map(c => c.status);
     let overallStatus: 'healthy' | 'degraded' | 'critical' = 'healthy';
-    
+
     if (statuses.includes('critical') || statuses.includes('unavailable')) {
       overallStatus = 'critical';
     } else if (statuses.includes('degraded')) {

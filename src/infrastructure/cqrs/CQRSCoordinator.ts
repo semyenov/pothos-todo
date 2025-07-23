@@ -1,12 +1,12 @@
 import { EventBus } from '../events/EventBus.js';
-import type { EventStore } from '../events/EventStore.js';
+import type { IEventStore } from '../events/EventStore.js';
 import { ProjectionManager } from '../events/EventSourcing.js';
 import { SagaOrchestrator } from '../saga/SagaOrchestrator.js';
 import { ReadModelManager } from './ReadModel.js';
-import { 
-  TodoQueryService, 
-  UserQueryService, 
-  TagQueryService 
+import {
+  TodoQueryService,
+  UserQueryService,
+  TagQueryService
 } from './QueryService.js';
 import { CreateTodoWithNotificationsSaga } from '../saga/Saga.js';
 import { RabbitMQAdapter } from '../events/adapters/RabbitMQAdapter.js';
@@ -30,25 +30,25 @@ export interface CQRSConfig {
  */
 export class CQRSCoordinator {
   private static instance: CQRSCoordinator;
-  
+
   private eventBus: EventBus;
-  private eventStore: EventStore;
+  private eventStore: IEventStore;
   private projectionManager: ProjectionManager;
   private sagaOrchestrator: SagaOrchestrator;
   private readModelManager: ReadModelManager;
   private queryCache?: Redis;
-  
+
   // Query Services
   private todoQueryService: TodoQueryService;
   private userQueryService: UserQueryService;
   private tagQueryService: TagQueryService;
-  
+
   private config: CQRSConfig;
   private initialized = false;
 
   private constructor(
     private prisma: PrismaClient,
-    eventStore: EventStore,
+    eventStore: IEventStore,
     config: CQRSConfig = {}
   ) {
     this.config = {
@@ -59,13 +59,13 @@ export class CQRSCoordinator {
       cacheEnabled: true,
       ...config,
     };
-    
+
     this.eventStore = eventStore;
     this.eventBus = EventBus.getInstance();
     this.projectionManager = new ProjectionManager(eventStore);
     this.sagaOrchestrator = new SagaOrchestrator(this.eventBus);
     this.readModelManager = new ReadModelManager();
-    
+
     // Initialize query cache if enabled
     if (this.config.cacheEnabled) {
       this.queryCache = new Redis({
@@ -73,7 +73,7 @@ export class CQRSCoordinator {
         keyPrefix: 'query:',
       });
     }
-    
+
     // Initialize query services
     this.todoQueryService = new TodoQueryService(
       prisma,
@@ -94,7 +94,7 @@ export class CQRSCoordinator {
 
   static getInstance(
     prisma: PrismaClient,
-    eventStore: EventStore,
+    eventStore: IEventStore,
     config?: CQRSConfig
   ): CQRSCoordinator {
     if (!CQRSCoordinator.instance) {
@@ -121,10 +121,10 @@ export class CQRSCoordinator {
     // 2. Register sagas
     if (this.config.enableSagas) {
       this.registerSagas();
-      
+
       // Subscribe saga orchestrator to event bus
       await this.eventBus.subscribe('*', this.sagaOrchestrator);
-      
+
       // Resume incomplete sagas
       await this.sagaOrchestrator.resumeIncompleteSagas();
     }
@@ -176,12 +176,12 @@ export class CQRSCoordinator {
           this.eventBus.registerAdapter('rabbitmq', rabbitMQAdapter);
         }
         break;
-        
+
       case 'redis':
         const redisAdapter = new RedisAdapter(this.config.redisConfig);
         this.eventBus.registerAdapter('redis', redisAdapter);
         break;
-        
+
       case 'inmemory':
       default:
         // InMemory adapter is built-in
@@ -197,7 +197,7 @@ export class CQRSCoordinator {
   private registerSagas(): void {
     // Register business sagas
     this.sagaOrchestrator.registerSaga(new CreateTodoWithNotificationsSaga());
-    
+
     // Additional sagas can be registered here
     logger.info('Registered all sagas');
   }
@@ -210,7 +210,7 @@ export class CQRSCoordinator {
     for (const readModel of this.readModelManager.getAllReadModels()) {
       this.projectionManager.registerProjection(readModel);
     }
-    
+
     logger.info('Registered all projections');
   }
 
@@ -224,14 +224,14 @@ export class CQRSCoordinator {
     const cacheInvalidationHandler = {
       handle: async (envelope: any) => {
         const event = envelope.event;
-        
+
         switch (event.eventType) {
           case 'TodoCreated':
           case 'TodoUpdated':
           case 'TodoDeleted':
             await this.invalidateTodoCache(event.aggregateId, event.metadata?.userId);
             break;
-            
+
           case 'TodoCompleted':
             await this.invalidateUserStatsCache(event.metadata?.userId);
             break;
@@ -261,7 +261,7 @@ export class CQRSCoordinator {
 
   private async invalidateUserStatsCache(userId?: string): Promise<void> {
     if (!userId) return;
-    
+
     const patterns = [
       `analytics:${userId}:*`,
       `productivity:${userId}:*`,
@@ -360,7 +360,7 @@ export class CQRSCoordinator {
     // Determine overall status
     const healthyCount = Object.values(components).filter(Boolean).length;
     const totalCount = Object.keys(components).length;
-    
+
     let status: 'healthy' | 'degraded' | 'unhealthy';
     if (healthyCount === totalCount) {
       status = 'healthy';

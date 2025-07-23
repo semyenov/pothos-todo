@@ -20,9 +20,9 @@
  * - Executive reporting and KPI tracking
  */
 
-import { type BackupConfiguration, createBackupManager, defaultBackupConfiguration, type RestoreOptions } from './BackupManager';
-import { createBusinessContinuityManager } from './BusinessContinuityManager';
-import { createDisasterRecoveryOrchestrator } from './DisasterRecoveryOrchestrator';
+import { type BackupConfiguration, createBackupManager, defaultBackupConfiguration, type RestoreOptions } from './BackupManager.js';
+import { createBusinessContinuityManager } from './BusinessContinuityManager.js';
+import { createDisasterRecoveryOrchestrator } from './DisasterRecoveryOrchestrator.js';
 
 // Core backup and recovery services
 export {
@@ -31,9 +31,10 @@ export {
   type BackupMetadata,
   type RestoreOptions,
   type BackupOperationResult,
+  type DisasterRecoveryPlan,
   createBackupManager,
   defaultBackupConfiguration,
-} from './BackupManager';
+} from './BackupManager.js';
 
 export {
   DisasterRecoveryOrchestrator,
@@ -43,12 +44,12 @@ export {
   type RecoveryTestSuite,
   type BusinessContinuityMetrics,
   createDisasterRecoveryOrchestrator,
-} from './DisasterRecoveryOrchestrator';
+} from './DisasterRecoveryOrchestrator.js';
 
 export {
   BusinessContinuityManager,
   createBusinessContinuityManager,
-} from './BusinessContinuityManager';
+} from './BusinessContinuityManager.js';
 
 /**
  * Initialize enterprise backup and disaster recovery infrastructure

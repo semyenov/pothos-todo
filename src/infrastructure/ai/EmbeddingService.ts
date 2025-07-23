@@ -1,7 +1,8 @@
 import { OpenAI } from 'openai';
 import { logger } from '@/logger';
 import { PrismaClient, type Embedding, Priority as PrismaPriority, TodoStatus as PrismaTodoStatus } from '@prisma/client';
-import { VectorStore } from './VectorStore';
+import { VectorStore } from './VectorStore.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface EmbeddingOptions {
   model?: string;
@@ -14,25 +15,28 @@ export interface EmbeddingResult {
   dimensions: number;
 }
 
-export class EmbeddingService {
-  private static instance: EmbeddingService | null = null;
+export class EmbeddingService extends SingletonService<EmbeddingService> {
   private openai: OpenAI | null = null;
-  private vectorStore: VectorStore;
+  private vectorStore: VectorStore | null = null;
+  private prisma: PrismaClient | null = null;
 
   private readonly DEFAULT_MODEL = 'text-embedding-3-small';
   private readonly DEFAULT_DIMENSIONS = 1536;
 
-  private constructor(
-    private prisma: PrismaClient
-  ) {
-    this.vectorStore = VectorStore.getInstance();
+  protected constructor() {
+    super();
   }
 
-  public static getInstance(prisma: PrismaClient): EmbeddingService {
-    if (!EmbeddingService.instance) {
-      EmbeddingService.instance = new EmbeddingService(prisma);
-    }
-    return EmbeddingService.instance;
+  public static async getInstance(): Promise<EmbeddingService> {
+    return super.getInstance();
+  }
+
+  /**
+   * Configure the EmbeddingService with Prisma client
+   */
+  public async configure(prisma: PrismaClient): Promise<void> {
+    this.prisma = prisma;
+    this.vectorStore = await VectorStore.getInstance();
   }
 
   public initialize(apiKey: string): void {
@@ -85,8 +89,10 @@ export class EmbeddingService {
     // Generate embedding
     const { embedding, model, dimensions } = await this.generateEmbedding(content);
 
+    this.ensureConfigured();
+
     // Store in database
-    const embeddingRecord = await this.prisma.embedding.upsert({
+    const embeddingRecord = await this.prisma!.embedding.upsert({
       where: {
         entityType_entityId: {
           entityType,
@@ -110,7 +116,7 @@ export class EmbeddingService {
     });
 
     // Store in vector database
-    await this.vectorStore.upsert(entityType + 's', [{
+    await this.vectorStore!.upsert(entityType + 's', [{
       id: entityId,
       vector: embedding,
       payload: {
@@ -135,8 +141,10 @@ export class EmbeddingService {
     // Generate query embedding
     const { embedding } = await this.generateEmbedding(query);
 
+    this.ensureConfigured();
+
     // Search in vector database
-    const results = await this.vectorStore.search(
+    const results = await this.vectorStore!.search(
       entityType + 's',
       embedding,
       { limit, filter }
@@ -163,8 +171,10 @@ export class EmbeddingService {
     entityType: string,
     entityId: string
   ): Promise<void> {
+    this.ensureConfigured();
+
     // Delete from database
-    await this.prisma.embedding.delete({
+    await this.prisma!.embedding.delete({
       where: {
         entityType_entityId: {
           entityType,
@@ -174,7 +184,7 @@ export class EmbeddingService {
     });
 
     // Delete from vector database
-    await this.vectorStore.delete(entityType + 's', [entityId]);
+    await this.vectorStore!.delete(entityType + 's', [entityId]);
 
     logger.info(`Deleted embedding for ${entityType}:${entityId}`);
   }
@@ -229,5 +239,14 @@ export class EmbeddingService {
     return this.searchSimilar('todoList', query, limit, {
       must: [{ key: 'userId', match: { value: userId } }],
     });
+  }
+
+  /**
+   * Ensure the service is configured before use
+   */
+  private ensureConfigured(): void {
+    if (!this.prisma || !this.vectorStore) {
+      throw new Error('EmbeddingService not configured - call configure() first');
+    }
   }
 }

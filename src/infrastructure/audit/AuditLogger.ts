@@ -1,11 +1,11 @@
 import { logger } from '../../lib/unjs-utils.js';
-import { ohash } from 'ohash';
 import { nanoid } from 'nanoid';
+import { SingletonService } from '../core/SingletonService.js';
 
 // Audit event types and severity levels
-export type AuditEventType = 
+export type AuditEventType =
   | 'authentication'
-  | 'authorization' 
+  | 'authorization'
   | 'data_access'
   | 'data_modification'
   | 'system_access'
@@ -100,9 +100,8 @@ export interface AuditConfig {
 }
 
 // Enterprise audit logger with compliance support
-export class AuditLogger {
-  private static instance: AuditLogger | null = null;
-  private config: AuditConfig;
+export class AuditLogger extends SingletonService {
+  private config: AuditConfig | null = null;
   private eventBuffer: AuditEvent[] = [];
   private isProcessing = false;
   private flushTimer: NodeJS.Timeout | null = null;
@@ -110,37 +109,50 @@ export class AuditLogger {
   private alertManager: AuditAlertManager | null = null;
   private complianceReporter: ComplianceReporter | null = null;
 
-  private constructor(config: AuditConfig) {
-    this.config = config;
-    this.initialize();
+  protected constructor(config: AuditConfig | null = null) {
+    super();
+    if (config) {
+      this.configure(config);
+    }
   }
 
-  static getInstance(config?: AuditConfig): AuditLogger {
-    if (!AuditLogger.instance) {
-      if (!config) {
-        throw new Error('AuditConfig required for first initialization');
-      }
-      AuditLogger.instance = new AuditLogger(config);
+  public async configure(config: AuditConfig): Promise<void> {
+    this.config = config;
+    await this.initialize();
+  }
+
+  private ensureConfig(): AuditConfig {
+    if (!this.config) {
+      throw new Error('AuditLogger not configured');
     }
-    return AuditLogger.instance;
+    return this.config;
+  }
+
+  public static override getInstance(config?: AuditConfig): AuditLogger {
+    const instance = super.getInstance() as AuditLogger;
+    if (config && !instance.config) {
+      instance.configure(config);
+    }
+    return instance;
   }
 
   // Initialize audit logger components
   private async initialize(): Promise<void> {
     try {
       // Initialize storage
-      this.storage = new AuditStorage(this.config.storage);
+      const config = this.ensureConfig();
+      this.storage = new AuditStorage(config.storage);
       await this.storage.initialize();
 
       // Initialize alert manager
-      if (this.config.alerting.enabled) {
-        this.alertManager = new AuditAlertManager(this.config.alerting);
+      if (config.alerting.enabled) {
+        this.alertManager = new AuditAlertManager(config.alerting);
         await this.alertManager.initialize();
       }
 
       // Initialize compliance reporter
-      if (this.config.compliance.automaticReporting) {
-        this.complianceReporter = new ComplianceReporter(this.config.compliance);
+      if (config.compliance.automaticReporting) {
+        this.complianceReporter = new ComplianceReporter(config.compliance);
         await this.complianceReporter.initialize();
       }
 
@@ -148,9 +160,9 @@ export class AuditLogger {
       this.startFlushTimer();
 
       logger.info('Audit logger initialized successfully', {
-        storageType: this.config.storage.type,
-        alertingEnabled: this.config.alerting.enabled,
-        complianceFrameworks: this.config.compliance.enabledFrameworks,
+        storageType: config.storage.type,
+        alertingEnabled: config.alerting.enabled,
+        complianceFrameworks: config.compliance.enabledFrameworks,
       });
     } catch (error) {
       logger.error('Failed to initialize audit logger:', error);
@@ -160,12 +172,13 @@ export class AuditLogger {
 
   // Log an audit event
   async logEvent(eventData: Partial<AuditEvent>): Promise<void> {
-    if (!this.config.enabled) {
+    const config = this.ensureConfig();
+    if (!config.enabled) {
       return;
     }
 
     // Skip events below configured log level
-    if (this.getSeverityLevel(eventData.severity || 'low') < this.getSeverityLevel(this.config.logLevel)) {
+    if (this.getSeverityLevel(eventData.severity || 'low') < this.getSeverityLevel(config.logLevel)) {
       return;
     }
 
@@ -178,7 +191,7 @@ export class AuditLogger {
     // Check if immediate flush is needed for high-severity events
     if (auditEvent.severity === 'critical' || auditEvent.severity === 'high') {
       await this.flushEvents();
-    } else if (this.eventBuffer.length >= this.config.performance.bufferSize) {
+    } else if (this.eventBuffer.length >= config.performance.bufferSize) {
       // Flush if buffer is full
       setImmediate(() => this.flushEvents());
     }
@@ -225,7 +238,7 @@ export class AuditLogger {
       description: eventData.description || 'Audit event logged',
       metadata: eventData.metadata || {},
       compliance: {
-        frameworks: eventData.compliance?.frameworks || this.config.compliance.enabledFrameworks,
+        frameworks: eventData.compliance?.frameworks || this.ensureConfig().compliance.enabledFrameworks,
         categories: eventData.compliance?.categories || [],
         riskLevel: eventData.compliance?.riskLevel || this.mapSeverityToRisk(eventData.severity || 'medium'),
       },
@@ -246,12 +259,13 @@ export class AuditLogger {
     frameworks: ComplianceFramework[],
     eventType?: AuditEventType
   ): AuditEvent['retention'] {
-    let maxRetention = this.config.retention.defaultRetentionDays;
-    let maxArchive = this.config.retention.defaultArchiveDays;
+    const config = this.ensureConfig();
+    let maxRetention = config.retention.defaultRetentionDays;
+    let maxArchive = config.retention.defaultArchiveDays;
 
     // Apply compliance-specific retention requirements
     for (const framework of frameworks) {
-      const frameworkRetention = this.config.retention.complianceRetention[framework];
+      const frameworkRetention = config.retention.complianceRetention[framework];
       if (frameworkRetention && frameworkRetention > maxRetention) {
         maxRetention = frameworkRetention;
       }
@@ -295,7 +309,7 @@ export class AuditLogger {
 
   // Check if event should trigger an alert
   private shouldAlert(event: AuditEvent): boolean {
-    return this.config.alerting.channels.some(
+    return this.ensureConfig().alerting.channels.some(
       channel => this.getSeverityLevel(event.severity) >= this.getSeverityLevel(channel.severityThreshold)
     );
   }
@@ -308,7 +322,7 @@ export class AuditLogger {
           logger.error('Failed to flush audit events:', error);
         });
       }
-    }, this.config.performance.flushInterval);
+    }, this.ensureConfig().performance.flushInterval);
   }
 
   // Flush buffered events to storage
@@ -324,7 +338,7 @@ export class AuditLogger {
       this.eventBuffer = [];
 
       // Write events to storage in batches
-      const batchSize = Math.min(eventsToFlush.length, this.config.performance.maxConcurrentWrites);
+      const batchSize = Math.min(eventsToFlush.length, this.ensureConfig().performance.maxConcurrentWrites);
       const batches = [];
 
       for (let i = 0; i < eventsToFlush.length; i += batchSize) {
@@ -553,7 +567,7 @@ export class AuditAlertManager {
       channel => this.getSeverityLevel(event.severity) >= this.getSeverityLevel(channel.severityThreshold)
     );
 
-    const alertPromises = applicableChannels.map(channel => 
+    const alertPromises = applicableChannels.map(channel =>
       this.sendAlertToChannel(channel, event)
     );
 

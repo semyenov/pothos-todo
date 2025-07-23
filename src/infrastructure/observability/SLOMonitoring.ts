@@ -1,6 +1,6 @@
-import { EventEmitter } from 'events';
 import { logger } from '@/logger.js';
 import { MetricsSystem } from './Metrics.js';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface SLO {
   id: string;
@@ -58,41 +58,44 @@ export interface ErrorBudgetPolicy {
 /**
  * Advanced SLO/SLA Monitoring System
  */
-export class SLOMonitoringSystem extends EventEmitter {
-  private static instance: SLOMonitoringSystem;
+export class SLOMonitoringSystem extends EventEmitterSingletonService<SLOMonitoringSystem> {
   private slos: Map<string, SLO> = new Map();
   private sloData: Map<string, Array<{ timestamp: Date; value: number }>> = new Map();
   private errorBudgetPolicies: Map<string, ErrorBudgetPolicy> = new Map();
   private monitoringInterval?: NodeJS.Timeout;
-  private metricsSystem: MetricsSystem;
+  private metricsSystem: MetricsSystem | null = null;
 
-  private constructor() {
+  protected constructor() {
     super();
-    this.metricsSystem = MetricsSystem.getInstance();
+  }
+
+  private async ensureMetricsSystem(): Promise<MetricsSystem> {
+    if (!this.metricsSystem) {
+      this.metricsSystem = await MetricsSystem.getInstance();
+    }
+    return this.metricsSystem;
   }
 
   static getInstance(): SLOMonitoringSystem {
-    if (!SLOMonitoringSystem.instance) {
-      SLOMonitoringSystem.instance = new SLOMonitoringSystem();
-    }
-    return SLOMonitoringSystem.instance;
+    return super.getInstance();
   }
 
   /**
    * Register an SLO
    */
-  registerSLO(slo: SLO): void {
+  async registerSLO(slo: SLO): Promise<void> {
     this.slos.set(slo.id, slo);
     this.sloData.set(slo.id, []);
     
     // Create custom metrics for this SLO
-    this.metricsSystem.createCustomMetric(
+    const metricsSystem = await this.ensureMetricsSystem();
+    metricsSystem.createCustomMetric(
       `slo_${slo.id}_compliance`,
       'gauge',
       { description: `Compliance rate for SLO: ${slo.name}` }
     );
     
-    this.metricsSystem.createCustomMetric(
+    metricsSystem.createCustomMetric(
       `slo_${slo.id}_error_budget`,
       'gauge',
       { description: `Error budget remaining for SLO: ${slo.name}` }

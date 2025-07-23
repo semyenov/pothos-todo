@@ -4,17 +4,21 @@ import { defineConfig } from 'tsdown'
 const buildConfig = {
   minify: process.env.BUILD_MINIFY === 'true' || process.env.NODE_ENV === 'production',
   sourcemap: process.env.BUILD_SOURCEMAP !== 'false' && process.env.NODE_ENV !== 'production',
-  target: process.env.BUILD_TARGET || 'node18',
+  target: process.env.BUILD_TARGET || 'ES2022',
   platform: process.env.BUILD_PLATFORM || 'node',
   outDir: process.env.BUILD_OUT_DIR || 'dist',
   clean: process.env.BUILD_CLEAN !== 'false',
-  dts: process.env.BUILD_DTS !== 'false',
+  dts: false, // Temporarily disabled due to type generation issues
   treeshake: process.env.BUILD_TREESHAKE !== 'false',
   report: process.env.BUILD_REPORT !== 'false',
   watch: process.env.NODE_ENV === 'development',
+
 }
 
 export default defineConfig({
+  outputOptions: {
+    exports: 'named',
+  },
   // Entry points for different usage scenarios
   entry: {
     // Main server entry point
@@ -54,52 +58,52 @@ export default defineConfig({
     // Configuration files
     'config/index': './src/config/index.ts'
   },
-  
+
   // Output formats
   format: ['esm', 'cjs'],
-  
+
   // Platform and target (from configuration)
   platform: buildConfig.platform as any,
   target: buildConfig.target,
-  
+
   // Output configuration (from configuration)
   outDir: buildConfig.outDir,
   clean: buildConfig.clean,
-  
+
   // TypeScript settings
-  dts: buildConfig.dts,
+  dts: false, // Temporarily disabled due to type generation issues
   tsconfig: './tsconfig.json',
-  
+
   // Development settings (from configuration)
   sourcemap: buildConfig.sourcemap,
-  
+
   // Optimization settings (from configuration)
   treeshake: buildConfig.treeshake,
   minify: buildConfig.minify,
-  
+
   // Validation (disabled for private packages)
   publint: false,
-  
+
   // External dependencies (don't bundle these)
   external: [
     // Node.js built-ins
     /^node:/,
-    
+
     // Configuration
     'c12',
-    
+
     // Database
     '@prisma/client',
     'prisma',
-    
+
     // GraphQL ecosystem
     'graphql',
     'graphql-yoga',
     '@apollo/subgraph',
-    
+
     // Pothos plugins
     /@pothos\/.*/,
-    
+
     // CLI dependencies
     /@oclif\/.*/,
     'execa',
@@ -109,18 +113,36 @@ export default defineConfig({
     'figlet',
     'ora',
     'listr2',
-    'winston'
+    'winston',
+
+    // UnJS packages
+    'ofetch',
+    'consola',
+    'defu',
+    'ohash',
+    'ufo',
+    'pathe',
+    'unstorage',
+    'scule',
+    'jiti',
+    'mlly',
+    'unconfig',
+    'unhead',
+    'uncrypto',
+    'listhen',
+    'nypm',
+    'pkg-types'
   ],
-  
+
   // Skip bundling node_modules for server usage
   skipNodeModulesBundle: true,
-  
+
   // Reporting (from configuration)
   report: buildConfig.report,
-  
+
   // Watch mode configuration (from configuration)
   watch: buildConfig.watch,
-  
+
   // Hooks for custom build steps
   hooks: {
     'build:prepare': async () => {

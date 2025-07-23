@@ -1,12 +1,12 @@
 import { DeleteTodoCommand } from '../commands/DeleteTodoCommand.js';
 import type { TodoRepository } from '../../domain/repositories/TodoRepository.js';
-import type { EventPublisher } from '../../infrastructure/events/EventPublisher.js';
+import type { IEventPublisher } from '../../infrastructure/events/EventPublisher.js';
 import { logger } from '../../logger.js';
 
 export class DeleteTodoHandler {
   constructor(
     private readonly todoRepository: TodoRepository,
-    private readonly eventPublisher: EventPublisher
+    private readonly eventPublisher: IEventPublisher
   ) { }
 
   async handle(command: DeleteTodoCommand): Promise<void> {

@@ -1,10 +1,10 @@
-import { EventEmitter } from 'events';
 import { createHash } from 'crypto';
 import { logger } from '@/logger.js';
-import { ZeroTrustGateway, SecurityContext } from './ZeroTrustGateway.js';
-import { ThreatDetectionSystem, ThreatIndicator } from './ThreatDetection.js';
-import { ComplianceAutomationSystem, ComplianceReport } from './ComplianceAutomation.js';
+import { ZeroTrustGateway } from './ZeroTrustGateway.js';
+import { ThreatDetectionSystem } from './ThreatDetection.js';
+import { ComplianceAutomationSystem } from './ComplianceAutomation.js';
 import { DataPrivacySystem } from './DataPrivacy.js';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface AuditEvent {
   id: string;
@@ -21,7 +21,7 @@ export interface AuditEvent {
   hash: string;
 }
 
-export type AuditEventType = 
+export type AuditEventType =
   | 'authentication'
   | 'authorization'
   | 'data_access'
@@ -32,6 +32,18 @@ export type AuditEventType =
   | 'privacy_request'
   | 'system_access'
   | 'privilege_change';
+
+export interface SuspiciousActivity {
+  type: string;
+  userId?: string;
+  resource?: string;
+}
+
+export interface AuditEventMap {
+  'audit:logged': [AuditEvent<AuditEventMap>];
+  'report:generated': [AuditReport];
+  'suspicious:activity': [SuspiciousActivity];
+}
 
 export interface AuditReport {
   id: string;
@@ -98,35 +110,44 @@ export interface PrivacyAudit {
  * Security Audit and Reporting System
  * Provides comprehensive security auditing and reporting capabilities
  */
-export class SecurityAuditSystem extends EventEmitter {
-  private static instance: SecurityAuditSystem;
+export class SecurityAuditSystem extends EventEmitterSingletonService<AuditEventMap> {
   private auditLog: AuditEvent[] = [];
   private auditReports: Map<string, AuditReport> = new Map();
-  private integritySalt: string;
-  
-  private zeroTrust: ZeroTrustGateway;
-  private threatDetection: ThreatDetectionSystem;
-  private compliance: ComplianceAutomationSystem;
-  private dataPrivacy: DataPrivacySystem;
+  private integritySalt: string | null = null;
 
-  private constructor() {
+  private zeroTrust: ZeroTrustGateway | null = null;
+  private threatDetection: ThreatDetectionSystem | null = null;
+  private compliance: ComplianceAutomationSystem | null = null;
+  private dataPrivacy: DataPrivacySystem | null = null;
+
+  protected constructor() {
     super();
+  }
+
+  public initialize(): void {
     this.integritySalt = this.generateIntegritySalt();
-    
+
     // Get security system instances
     this.zeroTrust = ZeroTrustGateway.getInstance();
     this.threatDetection = ThreatDetectionSystem.getInstance();
     this.compliance = ComplianceAutomationSystem.getInstance();
     this.dataPrivacy = DataPrivacySystem.getInstance();
-    
+
     this.setupEventListeners();
   }
 
-  static getInstance(): SecurityAuditSystem {
-    if (!SecurityAuditSystem.instance) {
-      SecurityAuditSystem.instance = new SecurityAuditSystem();
+  private ensureInitialized(): void {
+    if (!this.integritySalt || !this.zeroTrust || !this.threatDetection || !this.compliance || !this.dataPrivacy) {
+      throw new Error('SecurityAuditSystem not initialized');
     }
-    return SecurityAuditSystem.instance;
+  }
+
+  public static override getInstance(): SecurityAuditSystem<AuditEventMap> {
+    const instance = super.getInstance() as SecurityAuditSystem;
+    if (!instance?.integritySalt) {
+      instance.initialize();
+    }
+    return instance;
   }
 
   /**
@@ -158,7 +179,7 @@ export class SecurityAuditSystem extends EventEmitter {
     logger.info('Generating security audit report', { period });
 
     const events = this.getEventsInPeriod(period);
-    
+
     const report: AuditReport = {
       id: `report_${Date.now()}`,
       period,
@@ -221,13 +242,13 @@ export class SecurityAuditSystem extends EventEmitter {
     switch (format) {
       case 'json':
         return JSON.stringify(events, null, 2);
-        
+
       case 'csv':
         return this.convertToCSV(events);
-        
+
       case 'siem':
         return this.convertToSIEMFormat(events);
-        
+
       default:
         throw new Error(`Unsupported export format: ${format}`);
     }
@@ -238,7 +259,7 @@ export class SecurityAuditSystem extends EventEmitter {
    */
   private setupEventListeners(): void {
     // Listen to threat detection events
-    this.threatDetection.on('threat:detected', (threat: ThreatIndicator) => {
+    this.threatDetection?.on('threat:detected', (threat: ThreatIndicator) => {
       this.logEvent({
         timestamp: threat.timestamp,
         eventType: 'security_event',
@@ -253,7 +274,7 @@ export class SecurityAuditSystem extends EventEmitter {
     });
 
     // Listen to compliance events
-    this.compliance.on('control:checked', ({ control, status }: any) => {
+    this.compliance?.on('control:checked', ({ control, status }: any) => {
       this.logEvent({
         timestamp: new Date(),
         eventType: 'compliance_check',
@@ -276,7 +297,7 @@ export class SecurityAuditSystem extends EventEmitter {
       ...event,
       salt: this.integritySalt,
     });
-    
+
     return createHash('sha256').update(content).digest('hex');
   }
 
@@ -359,7 +380,7 @@ export class SecurityAuditSystem extends EventEmitter {
     const failedEvents = events.filter(e => e.result === 'failure');
     const threatEvents = events.filter(e => e.eventType === 'security_event');
 
-    const complianceReports = await this.compliance.getDashboardData();
+    const complianceReports = await this.compliance?.getDashboardData();
 
     return {
       totalEvents: events.length,
@@ -373,7 +394,7 @@ export class SecurityAuditSystem extends EventEmitter {
   /**
    * Audit authentication activities
    */
-  private async auditAuthentication(events: AuditEvent[]): Promise<AuthenticationAudit> {
+  private async auditAuthentication(events: AuditEvent<AuditEventMap>[]): Promise<AuthenticationAudit> {
     const authEvents = events.filter(e => e.eventType === 'authentication');
     const successful = authEvents.filter(e => e.result === 'success');
     const failed = authEvents.filter(e => e.result === 'failure');
@@ -382,7 +403,7 @@ export class SecurityAuditSystem extends EventEmitter {
     const mfaUsage = successful.filter(e => e.details.mfaUsed).length;
 
     // Find suspicious attempts
-    const suspicious = authEvents.filter(e => 
+    const suspicious = authEvents.filter(e =>
       e.details.riskScore > 0.7 || e.details.suspicious
     );
 
@@ -412,13 +433,13 @@ export class SecurityAuditSystem extends EventEmitter {
   /**
    * Audit data access patterns
    */
-  private async auditDataAccess(events: AuditEvent[]): Promise<DataAccessAudit> {
-    const accessEvents = events.filter(e => 
+  private async auditDataAccess(events: AuditEvent<AuditEventMap>[]): Promise<DataAccessAudit> {
+    const accessEvents = events.filter(e =>
       e.eventType === 'data_access' || e.eventType === 'data_modification'
     );
 
     const sensitiveAccess = accessEvents.filter(e =>
-      e.details.classification === 'confidential' || 
+      e.details.classification === 'confidential' ||
       e.details.classification === 'restricted'
     );
 
@@ -439,13 +460,13 @@ export class SecurityAuditSystem extends EventEmitter {
 
     // Find anomalous access
     const anomalousAccess: DataAccessAudit['anomalousAccess'] = [];
-    
+
     // Check for unusual time access
     const nightAccess = accessEvents.filter(e => {
       const hour = e.timestamp.getHours();
       return hour < 6 || hour > 22;
     });
-    
+
     for (const event of nightAccess) {
       if (event.userId && event.resource) {
         anomalousAccess.push({
@@ -469,7 +490,7 @@ export class SecurityAuditSystem extends EventEmitter {
    * Audit threat landscape
    */
   private async auditThreats(period: { start: Date; end: Date }): Promise<ThreatAudit> {
-    const threats = this.threatDetection.getAnomalyHistory({
+    const threats = this.threatDetection?.getAnomalyHistory({
       since: period.start,
     });
 
@@ -508,15 +529,15 @@ export class SecurityAuditSystem extends EventEmitter {
    * Audit compliance status
    */
   private async auditCompliance(): Promise<ComplianceAudit> {
-    const dashboardData = await this.compliance.getDashboardData();
-    
+    const dashboardData = await this.compliance?.getDashboardData();
+
     const frameworks = dashboardData.frameworks.map((f: any) => ({
       name: f.name,
       score: f.score,
       status: f.status,
     }));
 
-    const failedControls = dashboardData.frameworks.reduce((sum: number, f: any) => 
+    const failedControls = dashboardData.frameworks.reduce((sum: number, f: any) =>
       sum + (f.summary?.nonCompliantControls || 0), 0
     );
 
@@ -531,14 +552,14 @@ export class SecurityAuditSystem extends EventEmitter {
   /**
    * Audit privacy operations
    */
-  private async auditPrivacy(events: AuditEvent[]): Promise<PrivacyAudit> {
+  private async auditPrivacy(events: AuditEvent<AuditEventMap>[]): Promise<PrivacyAudit> {
     const privacyEvents = events.filter(e => e.eventType === 'privacy_request');
-    const dataBreaches = events.filter(e => 
-      e.eventType === 'security_event' && 
+    const dataBreaches = events.filter(e =>
+      e.eventType === 'security_event' &&
       e.details.threatType === 'data_exfiltration'
     );
 
-    const completedRequests = privacyEvents.filter(e => 
+    const completedRequests = privacyEvents.filter(e =>
       e.result === 'success' && e.details.status === 'completed'
     );
 
@@ -558,11 +579,11 @@ export class SecurityAuditSystem extends EventEmitter {
   /**
    * Generate actionable recommendations
    */
-  private async generateRecommendations(events: AuditEvent[]): Promise<string[]> {
+  private async generateRecommendations(events: AuditEvent<AuditEventMap>[]): Promise<string[]> {
     const recommendations: string[] = [];
 
     // Check authentication patterns
-    const authFailureRate = events.filter(e => 
+    const authFailureRate = events.filter(e =>
       e.eventType === 'authentication' && e.result === 'failure'
     ).length / events.filter(e => e.eventType === 'authentication').length;
 
@@ -571,11 +592,11 @@ export class SecurityAuditSystem extends EventEmitter {
     }
 
     // Check MFA usage
-    const mfaUsage = events.filter(e => 
-      e.eventType === 'authentication' && 
-      e.result === 'success' && 
+    const mfaUsage = events.filter(e =>
+      e.eventType === 'authentication' &&
+      e.result === 'success' &&
       e.details.mfaUsed
-    ).length / events.filter(e => 
+    ).length / events.filter(e =>
       e.eventType === 'authentication' && e.result === 'success'
     ).length;
 
@@ -590,7 +611,7 @@ export class SecurityAuditSystem extends EventEmitter {
     }
 
     // Check compliance
-    const complianceData = await this.compliance.getDashboardData();
+    const complianceData = await this.compliance?.getDashboardData();
     if (complianceData.overallCompliance < 90) {
       recommendations.push('Compliance score below target. Address failed controls immediately.');
     }
@@ -601,8 +622,8 @@ export class SecurityAuditSystem extends EventEmitter {
   /**
    * Get events in specified period
    */
-  private getEventsInPeriod(period: { start: Date; end: Date }): AuditEvent[] {
-    return this.auditLog.filter(e => 
+  private getEventsInPeriod(period: { start: Date; end: Date }): AuditEvent<AuditEventMap>[] {
+    return this.auditLog.filter(e =>
       e.timestamp >= period.start && e.timestamp <= period.end
     );
   }
@@ -610,7 +631,7 @@ export class SecurityAuditSystem extends EventEmitter {
   /**
    * Convert to CSV format
    */
-  private convertToCSV(events: AuditEvent[]): string {
+  private convertToCSV(events: AuditEvent<AuditEventMap>[]): string {
     const headers = ['timestamp', 'eventType', 'userId', 'resource', 'action', 'result', 'ipAddress'];
     const rows = events.map(e => [
       e.timestamp.toISOString(),
@@ -628,7 +649,7 @@ export class SecurityAuditSystem extends EventEmitter {
   /**
    * Convert to SIEM format
    */
-  private convertToSIEMFormat(events: AuditEvent[]): string {
+  private convertToSIEMFormat(events: AuditEvent<AuditEventMap>[]): string {
     return events.map(e => {
       const cef = [
         'CEF:0',
@@ -644,7 +665,7 @@ export class SecurityAuditSystem extends EventEmitter {
         `outcome=${e.result}`,
         `msg=${JSON.stringify(e.details)}`,
       ].join('|');
-      
+
       return `${e.timestamp.toISOString()} ${cef}`;
     }).join('\n');
   }
@@ -652,7 +673,7 @@ export class SecurityAuditSystem extends EventEmitter {
   /**
    * Get severity for SIEM
    */
-  private getSeverity(event: AuditEvent): number {
+  private getSeverity(event: AuditEvent<AuditEventMap>): number {
     if (event.result === 'failure' && event.eventType === 'authentication') return 7;
     if (event.eventType === 'security_event') return 8;
     if (event.result === 'failure') return 5;
@@ -671,7 +692,7 @@ export class SecurityAuditSystem extends EventEmitter {
   /**
    * Persist audit event
    */
-  private persistAuditEvent(event: AuditEvent): void {
+  private persistAuditEvent(event: AuditEvent<AuditEventMap>): void {
     // In production, would persist to immutable storage
     logger.debug('Audit event persisted', { eventId: event.id });
   }
@@ -681,10 +702,10 @@ export class SecurityAuditSystem extends EventEmitter {
    */
   async archiveOldLogs(olderThan: Date): Promise<number> {
     const toArchive = this.auditLog.filter(e => e.timestamp < olderThan);
-    
+
     // In production, would move to cold storage
     this.auditLog = this.auditLog.filter(e => e.timestamp >= olderThan);
-    
+
     logger.info(`Archived ${toArchive.length} audit events`);
     return toArchive.length;
   }

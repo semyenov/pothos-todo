@@ -1,6 +1,6 @@
 import { DomainEvent } from '@/domain/events/DomainEvent.js';
 import { AggregateRoot } from '@/domain/aggregates/base/AggregateRoot.js';
-import type { EventStore } from './EventStore.js';
+import type { IEventStore } from './EventStore.js';
 import { logger } from '@/logger.js';
 
 export interface Snapshot<T = any> {
@@ -26,17 +26,17 @@ export interface ProjectionState {
 
 export interface Projection {
   name: string;
-  
+
   /**
    * Handle an event and update the projection
    */
   handle(event: DomainEvent): Promise<void>;
-  
+
   /**
    * Initialize or reset the projection
    */
   initialize?(): Promise<void>;
-  
+
   /**
    * Get current state of the projection
    */
@@ -48,10 +48,10 @@ export interface Projection {
  */
 export abstract class EventSourcedRepository<T extends AggregateRoot> {
   constructor(
-    protected eventStore: EventStore,
+    protected eventStore: IEventStore,
     protected snapshotStore?: SnapshotStore,
     protected snapshotFrequency: number = 10
-  ) {}
+  ) { }
 
   /**
    * Load an aggregate from events (with optional snapshot)
@@ -66,7 +66,7 @@ export abstract class EventSourcedRepository<T extends AggregateRoot> {
       if (snapshot) {
         aggregate = this.createFromSnapshot(snapshot);
         fromVersion = snapshot.version + 1;
-        
+
         logger.debug(`Loaded aggregate from snapshot`, {
           aggregateId,
           snapshotVersion: snapshot.version,
@@ -76,7 +76,7 @@ export abstract class EventSourcedRepository<T extends AggregateRoot> {
 
     // Load events after snapshot (or all events if no snapshot)
     const events = await this.eventStore.getEvents(aggregateId, fromVersion);
-    
+
     if (events.length === 0 && !aggregate!) {
       return null; // Aggregate doesn't exist
     }
@@ -105,7 +105,7 @@ export abstract class EventSourcedRepository<T extends AggregateRoot> {
    */
   async save(aggregate: T): Promise<void> {
     const events = aggregate.getUncommittedEvents();
-    
+
     if (events.length === 0) {
       return; // No changes to save
     }
@@ -143,7 +143,7 @@ export abstract class EventSourcedRepository<T extends AggregateRoot> {
     };
 
     await this.snapshotStore!.save(snapshot);
-    
+
     logger.info(`Created snapshot`, {
       aggregateId: aggregate.id,
       version: aggregate.version,
@@ -154,22 +154,22 @@ export abstract class EventSourcedRepository<T extends AggregateRoot> {
    * Get aggregate type name
    */
   protected abstract getAggregateType(): string;
-  
+
   /**
    * Create empty aggregate instance
    */
   protected abstract createEmptyAggregate(id: string): T;
-  
+
   /**
    * Create aggregate from snapshot
    */
   protected abstract createFromSnapshot(snapshot: Snapshot): T;
-  
+
   /**
    * Serialize aggregate for snapshot
    */
   protected abstract serializeAggregate(aggregate: T): any;
-  
+
   /**
    * Apply an event to an aggregate
    */
@@ -206,9 +206,9 @@ export class ProjectionManager {
   private processingInterval?: NodeJS.Timeout;
 
   constructor(
-    private eventStore: EventStore,
+    private eventStore: IEventStore,
     private checkInterval: number = 1000 // Check for new events every second
-  ) {}
+  ) { }
 
   /**
    * Register a projection
@@ -227,13 +227,13 @@ export class ProjectionManager {
     }
 
     this.running = true;
-    
+
     // Initialize projections
     for (const projection of this.projections.values()) {
       if (projection.initialize) {
         await projection.initialize();
       }
-      
+
       // Load last processed position
       if (projection.getState) {
         const state = await projection.getState();
@@ -261,7 +261,7 @@ export class ProjectionManager {
       clearInterval(this.processingInterval);
       this.processingInterval = undefined;
     }
-    
+
     this.running = false;
     logger.info('Projection manager stopped');
   }
@@ -272,10 +272,10 @@ export class ProjectionManager {
   private async processNewEvents(): Promise<void> {
     for (const [name, projection] of this.projections) {
       const lastPosition = this.positions.get(name) || 0;
-      
+
       // Get new events since last position
       const events = await this.eventStore.getEventsAfterPosition(lastPosition, 100);
-      
+
       if (events.length === 0) {
         continue;
       }
@@ -292,7 +292,7 @@ export class ProjectionManager {
             eventId: event.eventId,
             eventType: event.eventType,
           });
-          
+
           // Stop processing this projection on error
           break;
         }
@@ -325,7 +325,7 @@ export class ProjectionManager {
 
     while (hasMore) {
       const events = await this.eventStore.getEventsAfterPosition(position, 1000);
-      
+
       if (events.length === 0) {
         hasMore = false;
         break;
@@ -337,7 +337,7 @@ export class ProjectionManager {
       }
 
       this.positions.set(projectionName, position);
-      
+
       logger.debug(`Processed batch for projection ${projectionName}`, {
         eventsProcessed: events.length,
         currentPosition: position,
@@ -382,7 +382,7 @@ export class TodoCountProjection implements Projection {
  * Event replay utility for debugging and testing
  */
 export class EventReplayer {
-  constructor(private eventStore: EventStore) {}
+  constructor(private eventStore: IEventStore) { }
 
   /**
    * Replay events for an aggregate
@@ -392,7 +392,7 @@ export class EventReplayer {
     handler: (event: DomainEvent) => void
   ): Promise<void> {
     const events = await this.eventStore.getEvents(aggregateId);
-    
+
     for (const event of events) {
       handler(event);
     }
@@ -407,7 +407,7 @@ export class EventReplayer {
     handler: (event: DomainEvent) => void
   ): Promise<void> {
     const events = await this.eventStore.getEventsByTimeRange(start, end);
-    
+
     for (const event of events) {
       handler(event);
     }

@@ -4,6 +4,7 @@ import {
   Priority as PrismaPriority,
   TodoStatus as PrismaTodoStatus,
 } from "@prisma/client";
+import { SingletonService } from "../core/SingletonService.js";
 
 export interface ParsedCommand {
   action: "create" | "update" | "complete" | "delete" | "list";
@@ -25,17 +26,15 @@ export interface ParsedCommand {
   confidence: number;
 }
 
-export class NLPService {
-  private static instance: NLPService | null = null;
+export class NLPService extends SingletonService<NLPService> {
   private openai: OpenAI | null = null;
 
-  private constructor() {}
+  protected constructor() {
+    super();
+  }
 
   static getInstance(): NLPService {
-    if (!NLPService.instance) {
-      NLPService.instance = new NLPService();
-    }
-    return NLPService.instance;
+    return super.getInstance();
   }
 
   initialize(apiKey: string): void {

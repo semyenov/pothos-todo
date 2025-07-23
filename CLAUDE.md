@@ -154,9 +154,18 @@ bun run pulumi:up
 ```
 
 ### CLI Commands
-The project includes a comprehensive CLI built with OCLIF:
+The project includes a comprehensive CLI built with OCLIF and interactive mode:
 ```bash
-bun run cli <command>
+# Interactive CLI menu (recommended for development)
+bun run src/commands/interactive.ts
+
+# Direct CLI access
+bun run cli help
+
+# Individual CLI commands
+bun run src/commands/status.ts               # Project status overview
+bun run src/commands/db/menu.ts             # Database management menu
+bun run src/commands/services/menu.ts       # Services management menu
 
 # Available topics:
 # - build: Build project commands
@@ -649,19 +658,24 @@ When working with the advanced enterprise features:
 - NLP commands follow specific parsing patterns
 - RAG responses include source attribution
 
+## Critical Development Practices
+
+### TypeScript Error Management
+**CRITICAL**: Always run `bun run check:types` before making any commits. The project maintains strict type safety:
+
+- Federation/subgraph errors have been resolved - core functionality is fully typed
+- Remaining TypeScript errors are primarily in example files and documentation
+- Build process (`bun run build`) must complete successfully before deployment
+- When adding new services, ensure they extend appropriate base singleton classes
+
+### Build System Notes
+- Uses `tsdown` with rolldown for optimized bundling (replaces traditional webpack/rollup)
+- Both ESM and CJS outputs are generated automatically
+- Build artifacts are placed in `dist/` directory
+- Production builds include source maps and are optimized for Node.js runtime
+- Build time is typically under 500ms for the entire project
+
 ## Testing
-
-### Performance Testing
-The project includes trace-based performance testing:
-```bash
-# Run performance tests (when test infrastructure is completed)
-bun test src/tests/performance/
-```
-
-### Testing Guidelines
-- Domain value objects use specific enum values (e.g., `Priority.medium` not `Priority.Medium`)
-- Use `undefined` instead of `null` for optional parameters
-- Performance tests require specific trace expectations
 
 ### Testing Commands
 ```bash
@@ -671,15 +685,36 @@ bun test
 # Run performance tests specifically
 bun test src/tests/performance/
 
+# Run integration tests
+bun test src/tests/integration/
+
 # Run refactoring benchmarks
 bun run refactor:benchmark
 
 # Run test with coverage
 bun test --coverage
 
-# Run specific test file
-bun test src/tests/unit/todo.test.ts
+# Run federation tests
+bun run scripts/test-federation.ts
+
+# Run specific test file (adjust path as needed)
+bun test src/tests/integration/todo.test.ts
+
+# Run trace-based performance tests
+bun test src/tests/performance/todo.trace.test.ts
 ```
+
+### Performance Testing
+The project includes trace-based performance testing located in `src/tests/performance/`:
+- `refactoring-benchmarks.test.ts` - Performance benchmarks for refactoring
+- `refactoring-performance.test.ts` - Performance tests for refactored code
+- `todo.trace.test.ts` - Trace-based todo operations testing
+
+### Testing Guidelines
+- Domain value objects use specific enum values (e.g., `Priority.MEDIUM` not `Priority.medium`)
+- Use `undefined` instead of `null` for optional parameters
+- Performance tests require specific trace expectations
+- Integration tests use the setup file in `src/tests/integration/setup.ts`
 
 ## Environment Setup
 
@@ -768,12 +803,15 @@ bun test src/tests/unit/todo.test.ts
 
 ## Important Notes
 
-- Server runs on port 4000 by default (configurable)
-- Hot reload enabled in development mode
+- Server runs on port 4000 by default (configurable via PORT environment variable)
+- Hot reload enabled in development mode with file watching
 - GraphQL code generation runs automatically via Pothos
 - All async operations use Bun's optimized runtime
-- Federation support is prepared but currently uses placeholder implementations
-- The project prioritizes type safety - compilation errors should be resolved before deployment
+- **Federation support is fully functional** with working subgraphs (User, Todo, AI)
+- The project prioritizes type safety - **always run `bun run check:types` before committing**
+- Build system uses `tsdown` for optimized TypeScript compilation
+- Recent modernization completed singleton pattern migration across 59+ infrastructure services
+- AI features are fully enabled with OpenAI integration and vector search capabilities
 
 ## Quick Reference
 
@@ -805,18 +843,43 @@ import { Todo } from '@/domain/aggregates/Todo.js';
 - **Module Resolution**: Bundler mode with import extensions allowed
 
 ### CLI Access
-The project includes a comprehensive CLI:
+The project includes a comprehensive CLI with interactive mode:
 ```bash
+# Interactive CLI menu
+bun run src/commands/interactive.ts
+
+# Or standard CLI help
 bun run cli help
 ```
 
 ### Testing
-Performance tests are located in `src/tests/performance/`. Run tests with:
+Performance and integration tests are available:
 ```bash
+# Run all performance tests
 bun test src/tests/performance/
+
+# Run integration tests
+bun test src/tests/integration/
+
+# Run federation tests
+bun run scripts/test-federation.ts
+
+# Run interactive CLI for testing commands
+bun run src/commands/interactive.ts
+
+# Run specific trace-based tests
+bun test src/tests/performance/todo.trace.test.ts
 ```
 
 ## Refactoring and Code Quality
+
+### Singleton Pattern Migration (Recently Completed)
+The project has completed a comprehensive singleton pattern migration across 59+ infrastructure services, eliminating ~2,500+ lines of duplicate boilerplate code. All infrastructure services now extend from standardized base singleton classes:
+
+- **SingletonService** - For synchronous services
+- **AsyncSingletonService** - For services requiring async initialization  
+- **EventEmitterSingletonService** - For event-driven services
+- **AsyncEventEmitterSingletonService** - For event-driven services with async initialization
 
 ### Base Classes for Code Reuse
 The project uses base classes to eliminate code duplication and enforce consistent patterns:

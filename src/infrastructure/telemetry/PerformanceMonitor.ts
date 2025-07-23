@@ -1,7 +1,7 @@
 import { metrics } from '@opentelemetry/api';
 import { logger } from '@/logger';
 import { CacheManager } from '../cache/CacheManager.js';
-import EventEmitter from 'events';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 interface PerformanceMetrics {
   requestCount: number;
@@ -26,8 +26,7 @@ interface QueryPerformance {
   errors?: string[];
 }
 
-export class PerformanceMonitor extends EventEmitter {
-  private static instance: PerformanceMonitor;
+export class PerformanceMonitor extends EventEmitterSingletonService<PerformanceMonitor> {
   private meter = metrics.getMeter('pothos-todo-performance', '1.0.0');
   private cacheManager?: CacheManager;
 
@@ -39,22 +38,25 @@ export class PerformanceMonitor extends EventEmitter {
   }
 
   // Metrics instruments
-  private requestCounter;
-  private errorCounter;
-  private responseTimeHistogram;
-  private cacheHitCounter;
-  private cacheMissCounter;
-  private activeConnectionsGauge;
-  private queryComplexityHistogram;
+  private requestCounter: any;
+  private errorCounter: any;
+  private responseTimeHistogram: any;
+  private cacheHitCounter: any;
+  private cacheMissCounter: any;
+  private activeConnectionsGauge: any;
+  private queryComplexityHistogram: any;
 
   // In-memory storage for analysis
   private responseTimes: number[] = [];
   private slowQueryThreshold = 1000; // 1 second
   private metricsWindow = 300000; // 5 minutes
 
-  private constructor() {
+  protected constructor() {
     super();
+    this.initializeMetrics();
+  }
 
+  private initializeMetrics(): void {
     // Initialize metrics
     this.requestCounter = this.meter.createCounter('graphql_requests_total', {
       description: 'Total number of GraphQL requests',
@@ -89,10 +91,7 @@ export class PerformanceMonitor extends EventEmitter {
   }
 
   static getInstance(): PerformanceMonitor {
-    if (!PerformanceMonitor.instance) {
-      PerformanceMonitor.instance = new PerformanceMonitor();
-    }
-    return PerformanceMonitor.instance;
+    return super.getInstance();
   }
 
   /**

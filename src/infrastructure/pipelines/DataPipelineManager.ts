@@ -1,5 +1,5 @@
 import type { SpanOptions } from '@opentelemetry/api';
-import { AsyncSingletonService } from '@/lib/base/AsyncSingletonService.js';
+import { AsyncSingletonService } from '@/infrastructure/core/AsyncSingletonService.js';
 import { createLogger } from '@/lib/logger.js';
 import { RedisClusterManager } from '@/infrastructure/cache/RedisClusterManager.js';
 import { DistributedTracing } from '@/infrastructure/observability/DistributedTracing.js';
@@ -661,12 +661,12 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
     try {
       this.redis = RedisClusterManager.getInstance();
       this.tracing = await DistributedTracing.getInstance();
-      
+
       await this.loadPipelines();
       await this.loadMonitors();
       await this.startScheduler();
       await this.startExecutor();
-      
+
       logger.info('DataPipelineManager initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize DataPipelineManager:', error);
@@ -686,7 +686,7 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
     return this.tracing.traceAsync('create_data_pipeline', spanOptions, async () => {
       try {
         await this.validatePipeline(pipeline);
-        
+
         pipeline.metadata.created = new Date();
         pipeline.metadata.lastModified = new Date();
         pipeline.state = {
@@ -696,10 +696,10 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
           failureCount: 0,
           avgDuration: 0
         };
-        
+
         this.pipelines.set(pipeline.id, pipeline);
         await this.redis.setObject(`pipeline:${pipeline.id}`, pipeline, 86400000 * 30); // 30 days
-        
+
         logger.info(`Data pipeline created: ${pipeline.name} (${pipeline.id})`);
       } catch (error) {
         logger.error(`Failed to create pipeline ${pipeline.id}:`, error);
@@ -827,7 +827,7 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
     try {
       const lineageKey = taskId ? `lineage:${pipelineId}:${taskId}` : `lineage:${pipelineId}`;
       const lineageData = await this.redis.getList<DataLineage>(lineageKey) || [];
-      
+
       return lineageData.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     } catch (error) {
       logger.error(`Failed to get data lineage for ${pipelineId}:`, error);
@@ -848,10 +848,10 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
   async createMonitor(monitor: PipelineMonitor): Promise<void> {
     try {
       await this.validateMonitor(monitor);
-      
+
       this.monitors.set(monitor.id, monitor);
       await this.redis.setObject(`monitor:${monitor.id}`, monitor, 86400000 * 30); // 30 days
-      
+
       logger.info(`Pipeline monitor created: ${monitor.name} (${monitor.id})`);
     } catch (error) {
       logger.error(`Failed to create monitor ${monitor.id}:`, error);
@@ -863,16 +863,16 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
     try {
       run.status = RunStatus.RUNNING;
       run.startTime = new Date();
-      
+
       const pipeline = this.pipelines.get(run.pipelineId)!;
-      
+
       // Execute tasks in dependency order
       const sortedTasks = this.topologicalSort(pipeline.tasks);
-      
+
       for (const taskId of sortedTasks) {
         const taskRun = run.tasks.find(t => t.taskId === taskId)!;
         await this.executeTask(taskRun, pipeline);
-        
+
         if (taskRun.status === RunStatus.FAILED) {
           run.status = RunStatus.FAILED;
           break;
@@ -900,10 +900,10 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
       run.status = RunStatus.FAILED;
       run.endTime = new Date();
       run.duration = run.endTime.getTime() - run.startTime.getTime();
-      
+
       await this.storeRun(run);
       await this.updatePipelineState(run);
-      
+
       logger.error(`Pipeline run failed: ${run.id}`, error);
     }
   }
@@ -920,7 +920,7 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
     return this.tracing.traceAsync('execute_task', spanOptions, async () => {
       try {
         const task = pipeline.tasks.find(t => t.id === taskRun.taskId)!;
-        
+
         taskRun.status = RunStatus.RUNNING;
         taskRun.startTime = new Date();
         taskRun.attempt++;
@@ -990,7 +990,7 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
     // Simulate Python script execution
     const simulatedDuration = Math.random() * 10000 + 2000; // 2-12 seconds
     await this.wait(simulatedDuration);
-    
+
     taskRun.metrics = {
       recordsProcessed: Math.floor(Math.random() * 10000),
       recordsSkipped: 0,
@@ -1006,7 +1006,7 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
     // Simulate SQL execution
     const simulatedDuration = Math.random() * 15000 + 3000; // 3-18 seconds
     await this.wait(simulatedDuration);
-    
+
     taskRun.metrics = {
       recordsProcessed: Math.floor(Math.random() * 50000),
       recordsSkipped: 0,
@@ -1022,7 +1022,7 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
     // Simulate bash script execution
     const simulatedDuration = Math.random() * 5000 + 1000; // 1-6 seconds
     await this.wait(simulatedDuration);
-    
+
     taskRun.metrics = {
       recordsProcessed: Math.floor(Math.random() * 1000),
       recordsSkipped: 0,
@@ -1038,7 +1038,7 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
     // Simulate HTTP API call
     const simulatedDuration = Math.random() * 3000 + 500; // 0.5-3.5 seconds
     await this.wait(simulatedDuration);
-    
+
     taskRun.metrics = {
       recordsProcessed: Math.floor(Math.random() * 100),
       recordsSkipped: 0,
@@ -1054,7 +1054,7 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
     // Simulate S3 operation
     const simulatedDuration = Math.random() * 20000 + 5000; // 5-25 seconds
     await this.wait(simulatedDuration);
-    
+
     taskRun.metrics = {
       recordsProcessed: Math.floor(Math.random() * 100000),
       recordsSkipped: 0,
@@ -1070,7 +1070,7 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
     // Simulate database operation
     const simulatedDuration = Math.random() * 12000 + 3000; // 3-15 seconds
     await this.wait(simulatedDuration);
-    
+
     taskRun.metrics = {
       recordsProcessed: Math.floor(Math.random() * 25000),
       recordsSkipped: 0,
@@ -1133,15 +1133,15 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
 
     // Calculate overall score
     const metrics = report.metrics;
-    report.score = (metrics.completeness + metrics.accuracy + metrics.consistency + 
-                   metrics.validity + metrics.uniqueness + metrics.timeliness) / 6;
+    report.score = (metrics.completeness + metrics.accuracy + metrics.consistency +
+      metrics.validity + metrics.uniqueness + metrics.timeliness) / 6;
 
     await this.redis.setObject(`quality:${taskRun.pipelineRunId}:${task.id}`, report, 86400000 * 7); // 7 days
   }
 
   private async scheduleRetry(taskRun: TaskRun, retryPolicy: TaskRetryPolicy): Promise<void> {
-    const delay = retryPolicy.exponentialBackoff ? 
-      retryPolicy.delay * Math.pow(2, taskRun.attempt - 1) : 
+    const delay = retryPolicy.exponentialBackoff ?
+      retryPolicy.delay * Math.pow(2, taskRun.attempt - 1) :
       retryPolicy.delay;
 
     setTimeout(async () => {
@@ -1180,25 +1180,25 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
   private topologicalSort(tasks: PipelineTask[]): string[] {
     const visited = new Set<string>();
     const result: string[] = [];
-    
+
     const visit = (taskId: string) => {
       if (visited.has(taskId)) return;
-      
+
       const task = tasks.find(t => t.id === taskId);
       if (!task) return;
-      
+
       for (const dependency of task.dependencies) {
         visit(dependency);
       }
-      
+
       visited.add(taskId);
       result.push(taskId);
     };
-    
+
     for (const task of tasks) {
       visit(task.id);
     }
-    
+
     return result;
   }
 
@@ -1271,13 +1271,13 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
 
   private async checkScheduledPipelines(): Promise<void> {
     const now = new Date();
-    
+
     for (const pipeline of this.pipelines.values()) {
-      if (pipeline.schedule.enabled && 
-          pipeline.state.status === PipelineStatus.ACTIVE &&
-          pipeline.state.nextRun &&
-          pipeline.state.nextRun <= now) {
-        
+      if (pipeline.schedule.enabled &&
+        pipeline.state.status === PipelineStatus.ACTIVE &&
+        pipeline.state.nextRun &&
+        pipeline.state.nextRun <= now) {
+
         try {
           await this.executePipeline(pipeline.id, {
             type: TriggerType.SCHEDULE,
@@ -1309,7 +1309,7 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
 
     // Check monitor conditions
     const shouldAlert = await this.checkMonitorConditions(monitor, pipeline);
-    
+
     if (shouldAlert) {
       await this.triggerAlerts(monitor);
     }
@@ -1383,7 +1383,7 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
     if (!pipeline.id || !pipeline.name || pipeline.tasks.length === 0) {
       throw new Error('Pipeline ID, name, and tasks are required');
     }
-    
+
     // Validate task dependencies
     const taskIds = new Set(pipeline.tasks.map(t => t.id));
     for (const task of pipeline.tasks) {
@@ -1439,11 +1439,11 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
     if (this.scheduler) {
       clearInterval(this.scheduler);
     }
-    
+
     if (this.executor) {
       clearInterval(this.executor);
     }
-    
+
     // Cancel any running executions
     for (const run of this.runs.values()) {
       if (run.status === RunStatus.RUNNING) {
@@ -1451,7 +1451,7 @@ export class DataPipelineManager extends AsyncSingletonService<DataPipelineManag
         await this.storeRun(run);
       }
     }
-    
+
     logger.info('DataPipelineManager shutdown completed');
   }
 }

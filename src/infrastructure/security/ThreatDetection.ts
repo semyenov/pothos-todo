@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import { logger } from '@/logger.js';
 import { AnomalyDetectionSystem } from '../observability/AnomalyDetection.js';
 import { AlertingSystem } from '../observability/AlertingSystem.js';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface ThreatIndicator {
   id: string;
@@ -66,8 +67,7 @@ export interface SecurityEvent {
  * Advanced Threat Detection System
  * Uses ML, behavioral analysis, and threat intelligence
  */
-export class ThreatDetectionSystem extends EventEmitter {
-  private static instance: ThreatDetectionSystem;
+export class ThreatDetectionSystem extends EventEmitterSingletonService<ThreatDetectionSystem> {
   private threatIntelligence: ThreatIntelligence;
   private securityEvents: SecurityEvent[] = [];
   private detectedThreats: Map<string, ThreatIndicator> = new Map();
@@ -75,7 +75,7 @@ export class ThreatDetectionSystem extends EventEmitter {
   private alertingSystem: AlertingSystem;
   private mlModels: Map<string, ThreatMLModel> = new Map();
 
-  private constructor() {
+  protected constructor() {
     super();
     this.threatIntelligence = {
       ipReputations: new Map(),
@@ -92,10 +92,7 @@ export class ThreatDetectionSystem extends EventEmitter {
   }
 
   static getInstance(): ThreatDetectionSystem {
-    if (!ThreatDetectionSystem.instance) {
-      ThreatDetectionSystem.instance = new ThreatDetectionSystem();
-    }
-    return ThreatDetectionSystem.instance;
+    return super.getInstance();
   }
 
   /**

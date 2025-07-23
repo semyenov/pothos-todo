@@ -1,8 +1,15 @@
-import { randomBytes, createCipher, createDecipher, createHash, scrypt } from 'crypto';
+import { randomBytes, createCipheriv, createDecipheriv, createHash, scrypt, type ScryptOptions, type BinaryLike } from 'crypto';
 import { promisify } from 'util';
 import { logger } from '@/logger';
+import { SingletonService } from '../core/SingletonService.js';
 
-const scryptAsync = promisify(scrypt);
+const scryptAsync = promisify<
+  BinaryLike,
+  BinaryLike,
+  number,
+  ScryptOptions,
+  Buffer
+>(scrypt);
 
 export interface QuantumCryptoConfig {
   keySize: number;
@@ -40,40 +47,50 @@ export interface QuantumSignature {
  * Quantum-resistant cryptography service
  * Implements post-quantum cryptographic algorithms to prepare for quantum computing threats
  */
-export class QuantumCryptographyService {
-  private static instance: QuantumCryptographyService;
-  private config: QuantumCryptoConfig;
+export class QuantumCryptographyService extends SingletonService {
+  private config: QuantumCryptoConfig = {
+    keySize: 32,
+    algorithm: 'kyber',
+    securityLevel: 1,
+    hybridMode: false,
+  };
   private keyPairs: Map<string, KeyPair> = new Map();
   private keyRotationInterval: NodeJS.Timer | null = null;
 
-  private constructor(config: QuantumCryptoConfig) {
-    this.config = config;
-    this.initializeQuantumCrypto();
+  protected constructor() {
+    super();
   }
 
-  public static getInstance(config?: QuantumCryptoConfig): QuantumCryptographyService {
-    if (!QuantumCryptographyService.instance && config) {
-      QuantumCryptographyService.instance = new QuantumCryptographyService(config);
-    }
-    return QuantumCryptographyService.instance;
+  public static override getInstance(): QuantumCryptographyService {
+    return super.getInstance() as QuantumCryptographyService;
+  }
+
+  /**
+   * Configure the QuantumCryptographyService with settings
+   */
+  public configure(config: QuantumCryptoConfig): void {
+    this.config = config;
+    this.initializeQuantumCrypto();
   }
 
   /**
    * Generate quantum-resistant key pair
    */
   public async generateKeyPair(algorithm?: string): Promise<KeyPair> {
+    this.ensureConfigured();
+
     try {
       const keyId = this.generateKeyId();
       const keyAlgorithm = algorithm || this.config.algorithm;
-      
+
       // For demonstration, we'll simulate post-quantum key generation
       // In production, you would use actual post-quantum libraries like:
       // - liboqs (Open Quantum Safe)
       // - PQClean implementations
       // - NIST finalist algorithms
-      
+
       const keyPair = await this.generatePostQuantumKeyPair(keyAlgorithm);
-      
+
       const keyPairObj: KeyPair = {
         publicKey: keyPair.publicKey,
         privateKey: keyPair.privateKey,
@@ -84,7 +101,7 @@ export class QuantumCryptographyService {
       };
 
       this.keyPairs.set(keyId, keyPairObj);
-      
+
       logger.info('Quantum-resistant key pair generated', {
         keyId,
         algorithm: keyAlgorithm,
@@ -318,14 +335,16 @@ export class QuantumCryptographyService {
       // In production, this would interface with quantum hardware
       // For now, we'll use cryptographically secure random numbers
       // with additional entropy from quantum-like sources
-      
+
       const baseRandom = randomBytes(size);
       const quantumEntropy = await this.generateQuantumEntropy(size);
-      
+
       // XOR the random sources for enhanced entropy
       const quantumRandom = Buffer.alloc(size);
       for (let i = 0; i < size; i++) {
-        quantumRandom[i] = baseRandom[i] ^ quantumEntropy[i];
+        const baseRandomByte = baseRandom[i] ?? 0;
+        const quantumEntropyByte = quantumEntropy[i] ?? 0;
+        quantumRandom[i] = baseRandomByte ^ quantumEntropyByte;
       }
 
       logger.debug('Quantum random bytes generated', { size });
@@ -347,19 +366,25 @@ export class QuantumCryptographyService {
     try {
       // Use quantum-resistant key derivation
       const iterations = 100000 + Math.floor(Math.random() * 100000); // Variable iterations
-      
-      const derivedKey = await scryptAsync(password, salt, keyLength, {
+      const derivedKeyOptions: ScryptOptions = {
         N: 32768, // CPU/memory cost parameter
         r: 8,     // Block size parameter
         p: 1,     // Parallelization parameter
-      }) as Buffer;
+      };
+      const derivedKey1 = await scryptAsync(password, salt, keyLength, derivedKeyOptions);
+      const derivedKey2 = await scryptAsync(password, salt, keyLength, derivedKeyOptions);
+
 
       // Add quantum entropy
       const quantumEntropy = await this.generateQuantumEntropy(keyLength);
       const quantumSafeKey = Buffer.alloc(keyLength);
-      
+
+
+
       for (let i = 0; i < keyLength; i++) {
-        quantumSafeKey[i] = derivedKey[i] ^ quantumEntropy[i];
+        const derivedKeyByte = derivedKey1[i] ?? 0;
+        const quantumEntropyByte = quantumEntropy[i] ?? 0;
+        quantumSafeKey[i] = derivedKeyByte ^ quantumEntropyByte;
       }
 
       logger.debug('Quantum-safe key derived', { keyLength });
@@ -448,32 +473,32 @@ export class QuantumCryptographyService {
   }> {
     // Simulate post-quantum key generation
     // In production, use actual post-quantum libraries
-    
+
     switch (algorithm) {
       case 'kyber': // Lattice-based KEM
         return {
           publicKey: randomBytes(1568), // Kyber-1024 public key size
           privateKey: randomBytes(3168), // Kyber-1024 private key size
         };
-        
+
       case 'dilithium': // Lattice-based signatures
         return {
           publicKey: randomBytes(1952), // Dilithium5 public key size
           privateKey: randomBytes(4880), // Dilithium5 private key size
         };
-        
+
       case 'sphincs': // Hash-based signatures
         return {
           publicKey: randomBytes(64), // SPHINCS+ public key size
           privateKey: randomBytes(128), // SPHINCS+ private key size
         };
-        
+
       case 'mceliece': // Code-based cryptography
         return {
           publicKey: randomBytes(1357824), // Classic McEliece public key size
           privateKey: randomBytes(14080), // Classic McEliece private key size
         };
-        
+
       default:
         // Default to Kyber
         return {
@@ -490,10 +515,10 @@ export class QuantumCryptographyService {
   ): Promise<Buffer> {
     // Simulate quantum-resistant encryption
     // In production, use actual post-quantum encryption
-    
+
     const key = createHash('sha256').update(publicKey).update(nonce).digest();
-    const cipher = createCipher('aes-256-gcm', key);
-    
+    const cipher = createCipheriv('aes-256-gcm', key, nonce);
+
     const encrypted = Buffer.concat([
       cipher.update(data),
       cipher.final(),
@@ -509,8 +534,8 @@ export class QuantumCryptographyService {
   ): Promise<Buffer> {
     // Simulate quantum-resistant decryption
     const key = createHash('sha256').update(privateKey).update(nonce).digest();
-    const decipher = createDecipher('aes-256-gcm', key);
-    
+    const decipher = createDecipheriv('aes-256-gcm', key, nonce);
+
     const decrypted = Buffer.concat([
       decipher.update(ciphertext),
       decipher.final(),
@@ -535,7 +560,7 @@ export class QuantumCryptographyService {
   ): Promise<boolean> {
     // Simulate quantum-resistant signature verification
     // In production, use actual post-quantum signature verification
-    
+
     try {
       // This is a simplified verification - in reality, post-quantum
       // signature verification is more complex
@@ -555,11 +580,13 @@ export class QuantumCryptographyService {
     // Simulate quantum entropy generation
     // In production, this would use quantum hardware
     const entropy = randomBytes(size);
-    
+
     // Add timing-based entropy
     const timestamp = Buffer.from(Date.now().toString());
     for (let i = 0; i < Math.min(size, timestamp.length); i++) {
-      entropy[i] ^= timestamp[i];
+      const entropyByte = entropy[i] ?? 0;
+      const timestampByte = timestamp[i] ?? 0;
+      entropy[i] = entropyByte ^ timestampByte;
     }
 
     return entropy;
@@ -577,11 +604,11 @@ export class QuantumCryptographyService {
       if (keyPair.expiresAt && keyPair.expiresAt < now) {
         // Generate new key pair
         const newKeyPair = await this.generateKeyPair(keyPair.algorithm);
-        
+
         // Remove old key pair
         this.keyPairs.delete(keyId);
         rotatedCount++;
-        
+
         logger.info('Key pair rotated', {
           oldKeyId: keyId,
           newKeyId: newKeyPair.keyId,
@@ -602,5 +629,14 @@ export class QuantumCryptographyService {
     this.stopKeyRotation();
     this.keyPairs.clear();
     logger.info('Quantum cryptography service cleaned up');
+  }
+
+  /**
+   * Ensure the service is configured before use
+   */
+  private ensureConfigured(): void {
+    if (!this.config) {
+      throw new Error('QuantumCryptographyService not configured - call configure() first');
+    }
   }
 }

@@ -8,6 +8,7 @@ import { OpenAIEmbeddings } from '@langchain/openai';
 import { RetrievalQAChain } from 'langchain/chains';
 import { Document } from '@langchain/core/documents';
 import { logger } from '@/logger';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface LangChainConfig {
   openaiApiKey: string;
@@ -42,17 +43,28 @@ export interface ActionSuggestion {
   confidence: number;
 }
 
-export class AdvancedLangChainService {
-  private static instance: AdvancedLangChainService;
-  private chatModel: ChatOpenAI;
-  private embeddings: OpenAIEmbeddings;
+export class AdvancedLangChainService extends SingletonService<AdvancedLangChainService> {
+  private chatModel: ChatOpenAI | null = null;
+  private embeddings: OpenAIEmbeddings | null = null;
   private vectorStore: MemoryVectorStore | null = null;
   private conversationChains: Map<string, RunnableSequence> = new Map();
   private userContexts: Map<string, ConversationContext> = new Map();
-  private config: LangChainConfig;
+  private config: LangChainConfig | null = null;
 
-  private constructor(config: LangChainConfig) {
+  protected constructor() {
+    super();
+  }
+
+  public static getInstance(): AdvancedLangChainService {
+    return super.getInstance();
+  }
+
+  /**
+   * Configure the LangChain service with API keys and settings
+   */
+  public configure(config: LangChainConfig): void {
     this.config = config;
+    
     this.chatModel = new ChatOpenAI({
       openAIApiKey: config.openaiApiKey,
       modelName: config.model,
@@ -65,21 +77,16 @@ export class AdvancedLangChainService {
     });
   }
 
-  public static getInstance(config?: LangChainConfig): AdvancedLangChainService {
-    if (!AdvancedLangChainService.instance && config) {
-      AdvancedLangChainService.instance = new AdvancedLangChainService(config);
-    }
-    return AdvancedLangChainService.instance;
-  }
-
   /**
    * Initialize vector store with todo data for RAG
    */
   public async initializeRAG(documents: Document[]): Promise<void> {
+    this.ensureConfigured();
+    
     try {
       this.vectorStore = await MemoryVectorStore.fromDocuments(
         documents,
-        this.embeddings
+        this.embeddings!
       );
       logger.info('RAG vector store initialized', { documentCount: documents.length });
     } catch (error) {
@@ -572,5 +579,14 @@ When responding, structure your answers to be clear and actionable.`;
     this.conversationChains.clear();
     this.userContexts.clear();
     logger.info('LangChain service cleaned up');
+  }
+
+  /**
+   * Ensure the service is configured before use
+   */
+  private ensureConfigured(): void {
+    if (!this.config || !this.chatModel || !this.embeddings) {
+      throw new Error('AdvancedLangChainService not configured - call configure() first');
+    }
   }
 }

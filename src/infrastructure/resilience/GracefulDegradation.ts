@@ -1,6 +1,7 @@
 import { logger } from '@/logger.js';
 import { CircuitBreaker, CircuitBreakerRegistry } from './CircuitBreaker.js';
 import { MetricsCollector } from '../monitoring/MetricsCollector.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface DegradationConfig {
   /**
@@ -59,24 +60,35 @@ export enum DegradationLevel {
   DISABLED = 'DISABLED'
 }
 
-export class GracefulDegradation {
-  private static instance: GracefulDegradation;
+export class GracefulDegradation extends SingletonService {
   private services = new Map<string, DegradationConfig>();
   private healthStates = new Map<string, ServiceHealth>();
   private circuitBreakers = new Map<string, CircuitBreaker>();
-  private metrics: MetricsCollector;
+  private metrics: MetricsCollector | null = null;
   private healthCheckInterval?: NodeJS.Timeout;
 
-  private constructor() {
+  protected constructor() {
+    super();
+  }
+
+  public initialize(): void {
     this.metrics = MetricsCollector.getInstance();
     this.startHealthChecks();
   }
 
-  public static getInstance(): GracefulDegradation {
-    if (!GracefulDegradation.instance) {
-      GracefulDegradation.instance = new GracefulDegradation();
+  private ensureMetrics(): MetricsCollector {
+    if (!this.metrics) {
+      throw new Error('GracefulDegradation not initialized');
     }
-    return GracefulDegradation.instance;
+    return this.metrics;
+  }
+
+  public static getInstance(): GracefulDegradation {
+    const instance = super.getInstance() as GracefulDegradation;
+    if (!instance.metrics) {
+      instance.initialize();
+    }
+    return instance;
   }
 
   /**
@@ -240,7 +252,7 @@ export class GracefulDegradation {
       try {
         const result = await fallbackOperation();
         
-        this.metrics.recordMetric('degradation.fallback.success', 1, {
+        this.ensureMetrics().recordMetric('degradation.fallback.success', 1, {
           serviceName,
           strategy: 'custom',
         });
@@ -314,7 +326,7 @@ export class GracefulDegradation {
       this.updateDegradationLevel(serviceName, DegradationLevel.NORMAL);
     }
 
-    this.metrics.recordMetric('degradation.operation.success', 1, {
+    this.ensureMetrics().recordMetric('degradation.operation.success', 1, {
       serviceName,
       duration,
     });
@@ -337,7 +349,7 @@ export class GracefulDegradation {
       this.updateDegradationLevel(serviceName, DegradationLevel.PARTIAL);
     }
 
-    this.metrics.recordMetric('degradation.operation.failure', 1, {
+    this.ensureMetrics().recordMetric('degradation.operation.failure', 1, {
       serviceName,
       error: error.message,
       duration,
@@ -377,7 +389,7 @@ export class GracefulDegradation {
         avgResponseTime: health.avgResponseTime,
       });
 
-      this.metrics.recordMetric('degradation.level.changed', 1, {
+      this.ensureMetrics().recordMetric('degradation.level.changed', 1, {
         serviceName,
         previousLevel,
         newLevel: level,

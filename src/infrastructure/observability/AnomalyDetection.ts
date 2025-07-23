@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { logger } from '@/logger.js';
 import { MetricsSystem } from './Metrics.js';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface AnomalyDetectorConfig {
   windowSize: number; // Number of data points to consider
@@ -30,37 +31,43 @@ export interface TimeSeriesData {
 /**
  * Advanced Anomaly Detection System
  */
-export class AnomalyDetectionSystem extends EventEmitter {
-  private static instance: AnomalyDetectionSystem;
+export class AnomalyDetectionSystem extends EventEmitterSingletonService<AnomalyDetectionSystem> {
   private config: AnomalyDetectorConfig;
   private metricBuffers: Map<string, TimeSeriesData[]> = new Map();
   private detectors: Map<string, AnomalyDetector> = new Map();
   private checkInterval?: NodeJS.Timeout;
   private anomalyHistory: Anomaly[] = [];
 
-  private constructor(config: Partial<AnomalyDetectorConfig> = {}) {
+  protected constructor() {
     super();
     this.config = {
       windowSize: 100,
       sensitivity: 0.95,
       algorithms: ['zscore', 'mad'],
       checkInterval: 60000, // 1 minute
-      ...config,
     };
   }
 
   static initialize(config?: Partial<AnomalyDetectorConfig>): AnomalyDetectionSystem {
-    if (!AnomalyDetectionSystem.instance) {
-      AnomalyDetectionSystem.instance = new AnomalyDetectionSystem(config);
+    const instance = super.getInstance();
+    if (config) {
+      instance.configure(config);
     }
-    return AnomalyDetectionSystem.instance;
+    return instance;
   }
 
   static getInstance(): AnomalyDetectionSystem {
-    if (!AnomalyDetectionSystem.instance) {
-      throw new Error('AnomalyDetectionSystem not initialized');
-    }
-    return AnomalyDetectionSystem.instance;
+    return super.getInstance();
+  }
+
+  /**
+   * Configure the AnomalyDetectionSystem with settings
+   */
+  public configure(config: Partial<AnomalyDetectorConfig>): void {
+    this.config = {
+      ...this.config,
+      ...config,
+    };
   }
 
   /**

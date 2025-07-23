@@ -2,9 +2,10 @@ import { EventEmitter } from 'events';
 import { logger } from '@/logger.js';
 import { MetricsSystem } from '../observability/Metrics.js';
 import { TelemetrySystem } from '../observability/Telemetry.js';
-import { EdgeComputingSystem, EdgeLocation } from '../edge/EdgeComputing.js';
+import { EdgeComputingSystem, type EdgeLocation } from '../edge/EdgeComputing.js';
 import { IntelligentCDN } from '../edge/IntelligentCDN.js';
 import { DataReplicationSystem } from '../edge/DataReplication.js';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface PerformanceConfig {
   optimizationLevel: 'aggressive' | 'balanced' | 'conservative';
@@ -87,9 +88,8 @@ export interface ResourcePool {
  * Performance Optimization System
  * Provides intelligent performance optimization across the infrastructure
  */
-export class PerformanceOptimizer extends EventEmitter {
-  private static instance: PerformanceOptimizer;
-  private config: PerformanceConfig;
+export class PerformanceOptimizer extends EventEmitterSingletonService<PerformanceOptimizer> {
+  private config: PerformanceConfig | null = null;
   private metrics: MetricsSystem;
   private telemetry: TelemetrySystem;
   private edgeSystem: EdgeComputingSystem;
@@ -101,34 +101,40 @@ export class PerformanceOptimizer extends EventEmitter {
   private performanceHistory: PerformanceMetrics[] = [];
   private mlOptimizer?: PerformanceMLModel;
 
-  private constructor(config: PerformanceConfig) {
+  protected constructor() {
     super();
-    this.config = config;
     this.metrics = MetricsSystem.getInstance();
     this.telemetry = TelemetrySystem.getInstance();
     this.edgeSystem = EdgeComputingSystem.getInstance();
     this.cdn = IntelligentCDN.getInstance();
     this.replication = DataReplicationSystem.getInstance();
+  }
+
+  static initialize(config: PerformanceConfig): PerformanceOptimizer {
+    const instance = super.getInstance();
+    instance.configure(config);
+    return instance;
+  }
+
+  static getInstance(): PerformanceOptimizer {
+    const instance = super.getInstance();
+    if (!instance.config) {
+      throw new Error('PerformanceOptimizer not initialized - call initialize() first');
+    }
+    return instance;
+  }
+
+  /**
+   * Configure the PerformanceOptimizer with settings
+   */
+  public configure(config: PerformanceConfig): void {
+    this.config = config;
     
     if (config.enablePredictiveScaling) {
       this.mlOptimizer = new PerformanceMLModel();
     }
     
     this.initializeOptimization();
-  }
-
-  static initialize(config: PerformanceConfig): PerformanceOptimizer {
-    if (!PerformanceOptimizer.instance) {
-      PerformanceOptimizer.instance = new PerformanceOptimizer(config);
-    }
-    return PerformanceOptimizer.instance;
-  }
-
-  static getInstance(): PerformanceOptimizer {
-    if (!PerformanceOptimizer.instance) {
-      throw new Error('PerformanceOptimizer not initialized');
-    }
-    return PerformanceOptimizer.instance;
   }
 
   /**
@@ -960,5 +966,14 @@ class PerformanceMLModel {
     }
 
     return predictions;
+  }
+
+  /**
+   * Ensure the service is configured before use
+   */
+  private ensureConfigured(): void {
+    if (!this.config) {
+      throw new Error('PerformanceOptimizer not configured - call initialize() first');
+    }
   }
 }

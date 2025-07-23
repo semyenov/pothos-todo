@@ -1,19 +1,28 @@
 import { createConsola, type ConsolaInstance, type LogObject } from 'consola';
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'pathe';
-import { getCurrentConfig } from '@/config/index.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { nanoid } from 'nanoid';
+
+export interface LoggerConfig {
+  level?: string;
+  service?: string;
+  version?: string;
+  dir?: string;
+  files?: {
+    debug?: string;
+    error?: string;
+  };
+}
 
 export type Logger = ConsolaInstance;
 
 // AsyncLocalStorage for correlation IDs
 const correlationStore = new AsyncLocalStorage<{ correlationId: string; requestId?: string }>();
 
-export function createLogger(): ConsolaInstance {
+export function createLogger(config?: LoggerConfig): ConsolaInstance {
   // Get logger configuration
-  const config = getCurrentConfig();
-  const loggerConfig = config?.logger || {
+  const loggerConfig = config || {
     level: 'info',
     service: 'pothos-todo',
     version: '1.0.0',
@@ -104,17 +113,16 @@ function mapLogLevel(level: string): number {
 export const logger = createLogger();
 
 // Re-export common log methods for convenience
-export const {
-  error,
-  warn,
-  info,
-  debug,
-  success,
-  log,
-  start,
-  ready,
-  box,
-} = logger;
+// Using any to bypass type inference issues with consola's LogFn
+export const error: any = logger.error.bind(logger);
+export const warn: any = logger.warn.bind(logger);
+export const info: any = logger.info.bind(logger);
+export const debug: any = logger.debug.bind(logger);
+export const success: any = logger.success.bind(logger);
+export const log: any = logger.log.bind(logger);
+export const start: any = logger.start.bind(logger);
+export const ready: any = logger.ready.bind(logger);
+export const box: any = logger.box.bind(logger);
 
 // Correlation ID management
 export function withCorrelationId<T>(

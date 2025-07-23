@@ -4,7 +4,7 @@
  */
 
 // Core utilities
-import { $fetch, ofetch } from "ofetch";
+import { $fetch, type FetchOptions } from "./fetch-wrapper.js";
 import { consola } from "consola";
 import { defu } from "defu";
 import { hash } from "ohash";
@@ -409,7 +409,6 @@ export const logger = consola;
 // Export default instances
 export {
   $fetch,
-  ofetch,
   defu,
   hash,
   hash as objectHash,
@@ -425,17 +424,22 @@ export {
   extname,
   normalize,
   createStorage,
-  scule,
-  jiti,
-  mlly,
-  unconfig,
-  createHead,
-  unhead,
-  uncrypto,
-  unws,
-  unrouter,
-  citty,
-  listhen,
-  nypm,
-  untar,
+  pascalCase,
+  camelCase,
+  kebabCase,
+  snakeCase,
+  createJiti,
+  resolveSync,
+  resolvePath,
+  createResolve,
+  loadConfig,
+  createUnhead,
+  subtle,
+  randomUUID,
+  listen,
+  detectPackageManager,
+  installDependencies,
+  fileURLToPath,
+  readPackageJSON,
+  writePackageJSON,
 };

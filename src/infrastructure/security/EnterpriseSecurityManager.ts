@@ -1,7 +1,7 @@
 import { QuantumCryptographyService, type QuantumCryptoConfig } from './QuantumCryptographyService.js';
 import { logger } from '@/logger';
 import { randomBytes, createHash, timingSafeEqual } from 'crypto';
-import EventEmitter from 'events';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface SecurityPolicy {
   id: string;
@@ -52,8 +52,7 @@ export interface SecurityMetrics {
   riskLevel: 'low' | 'medium' | 'high' | 'critical';
 }
 
-export class EnterpriseSecurityManager extends EventEmitter {
-  private static instance: EnterpriseSecurityManager;
+export class EnterpriseSecurityManager extends EventEmitterSingletonService<EnterpriseSecurityManager> {
   private quantumCrypto: QuantumCryptographyService;
   private securityPolicies: Map<string, SecurityPolicy> = new Map();
   private securityEvents: SecurityEvent[] = [];
@@ -62,7 +61,7 @@ export class EnterpriseSecurityManager extends EventEmitter {
   private securityMetrics: SecurityMetrics;
   private monitoringInterval: NodeJS.Timer | null = null;
 
-  private constructor() {
+  protected constructor() {
     super();
     this.initializeSecurityPolicies();
     this.initializeSecurityMetrics();
@@ -70,10 +69,7 @@ export class EnterpriseSecurityManager extends EventEmitter {
   }
 
   public static getInstance(): EnterpriseSecurityManager {
-    if (!EnterpriseSecurityManager.instance) {
-      EnterpriseSecurityManager.instance = new EnterpriseSecurityManager();
-    }
-    return EnterpriseSecurityManager.instance;
+    return super.getInstance();
   }
 
   /**

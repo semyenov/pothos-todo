@@ -1,9 +1,9 @@
-import { EventEmitter } from 'events';
 import { createHash, randomBytes } from 'crypto';
 import jwt from 'jsonwebtoken';
 import { logger } from '@/logger.js';
-import { ZeroTrustGateway, SecurityContext } from '../security/ZeroTrustGateway.js';
-import { EdgeComputingSystem, EdgeLocation, EdgeRequest } from './EdgeComputing.js';
+import { ZeroTrustGateway, type SecurityContext } from '../security/ZeroTrustGateway.js';
+import { EdgeComputingSystem, type EdgeLocation, type EdgeRequest } from './EdgeComputing.js';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface EdgeAuthConfig {
   jwtSecret: string;
@@ -64,36 +64,49 @@ export interface AuthSyncPacket {
  * Edge Authentication and Authorization System
  * Provides distributed auth with local validation at edge
  */
-export class EdgeAuthSystem extends EventEmitter {
-  private static instance: EdgeAuthSystem;
-  private config: EdgeAuthConfig;
+export class EdgeAuthSystem extends EventEmitterSingletonService<EdgeAuthSystem> {
+  private config: EdgeAuthConfig | null = null;
   private authCaches: Map<string, AuthCache> = new Map(); // locationId -> cache
-  private zeroTrust: ZeroTrustGateway;
-  private edgeSystem: EdgeComputingSystem;
+  private zeroTrust: ZeroTrustGateway | null = null;
+  private edgeSystem: EdgeComputingSystem | null = null;
   private syncInterval?: NodeJS.Timeout;
 
-  private constructor(config: EdgeAuthConfig) {
+  protected constructor() {
     super();
+  }
+
+  public async initialize(config: EdgeAuthConfig): Promise<void> {
     this.config = config;
     this.zeroTrust = ZeroTrustGateway.getInstance();
-    this.edgeSystem = EdgeComputingSystem.getInstance();
+    this.edgeSystem = await EdgeComputingSystem.getInstance();
     
     this.initializeAuthCaches();
     this.startSyncProcess();
   }
 
-  static initialize(config: EdgeAuthConfig): EdgeAuthSystem {
-    if (!EdgeAuthSystem.instance) {
-      EdgeAuthSystem.instance = new EdgeAuthSystem(config);
+  private ensureConfig(): EdgeAuthConfig {
+    if (!this.config) {
+      throw new Error('EdgeAuthSystem not initialized');
     }
-    return EdgeAuthSystem.instance;
+    return this.config;
+  }
+
+  private ensureZeroTrust(): ZeroTrustGateway {
+    if (!this.zeroTrust) {
+      throw new Error('EdgeAuthSystem not initialized');
+    }
+    return this.zeroTrust;
+  }
+
+  private ensureEdgeSystem(): EdgeComputingSystem {
+    if (!this.edgeSystem) {
+      throw new Error('EdgeAuthSystem not initialized');
+    }
+    return this.edgeSystem;
   }
 
   static getInstance(): EdgeAuthSystem {
-    if (!EdgeAuthSystem.instance) {
-      throw new Error('EdgeAuthSystem not initialized');
-    }
-    return EdgeAuthSystem.instance;
+    return super.getInstance();
   }
 
   /**
@@ -146,7 +159,7 @@ export class EdgeAuthSystem extends EventEmitter {
     }
 
     // Check geographic restrictions
-    if (this.config.enableGeoFencing) {
+    if (this.ensureConfig().enableGeoFencing) {
       const geoCheck = this.checkGeographicRestrictions(session, location);
       if (!geoCheck.allowed) {
         return geoCheck;
@@ -154,7 +167,7 @@ export class EdgeAuthSystem extends EventEmitter {
     }
 
     // Check device binding
-    if (this.config.enableDeviceBinding && session.deviceId) {
+    if (this.ensureConfig().enableDeviceBinding && session.deviceId) {
       const deviceCheck = this.checkDeviceBinding(session, location);
       if (!deviceCheck.allowed) {
         return deviceCheck;
@@ -306,12 +319,12 @@ export class EdgeAuthSystem extends EventEmitter {
    * Start sync process
    */
   private startSyncProcess(): void {
-    if (this.config.syncInterval) {
+    if (this.ensureConfig().syncInterval) {
       this.syncInterval = setInterval(() => {
         this.syncAuthData().catch(error => {
           logger.error('Periodic auth sync failed', error);
         });
-      }, this.config.syncInterval);
+      }, this.ensureConfig().syncInterval);
     }
   }
 
@@ -325,7 +338,7 @@ export class EdgeAuthSystem extends EventEmitter {
   ): Promise<EdgeSession | null> {
     try {
       // Verify JWT
-      const decoded = jwt.verify(token, this.config.jwtSecret) as any;
+      const decoded = jwt.verify(token, this.ensureConfig().jwtSecret) as any;
       
       // Check blacklist
       const cache = this.authCaches.get(location.id);
@@ -358,7 +371,7 @@ export class EdgeAuthSystem extends EventEmitter {
   ): Promise<{ success: boolean; session?: EdgeSession; reason?: string }> {
     try {
       // Forward to zero trust gateway
-      const { token, context } = await this.zeroTrust.authenticate({
+      const { token, context } = await this.ensureZeroTrust().authenticate({
         ...credentials,
         ipAddress: request.clientIp,
         userAgent: request.headers['user-agent'] || '',
@@ -382,7 +395,7 @@ export class EdgeAuthSystem extends EventEmitter {
   private isSessionValid(session: EdgeSession, location: EdgeLocation): boolean {
     // Check expiration
     const age = Date.now() - session.metadata.created.getTime();
-    if (age > this.config.sessionDuration) {
+    if (age > this.ensureConfig().sessionDuration) {
       return false;
     }
 
@@ -521,9 +534,9 @@ export class EdgeAuthSystem extends EventEmitter {
         sessionId: context.sessionId,
         permissions: context.permissions,
       },
-      this.config.jwtSecret,
+      this.ensureConfig().jwtSecret,
       {
-        expiresIn: Math.floor(this.config.sessionDuration / 1000),
+        expiresIn: Math.floor(this.ensureConfig().sessionDuration / 1000),
         issuer: 'edge-auth',
       }
     );

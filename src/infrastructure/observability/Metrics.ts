@@ -18,6 +18,7 @@ const Resource = resources.Resource || resources.default?.Resource;
 import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
 import { PrometheusExporter } from '@opentelemetry/exporter-prometheus';
 import { logger } from '@/logger.js';
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface MetricsConfig {
   serviceName: string;
@@ -44,15 +45,18 @@ export interface BusinessMetrics {
 /**
  * Advanced Metrics System with custom business metrics
  */
-export class MetricsSystem {
-  private static instance: MetricsSystem;
-  private meterProvider: MeterProvider;
-  private meter: Meter;
-  private config: MetricsConfig;
-  private businessMetrics: BusinessMetrics;
+export class MetricsSystem extends SingletonService<MetricsSystem> {
+  private meterProvider: MeterProvider | null = null;
+  private meter: Meter | null = null;
+  private config: MetricsConfig | null = null;
+  private businessMetrics: BusinessMetrics | null = null;
   private customMetrics: Map<string, any> = new Map();
 
-  private constructor(config: MetricsConfig) {
+  protected constructor() {
+    super();
+  }
+
+  public configure(config: MetricsConfig): void {
     this.config = {
       exportInterval: 10000, // 10 seconds
       enablePrometheus: true,
@@ -69,24 +73,41 @@ export class MetricsSystem {
   }
 
   static initialize(config: MetricsConfig): MetricsSystem {
-    if (!MetricsSystem.instance) {
-      MetricsSystem.instance = new MetricsSystem(config);
-    }
-    return MetricsSystem.instance;
+    const instance = super.getInstance();
+    instance.configure(config);
+    return instance;
   }
 
-  static getInstance(): MetricsSystem {
-    if (!MetricsSystem.instance) {
-      throw new Error('MetricsSystem not initialized');
+  static async getInstance(): Promise<MetricsSystem> {
+    return super.getInstance();
+  }
+
+  private ensureConfig(): MetricsConfig {
+    if (!this.config) {
+      throw new Error('MetricsSystem not configured');
     }
-    return MetricsSystem.instance;
+    return this.config;
+  }
+
+  private ensureMeter(): Meter {
+    if (!this.meter) {
+      throw new Error('MetricsSystem meter not initialized');
+    }
+    return this.meter;
+  }
+
+  private ensureBusinessMetrics(): BusinessMetrics {
+    if (!this.businessMetrics) {
+      throw new Error('MetricsSystem business metrics not initialized');
+    }
+    return this.businessMetrics;
   }
 
   private initializeMeterProvider(): MeterProvider {
     const resource = new Resource({
-      [SemanticResourceAttributes.SERVICE_NAME]: this.config.serviceName,
-      [SemanticResourceAttributes.SERVICE_VERSION]: this.config.serviceVersion,
-      [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]: this.config.environment,
+      [SemanticResourceAttributes.SERVICE_NAME]: this.config!.serviceName,
+      [SemanticResourceAttributes.SERVICE_VERSION]: this.config!.serviceVersion,
+      [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]: this.config!.environment,
     });
 
     const meterProvider = new MeterProvider({
@@ -109,14 +130,14 @@ export class MetricsSystem {
     });
 
     // Add Prometheus exporter
-    if (this.config.enablePrometheus) {
+    if (this.config!.enablePrometheus) {
       const prometheusExporter = new PrometheusExporter(
         {
-          port: this.config.prometheusPort,
+          port: this.config!.prometheusPort,
           endpoint: '/metrics',
         },
         () => {
-          logger.info(`Prometheus metrics server started on port ${this.config.prometheusPort}`);
+          logger.info(`Prometheus metrics server started on port ${this.config!.prometheusPort}`);
         }
       );
       meterProvider.addMetricReader(prometheusExporter);
@@ -127,7 +148,7 @@ export class MetricsSystem {
       meterProvider.addMetricReader(
         new PeriodicExportingMetricReader({
           exporter: new ConsoleMetricExporter(),
-          exportIntervalMillis: this.config.exportInterval,
+          exportIntervalMillis: this.config!.exportInterval,
         })
       );
     }
@@ -137,55 +158,56 @@ export class MetricsSystem {
   }
 
   private createBusinessMetrics(): BusinessMetrics {
+    const meter = this.ensureMeter();
     return {
-      todosCreated: this.meter.createCounter('todos_created_total', {
+      todosCreated: meter.createCounter('todos_created_total', {
         description: 'Total number of todos created',
         valueType: ValueType.INT,
       }),
 
-      todosCompleted: this.meter.createCounter('todos_completed_total', {
+      todosCompleted: meter.createCounter('todos_completed_total', {
         description: 'Total number of todos completed',
         valueType: ValueType.INT,
       }),
 
-      todosDeleted: this.meter.createCounter('todos_deleted_total', {
+      todosDeleted: meter.createCounter('todos_deleted_total', {
         description: 'Total number of todos deleted',
         valueType: ValueType.INT,
       }),
 
-      activeTodos: this.meter.createObservableGauge('active_todos', {
+      activeTodos: meter.createObservableGauge('active_todos', {
         description: 'Current number of active todos',
         valueType: ValueType.INT,
       }),
 
-      todoCompletionTime: this.meter.createHistogram('todo_completion_time', {
+      todoCompletionTime: meter.createHistogram('todo_completion_time', {
         description: 'Time taken to complete todos in seconds',
         unit: 's',
         valueType: ValueType.DOUBLE,
       }),
 
-      userActivity: this.meter.createHistogram('user_activity_score', {
+      userActivity: meter.createHistogram('user_activity_score', {
         description: 'User activity score based on actions',
         valueType: ValueType.DOUBLE,
       }),
 
-      apiLatency: this.meter.createHistogram('api_latency', {
+      apiLatency: meter.createHistogram('api_latency', {
         description: 'API request latency in seconds',
         unit: 's',
         valueType: ValueType.DOUBLE,
       }),
 
-      apiErrors: this.meter.createCounter('api_errors_total', {
+      apiErrors: meter.createCounter('api_errors_total', {
         description: 'Total number of API errors',
         valueType: ValueType.INT,
       }),
 
-      cacheHits: this.meter.createCounter('cache_hits_total', {
+      cacheHits: meter.createCounter('cache_hits_total', {
         description: 'Total number of cache hits',
         valueType: ValueType.INT,
       }),
 
-      cacheMisses: this.meter.createCounter('cache_misses_total', {
+      cacheMisses: meter.createCounter('cache_misses_total', {
         description: 'Total number of cache misses',
         valueType: ValueType.INT,
       }),
@@ -199,7 +221,8 @@ export class MetricsSystem {
     metricName: keyof BusinessMetrics,
     callback: () => number | Promise<number>
   ): void {
-    const metric = this.businessMetrics[metricName];
+    const businessMetrics = this.ensureBusinessMetrics();
+    const metric = businessMetrics[metricName];
     if (metric && 'addCallback' in metric) {
       metric.addCallback(async (observableResult) => {
         const value = await callback();
@@ -216,7 +239,8 @@ export class MetricsSystem {
     value: number,
     attributes?: Record<string, any>
   ): void {
-    const metric = this.businessMetrics[metricName];
+    const businessMetrics = this.ensureBusinessMetrics();
+    const metric = businessMetrics[metricName];
     if (!metric) {
       logger.warn(`Metric ${metricName} not found`);
       return;
@@ -245,13 +269,13 @@ export class MetricsSystem {
 
     switch (type) {
       case 'counter':
-        metric = this.meter.createCounter(name, options);
+        metric = this.ensureMeter().createCounter(name, options);
         break;
       case 'histogram':
-        metric = this.meter.createHistogram(name, options);
+        metric = this.ensureMeter().createHistogram(name, options);
         break;
       case 'gauge':
-        metric = this.meter.createObservableGauge(name, options);
+        metric = this.ensureMeter().createObservableGauge(name, options);
         break;
     }
 
@@ -263,7 +287,7 @@ export class MetricsSystem {
    * Get business metrics
    */
   getBusinessMetrics(): BusinessMetrics {
-    return this.businessMetrics;
+    return this.ensureBusinessMetrics();
   }
 
   /**

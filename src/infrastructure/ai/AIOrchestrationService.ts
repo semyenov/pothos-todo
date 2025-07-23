@@ -2,7 +2,7 @@ import { AdvancedLangChainService, type LangChainConfig } from './AdvancedLangCh
 import { EmbeddingService } from './EmbeddingService.js';
 import { VectorStore } from './VectorStore.js';
 import { logger } from '@/logger';
-import EventEmitter from 'events';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface AIWorkflow {
   id: string;
@@ -48,27 +48,44 @@ export interface MLModel {
   version: string;
 }
 
-export class AIOrchestrationService extends EventEmitter {
-  private static instance: AIOrchestrationService;
-  private langChainService: AdvancedLangChainService;
-  private embeddingService: EmbeddingService;
-  private vectorStore: VectorStore;
+export class AIOrchestrationService extends EventEmitterSingletonService {
+  private langChainService: AdvancedLangChainService | null = null;
+  private embeddingService: EmbeddingService | null = null;
+  private vectorStore: VectorStore | null = null;
   private workflows: Map<string, AIWorkflow> = new Map();
   private models: Map<string, MLModel> = new Map();
   private activeJobs: Map<string, any> = new Map();
   private insights: Map<string, AIInsight[]> = new Map(); // userId -> insights
 
-  private constructor() {
+  protected constructor() {
     super();
     this.setupDefaultWorkflows();
     this.setupDefaultModels();
   }
 
-  public static getInstance(): AIOrchestrationService {
-    if (!AIOrchestrationService.instance) {
-      AIOrchestrationService.instance = new AIOrchestrationService();
+  private ensureLangChainService(): AdvancedLangChainService {
+    if (!this.langChainService) {
+      throw new Error('AIOrchestrationService not initialized');
     }
-    return AIOrchestrationService.instance;
+    return this.langChainService;
+  }
+
+  private ensureEmbeddingService(): EmbeddingService {
+    if (!this.embeddingService) {
+      throw new Error('AIOrchestrationService not initialized');
+    }
+    return this.embeddingService;
+  }
+
+  private ensureVectorStore(): VectorStore {
+    if (!this.vectorStore) {
+      throw new Error('AIOrchestrationService not initialized');
+    }
+    return this.vectorStore;
+  }
+
+  public static getInstance(): AIOrchestrationService {
+    return super.getInstance() as AIOrchestrationService;
   }
 
   /**
@@ -181,7 +198,7 @@ export class AIOrchestrationService extends EventEmitter {
   }> {
     try {
       // Use LangChain for categorization
-      const response = await this.langChainService.processConversation(
+      const response = await this.ensureLangChainService().processConversation(
         'system',
         `Categorize this todo and suggest appropriate tags and priority: "${todoText}"\n\nUser history context: ${JSON.stringify(userHistory.slice(-5))}`
       );
@@ -217,7 +234,7 @@ export class AIOrchestrationService extends EventEmitter {
     factors: string[];
   }> {
     try {
-      const estimation = await this.langChainService.estimateTaskDuration(
+      const estimation = await this.ensureLangChainService().estimateTaskDuration(
         todoData.title,
         todoData.description,
         userHistory
@@ -313,7 +330,7 @@ export class AIOrchestrationService extends EventEmitter {
     try {
       // Combine text and behavior analysis
       const textEmbeddings = await Promise.all(
-        textData.map(text => this.embeddingService.generateEmbedding(text))
+        textData.map(text => this.ensureEmbeddingService().generateEmbedding(text))
       );
 
       const behaviorPatterns = this.analyzeBehaviorPatterns(behaviorData);
@@ -440,7 +457,7 @@ export class AIOrchestrationService extends EventEmitter {
   }
 
   private async executeLangChainStep(step: AIWorkflowStep, context: Record<string, any>): Promise<any> {
-    const response = await this.langChainService.processConversation(
+    const response = await this.ensureLangChainService().processConversation(
       'system',
       `Execute step: ${step.name}\nContext: ${JSON.stringify(context)}`
     );
@@ -449,13 +466,13 @@ export class AIOrchestrationService extends EventEmitter {
 
   private async executeEmbeddingStep(step: AIWorkflowStep, context: Record<string, any>): Promise<any> {
     const text = context.text || '';
-    const embedding = await this.embeddingService.generateEmbedding(text);
+    const embedding = await this.ensureEmbeddingService().generateEmbedding(text);
     return { embedding };
   }
 
   private async executeVectorSearchStep(step: AIWorkflowStep, context: Record<string, any>): Promise<any> {
     const query = context.query || '';
-    const results = await this.vectorStore.search(query, { limit: 5 });
+    const results = await this.ensureVectorStore().search(query, { limit: 5 });
     return { results };
   }
 
@@ -476,7 +493,7 @@ export class AIOrchestrationService extends EventEmitter {
   }
 
   private async generateProductivityInsights(userId: string, todoData: any[]): Promise<AIInsight[]> {
-    const insights = await this.langChainService.generateProductivityInsights(
+    const insights = await this.ensureLangChainService().generateProductivityInsights(
       userId,
       todoData.filter(t => !t.completed),
       todoData.filter(t => t.completed)
@@ -523,7 +540,7 @@ export class AIOrchestrationService extends EventEmitter {
   }
 
   private async generateSuggestionInsights(userId: string, todoData: any[]): Promise<AIInsight[]> {
-    const suggestions = await this.langChainService.generateTodoSuggestions(userId, todoData);
+    const suggestions = await this.ensureLangChainService().generateTodoSuggestions(userId, todoData);
     
     return suggestions.map((suggestion, index) => ({
       id: `suggestion_${index}`,

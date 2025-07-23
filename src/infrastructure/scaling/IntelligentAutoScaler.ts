@@ -1,5 +1,5 @@
 import type { SpanOptions } from '@opentelemetry/api';
-import { AsyncSingletonService } from '@/lib/base/AsyncSingletonService.js';
+import { AsyncSingletonService } from '@/infrastructure/core/AsyncSingletonService.js';
 import { createLogger } from '@/lib/logger.js';
 import { RedisClusterManager } from '@/infrastructure/cache/RedisClusterManager.js';
 import { DistributedTracing } from '@/infrastructure/observability/DistributedTracing.js';
@@ -241,11 +241,11 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
     try {
       this.redis = RedisClusterManager.getInstance();
       this.tracing = await DistributedTracing.getInstance();
-      
+
       await this.loadScalingPolicies();
       await this.loadPredictiveModels();
       await this.startMonitoring();
-      
+
       logger.info('IntelligentAutoScaler initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize IntelligentAutoScaler:', error);
@@ -265,10 +265,10 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
       try {
         // Validate policy
         await this.validateScalingPolicy(policy);
-        
+
         this.policies.set(policy.id, policy);
         await this.redis.setObject(`scaling:policy:${policy.id}`, policy, 86400000 * 30); // 30 days
-        
+
         logger.info(`Scaling policy created: ${policy.name} (${policy.id})`);
       } catch (error) {
         logger.error('Failed to create scaling policy:', error);
@@ -281,7 +281,7 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
     try {
       this.resources.set(metrics.resourceId, metrics);
       await this.redis.setObject(`scaling:metrics:${metrics.resourceId}`, metrics, 3600000); // 1 hour
-      
+
       // Check for immediate scaling needs
       await this.evaluateScalingTriggers(metrics);
     } catch (error) {
@@ -316,7 +316,7 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
       try {
         scalingEvent.status = 'executing';
         await this.storeScalingEvent(scalingEvent);
-        
+
         // Pre-execution validation
         if (action.validation?.preConditions) {
           const preCheck = await this.validateConditions(action.validation.preConditions, action.target);
@@ -326,13 +326,13 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
         }
 
         const startTime = Date.now();
-        
+
         // Execute the scaling action
         await this.performScalingAction(action);
-        
+
         // Wait for grace period
         await this.wait(action.gracePeriod);
-        
+
         // Post-execution validation
         if (action.validation?.postConditions) {
           const postCheck = await this.validateConditions(action.validation.postConditions, action.target);
@@ -347,22 +347,22 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
         } else {
           scalingEvent.status = 'completed';
         }
-        
+
         scalingEvent.duration = Date.now() - startTime;
         scalingEvent.cost = await this.calculateScalingCost(action, scalingEvent.duration);
-        
+
         await this.storeScalingEvent(scalingEvent);
-        
+
         logger.info(`Scaling action ${scalingEvent.status}: ${action.type} on ${action.target}`);
-        
+
         return scalingEvent;
       } catch (error) {
         scalingEvent.status = 'failed';
         scalingEvent.error = error instanceof Error ? error.message : 'Unknown error';
         scalingEvent.duration = Date.now() - scalingEvent.timestamp.getTime();
-        
+
         await this.storeScalingEvent(scalingEvent);
-        
+
         logger.error('Scaling action failed:', error);
         throw error;
       }
@@ -381,10 +381,10 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
         const startTime = Date.now() - timeRange;
         const resources = Array.from(this.resources.values());
         const historicalMetrics = await this.getHistoricalMetrics(startTime);
-        
+
         const optimizations: ResourceOptimization[] = [];
         let totalSavings = 0;
-        
+
         for (const resource of resources) {
           const optimization = await this.analyzeResourceOptimization(resource, historicalMetrics);
           if (optimization.savings > 0) {
@@ -392,10 +392,10 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
             totalSavings += optimization.savings;
           }
         }
-        
+
         const recommendations = await this.generateOptimizationRecommendations(optimizations);
         const efficiency = await this.calculateEfficiencyMetrics(resources, historicalMetrics);
-        
+
         const report: OptimizationReport = {
           id: this.generateReportId(),
           timestamp: new Date(),
@@ -405,11 +405,11 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
           recommendations,
           efficiency
         };
-        
+
         await this.storeOptimizationReport(report);
-        
+
         logger.info(`Optimization report generated: ${optimizations.length} optimizations, $${totalSavings} potential savings`);
-        
+
         return report;
       } catch (error) {
         logger.error('Failed to generate optimization report:', error);
@@ -431,24 +431,24 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
         if (!existingModel) {
           throw new Error(`Model not found: ${modelId}`);
         }
-        
+
         // Gather training data
         const trainingData = await this.gatherTrainingData(existingModel.trainingData);
-        
+
         // Train the model (simplified implementation)
         const trainedModel = await this.performModelTraining(existingModel, trainingData);
-        
+
         // Validate model accuracy
         const validationScore = await this.validateModel(trainedModel, trainingData);
         trainedModel.accuracy = validationScore;
         trainedModel.lastTrained = new Date();
         trainedModel.nextTraining = new Date(Date.now() + 86400000 * 7); // 7 days
-        
+
         this.models.set(modelId, trainedModel);
         await this.redis.setObject(`scaling:model:${modelId}`, trainedModel, 86400000 * 30); // 30 days
-        
+
         logger.info(`Predictive model trained: ${modelId}, accuracy: ${validationScore}%`);
-        
+
         return trainedModel;
       } catch (error) {
         logger.error('Failed to train predictive model:', error);
@@ -460,12 +460,12 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
   async generateScalingPredictions(timeHorizon: number = 86400000): Promise<ScalingPrediction[]> {
     try {
       const predictions: ScalingPrediction[] = [];
-      
+
       for (const model of this.models.values()) {
         const modelPredictions = await this.runPredictiveModel(model, timeHorizon);
         predictions.push(...modelPredictions);
       }
-      
+
       // Sort by confidence and timestamp
       predictions.sort((a, b) => {
         if (a.confidence !== b.confidence) {
@@ -473,11 +473,11 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
         }
         return a.timestamp.getTime() - b.timestamp.getTime();
       });
-      
+
       await this.storePredictions(predictions);
-      
+
       logger.info(`Generated ${predictions.length} scaling predictions`);
-      
+
       return predictions;
     } catch (error) {
       logger.error('Failed to generate scaling predictions:', error);
@@ -496,7 +496,7 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
 
       for (const trigger of policy.triggers) {
         const shouldTrigger = await this.evaluateTrigger(trigger, metrics);
-        
+
         if (shouldTrigger) {
           // Find appropriate action
           const action = this.selectScalingAction(policy.actions, metrics);
@@ -587,14 +587,14 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
     // Simulate scaling action implementation
     // In a real implementation, this would interact with cloud provider APIs
     logger.info(`Performing scaling action: ${action.type} on ${action.target} by ${action.magnitude}`);
-    
+
     // Simulate execution time
     await this.wait(Math.random() * 5000 + 1000);
   }
 
   private async rollbackScalingAction(action: ScalingAction): Promise<void> {
     logger.warn(`Rolling back scaling action: ${action.type} on ${action.target}`);
-    
+
     // Simulate rollback
     await this.wait(Math.random() * 3000 + 500);
   }
@@ -828,10 +828,10 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
   private async isInCooldownPeriod(policyId: string): Promise<boolean> {
     const lastExecution = await this.redis.get(`scaling:cooldown:${policyId}`);
     if (!lastExecution) return false;
-    
+
     const policy = this.policies.get(policyId);
     if (!policy) return false;
-    
+
     return Date.now() - Number(lastExecution) < policy.cooldownPeriod;
   }
 
@@ -843,11 +843,11 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
     if (!policy.id || !policy.name) {
       throw new Error('Policy ID and name are required');
     }
-    
+
     if (policy.triggers.length === 0) {
       throw new Error('At least one trigger is required');
     }
-    
+
     if (policy.actions.length === 0) {
       throw new Error('At least one action is required');
     }
@@ -860,7 +860,7 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
 
   private async generateOptimizationRecommendations(optimizations: ResourceOptimization[]): Promise<OptimizationRecommendation[]> {
     const recommendations: OptimizationRecommendation[] = [];
-    
+
     const highSavingsOptimizations = optimizations.filter(o => o.savings > 50);
     if (highSavingsOptimizations.length > 0) {
       recommendations.push({
@@ -872,13 +872,13 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
         risks: ['Potential performance impact during transition']
       });
     }
-    
+
     return recommendations.sort((a, b) => a.priority - b.priority);
   }
 
   private async calculateEfficiencyMetrics(resources: ResourceMetrics[], historicalMetrics: any[]): Promise<EfficiencyMetrics> {
     const avgUtilization = resources.reduce((sum, r) => sum + r.utilization.efficiency, 0) / resources.length;
-    
+
     return {
       resourceUtilization: avgUtilization,
       costEfficiency: Math.random() * 30 + 70, // 70-100%
@@ -913,7 +913,7 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
   private async runPredictiveModel(model: PredictiveScalingModel, timeHorizon: number): Promise<ScalingPrediction[]> {
     const predictions: ScalingPrediction[] = [];
     const steps = Math.ceil(timeHorizon / 3600000); // Hourly predictions
-    
+
     for (let i = 1; i <= steps; i++) {
       predictions.push({
         timestamp: new Date(Date.now() + i * 3600000),
@@ -923,7 +923,7 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
         reasoning: `Based on ${model.algorithm} analysis of historical patterns`
       });
     }
-    
+
     return predictions;
   }
 
@@ -939,11 +939,11 @@ export class IntelligentAutoScaler extends AsyncSingletonService<IntelligentAuto
     if (this.monitoringInterval) {
       clearInterval(this.monitoringInterval);
     }
-    
+
     if (this.predictionInterval) {
       clearInterval(this.predictionInterval);
     }
-    
+
     logger.info('IntelligentAutoScaler shutdown completed');
   }
 }

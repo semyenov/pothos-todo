@@ -1,8 +1,8 @@
-import { EventEmitter } from 'events';
 import { createHash } from 'crypto';
 import { logger } from '@/logger.js';
 import { SecurityAuditSystem } from '../security/SecurityAudit.js';
 import { QuantumCryptographySystem } from '../quantum/QuantumCryptography.js';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface BlockchainBlock {
   index: number;
@@ -76,9 +76,8 @@ export interface BlockchainStats {
  * Blockchain-Based Audit Trail System
  * Provides immutable, tamper-proof audit logging with distributed consensus
  */
-export class BlockchainAuditSystem extends EventEmitter {
-  private static instance: BlockchainAuditSystem;
-  private config: BlockchainConfig;
+export class BlockchainAuditSystem extends EventEmitterSingletonService {
+  private config: BlockchainConfig | null = null;
   private blockchain: BlockchainBlock[] = [];
   private pendingRecords: AuditRecord[] = [];
   private validators: Set<string> = new Set();
@@ -87,7 +86,7 @@ export class BlockchainAuditSystem extends EventEmitter {
 
   // Cryptographic components
   private quantumCrypto?: QuantumCryptographySystem;
-  private securityAudit: SecurityAuditSystem;
+  private securityAudit: SecurityAuditSystem | null = null;
 
   // Mining and validation
   private miningInterval?: NodeJS.Timeout;
@@ -97,10 +96,13 @@ export class BlockchainAuditSystem extends EventEmitter {
     reject: (error: Error) => void;
   }> = [];
 
-  private constructor(config: BlockchainConfig) {
+  protected constructor() {
     super();
-    this.config = config;
     this.validatorId = `validator_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  public initialize(config: BlockchainConfig): void {
+    this.config = config;
     this.securityAudit = SecurityAuditSystem.getInstance();
 
     if (config.quantumSafe) {
@@ -114,18 +116,22 @@ export class BlockchainAuditSystem extends EventEmitter {
     this.initializeBlockchain();
   }
 
-  static initialize(config: BlockchainConfig): BlockchainAuditSystem {
-    if (!BlockchainAuditSystem.instance) {
-      BlockchainAuditSystem.instance = new BlockchainAuditSystem(config);
+  private ensureConfig(): BlockchainConfig {
+    if (!this.config) {
+      throw new Error('BlockchainAuditSystem not initialized');
     }
-    return BlockchainAuditSystem.instance;
+    return this.config;
+  }
+
+  private ensureSecurityAudit(): SecurityAuditSystem {
+    if (!this.securityAudit) {
+      throw new Error('BlockchainAuditSystem not initialized');
+    }
+    return this.securityAudit;
   }
 
   static getInstance(): BlockchainAuditSystem {
-    if (!BlockchainAuditSystem.instance) {
-      throw new Error('BlockchainAuditSystem not initialized');
-    }
-    return BlockchainAuditSystem.instance;
+    return super.getInstance() as BlockchainAuditSystem;
   }
 
   /**
@@ -329,10 +335,11 @@ export class BlockchainAuditSystem extends EventEmitter {
    * Initialize blockchain
    */
   private initializeBlockchain(): void {
+    const config = this.ensureConfig();
     logger.info('Initializing blockchain audit system', {
-      networkType: this.config.networkType,
-      consensus: this.config.consensus,
-      quantumSafe: this.config.quantumSafe,
+      networkType: config.networkType,
+      consensus: config.consensus,
+      quantumSafe: config.quantumSafe,
     });
 
     // Setup validators
@@ -434,7 +441,7 @@ export class BlockchainAuditSystem extends EventEmitter {
       index: block.index,
       records: block.data.length,
       hash: block.hash.substring(0, 16),
-      consensus: this.config.consensus,
+      consensus: this.ensureConfig().consensus,
     });
 
     this.emit('block:created', block);

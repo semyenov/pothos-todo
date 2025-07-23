@@ -1,9 +1,9 @@
 import { logger } from '@/logger';
-import { MetricsCollector, createMetricsCollector } from '../observability/MetricsCollector';
-import { LogAggregation, createLogAggregation } from '../observability/LogAggregation';
-import { DistributedTracing, createDistributedTracing } from '../observability/DistributedTracing';
-import { OpenTelemetryService, createObservabilityService } from '../observability/OpenTelemetryService';
-import { RealTimeCollaboration } from '../collaboration/RealTimeCollaboration';
+import { MetricsCollector, createMetricsCollector } from '../observability/MetricsCollector.js';
+import { LogAggregation, createLogAggregation } from '../observability/LogAggregation.js';
+import { DistributedTracing, createDistributedTracing } from '../observability/DistributedTracing.js';
+import { OpenTelemetryService, createObservabilityService } from '../observability/OpenTelemetryService.js';
+import { RealTimeCollaboration } from '../collaboration/RealTimeCollaboration.js';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import EventEmitter from 'events';

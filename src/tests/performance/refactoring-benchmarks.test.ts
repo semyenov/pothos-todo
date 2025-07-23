@@ -24,7 +24,7 @@ class OldStyleSingleton {
   }
 }
 
-class NewStyleSingleton extends SingletonService<NewStyleSingleton> {
+class NewStyleSingleton extends SingletonService {
   private value = 0;
 
   protected constructor() {
@@ -239,7 +239,7 @@ describe('Refactoring Performance Benchmarks', () => {
       private _priority: number;
 
       constructor(id: string, title: string, priority: number) {
-        super(id);
+        super(id, new Date(), new Date(), 0);
         this._title = title;
         this._priority = priority;
       }

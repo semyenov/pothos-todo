@@ -35,7 +35,7 @@ builder.queryType({
       resolve: async (query, root, args) => {
         return prisma.user.findUnique({
           ...query,
-          where: { id: args.id },
+          where: { id: args.id as string },
         });
       },
     }),

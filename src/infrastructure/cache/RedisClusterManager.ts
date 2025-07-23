@@ -6,6 +6,7 @@
 import { logger } from "../../lib/unjs-utils.js";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { SingletonService } from '../core/SingletonService.js';
 
 export interface CacheNode {
   id: string;
@@ -45,12 +46,12 @@ export interface CacheCluster {
     replicationFactor: number;
     shardCount: number;
     maxMemoryPolicy:
-      | "allkeys-lru"
-      | "volatile-lru"
-      | "allkeys-lfu"
-      | "volatile-lfu"
-      | "volatile-ttl"
-      | "noeviction";
+    | "allkeys-lru"
+    | "volatile-lru"
+    | "allkeys-lfu"
+    | "volatile-lfu"
+    | "volatile-ttl"
+    | "noeviction";
     persistence: {
       enabled: boolean;
       type: "rdb" | "aof" | "both";
@@ -87,15 +88,15 @@ export interface CacheCluster {
 export interface CacheOperation {
   id: string;
   type:
-    | "get"
-    | "set"
-    | "del"
-    | "exists"
-    | "expire"
-    | "ttl"
-    | "scan"
-    | "pipeline"
-    | "transaction";
+  | "get"
+  | "set"
+  | "del"
+  | "exists"
+  | "expire"
+  | "ttl"
+  | "scan"
+  | "pipeline"
+  | "transaction";
   key?: string;
   pattern?: string;
   keys?: string[];
@@ -225,7 +226,7 @@ export interface DistributedLock {
 /**
  * Advanced Redis Cluster Manager for distributed caching
  */
-export class RedisClusterManager {
+export class RedisClusterManager extends SingletonService {
   private clusters: Map<string, CacheCluster> = new Map();
   private nodes: Map<string, CacheNode> = new Map();
   private policies: Map<string, CachePolicy> = new Map();
@@ -243,16 +244,12 @@ export class RedisClusterManager {
     }
   > = new Map();
 
-  private static instance: RedisClusterManager | null = null;
-
-  static getInstance(): RedisClusterManager {
-    if (!RedisClusterManager.instance) {
-      RedisClusterManager.instance = new RedisClusterManager();
-    }
-    return RedisClusterManager.instance;
+  public static override getInstance(config: Re): RedisClusterManager {
+    return super.getInstance() as RedisClusterManager;
   }
 
-  private constructor() {
+  protected constructor() {
+    super();
     this.stats = {
       operations: {
         total: 0,
@@ -1442,14 +1439,14 @@ export class RedisClusterManager {
           cluster.nodes
             .filter((n) => n.status === "connected")
             .reduce((sum, n) => sum + n.metrics.performance.hitRate, 0) /
-            healthyNodes || 0;
+          healthyNodes || 0;
         cluster.metrics.avgHitRate = avgHitRate;
 
         const avgLatency =
           cluster.nodes
             .filter((n) => n.status === "connected")
             .reduce((sum, n) => sum + n.metrics.performance.avgLatency, 0) /
-            healthyNodes || 0;
+          healthyNodes || 0;
         cluster.metrics.avgLatency = avgLatency;
 
         // Monitoring disabled - would record cluster health metric here

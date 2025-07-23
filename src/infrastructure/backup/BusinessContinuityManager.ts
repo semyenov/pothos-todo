@@ -1,8 +1,8 @@
 import { logger } from '@/logger';
-import { BackupManager } from './BackupManager';
-import { DisasterRecoveryOrchestrator } from './DisasterRecoveryOrchestrator';
-import { MetricsCollector } from '../observability/MetricsCollector';
-import { DistributedTracing } from '../observability/DistributedTracing';
+import { BackupManager } from './BackupManager.js';
+import { DisasterRecoveryOrchestrator } from './DisasterRecoveryOrchestrator.js';
+import { MetricsCollector } from '../observability/MetricsCollector.js';
+import { DistributedTracing } from '../observability/DistributedTracing.js';
 import EventEmitter from 'events';
 
 export interface ComplianceFramework {

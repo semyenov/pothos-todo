@@ -1,9 +1,10 @@
-import { logger } from '@/logger';
-import { BackupManager, DisasterRecoveryPlan } from './BackupManager';
-import { MetricsCollector } from '../observability/MetricsCollector';
-import { DistributedTracing } from '../observability/DistributedTracing';
-import { AdvancedMonitoring } from '../monitoring/AdvancedMonitoring';
+import { logger } from '@/logger.js';
+import { BackupManager, type DisasterRecoveryPlan } from './BackupManager.js';
+import { MetricsCollector } from '../observability/MetricsCollector.js';
+import { DistributedTracing } from '../observability/DistributedTracing.js';
+import { AdvancedMonitoring } from '../monitoring/AdvancedMonitoring.js';
 import EventEmitter from 'events';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface RecoveryScenario {
   id: string;
@@ -110,8 +111,7 @@ export interface BusinessContinuityMetrics {
   };
 }
 
-export class DisasterRecoveryOrchestrator extends EventEmitter {
-  private static instance: DisasterRecoveryOrchestrator;
+export class DisasterRecoveryOrchestrator extends EventEmitterSingletonService<DisasterRecoveryOrchestrator> {
   private backupManager: BackupManager;
   private monitoring: AdvancedMonitoring;
   private metrics: MetricsCollector;
@@ -127,7 +127,7 @@ export class DisasterRecoveryOrchestrator extends EventEmitter {
   private metricsInterval?: NodeJS.Timeout;
   private testScheduler?: NodeJS.Timeout;
 
-  private constructor() {
+  protected constructor() {
     super();
     this.backupManager = BackupManager.getInstance();
     this.monitoring = AdvancedMonitoring.getInstance();
@@ -147,10 +147,7 @@ export class DisasterRecoveryOrchestrator extends EventEmitter {
   }
 
   public static getInstance(): DisasterRecoveryOrchestrator {
-    if (!DisasterRecoveryOrchestrator.instance) {
-      DisasterRecoveryOrchestrator.instance = new DisasterRecoveryOrchestrator();
-    }
-    return DisasterRecoveryOrchestrator.instance;
+    return super.getInstance();
   }
 
   /**

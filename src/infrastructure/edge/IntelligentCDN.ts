@@ -1,8 +1,8 @@
-import { EventEmitter } from 'events';
 import { createHash } from 'crypto';
 import { logger } from '@/logger.js';
-import { EdgeComputingSystem, EdgeLocation, EdgeRequest, EdgeResponse } from './EdgeComputing.js';
+import { EdgeComputingSystem, type EdgeLocation, type EdgeRequest, type EdgeResponse } from './EdgeComputing.js';
 import { MetricsSystem } from '../observability/Metrics.js';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface CDNConfig {
   defaultTTL: number;
@@ -71,20 +71,22 @@ export interface PurgeRequest {
  * Intelligent CDN with GraphQL-aware caching
  * Provides smart caching, predictive prefetching, and optimized delivery
  */
-export class IntelligentCDN extends EventEmitter {
-  private static instance: IntelligentCDN;
-  private config: CDNConfig;
+export class IntelligentCDN extends EventEmitterSingletonService<IntelligentCDN> {
+  private config: CDNConfig | null = null;
   private caches: Map<string, Map<string, CacheEntry>> = new Map(); // locationId -> cache
   private cacheStats: Map<string, CacheStats> = new Map();
-  private edgeSystem: EdgeComputingSystem;
-  private metrics: MetricsSystem;
+  private edgeSystem: EdgeComputingSystem | null = null;
+  private metrics: MetricsSystem | null = null;
   private mlPredictor?: CachePredictionModel;
 
-  private constructor(config: CDNConfig) {
+  protected constructor() {
     super();
+  }
+
+  public async initialize(config: CDNConfig): Promise<void> {
     this.config = config;
-    this.edgeSystem = EdgeComputingSystem.getInstance();
-    this.metrics = MetricsSystem.getInstance();
+    this.edgeSystem = await EdgeComputingSystem.getInstance();
+    this.metrics = await MetricsSystem.getInstance();
     
     if (config.enablePredictivePrefetch) {
       this.mlPredictor = new CachePredictionModel();
@@ -93,18 +95,29 @@ export class IntelligentCDN extends EventEmitter {
     this.initializeCaches();
   }
 
-  static initialize(config: CDNConfig): IntelligentCDN {
-    if (!IntelligentCDN.instance) {
-      IntelligentCDN.instance = new IntelligentCDN(config);
+  private ensureConfig(): CDNConfig {
+    if (!this.config) {
+      throw new Error('IntelligentCDN not initialized');
     }
-    return IntelligentCDN.instance;
+    return this.config;
+  }
+
+  private ensureEdgeSystem(): EdgeComputingSystem {
+    if (!this.edgeSystem) {
+      throw new Error('IntelligentCDN not initialized');
+    }
+    return this.edgeSystem;
+  }
+
+  private ensureMetrics(): MetricsSystem {
+    if (!this.metrics) {
+      throw new Error('IntelligentCDN not initialized');
+    }
+    return this.metrics;
   }
 
   static getInstance(): IntelligentCDN {
-    if (!IntelligentCDN.instance) {
-      throw new Error('IntelligentCDN not initialized');
-    }
-    return IntelligentCDN.instance;
+    return super.getInstance();
   }
 
   /**
@@ -112,7 +125,7 @@ export class IntelligentCDN extends EventEmitter {
    */
   async handleRequest(request: EdgeRequest): Promise<EdgeResponse> {
     const cacheKey = this.generateCacheKey(request);
-    const location = await this.edgeSystem.findOptimalLocation(request);
+    const location = await this.ensureEdgeSystem().findOptimalLocation(request);
     
     if (!location) {
       throw new Error('No available edge location');
@@ -144,7 +157,7 @@ export class IntelligentCDN extends EventEmitter {
     }
 
     // Predictive prefetch
-    if (this.config.enablePredictivePrefetch) {
+    if (this.ensureConfig().enablePredictivePrefetch) {
       this.predictivePrefetch(request, location);
     }
 
@@ -167,11 +180,11 @@ export class IntelligentCDN extends EventEmitter {
     
     if (!queryInfo.isCacheable) {
       // Forward to origin for mutations/subscriptions
-      return this.edgeSystem.handleGraphQLAtEdge(operation, request);
+      return this.ensureEdgeSystem().handleGraphQLAtEdge(operation, request);
     }
 
     const cacheKey = this.generateGraphQLCacheKey(operation);
-    const location = await this.edgeSystem.findOptimalLocation(request);
+    const location = await this.ensureEdgeSystem().findOptimalLocation(request);
     
     if (!location) {
       throw new Error('No available edge location');
@@ -185,7 +198,7 @@ export class IntelligentCDN extends EventEmitter {
     }
 
     // Execute query
-    const response = await this.edgeSystem.handleGraphQLAtEdge(operation, request);
+    const response = await this.ensureEdgeSystem().handleGraphQLAtEdge(operation, request);
 
     // Cache with dependencies
     if (response.status === 200) {
@@ -274,7 +287,7 @@ export class IntelligentCDN extends EventEmitter {
       .filter(p => p.probability > 0.7) // Only high probability
       .map(async (prediction) => {
         for (const locationId of prediction.locations) {
-          const location = this.edgeSystem.getLocation(locationId);
+          const location = this.ensureEdgeSystem().getLocation(locationId);
           if (location) {
             try {
               const request: EdgeRequest = {
@@ -471,13 +484,13 @@ export class IntelligentCDN extends EventEmitter {
     }
 
     // Apply cache strategies
-    for (const strategy of this.config.cacheStrategies) {
+    for (const strategy of this.ensureConfig().cacheStrategies) {
       if (this.matchesStrategy(request, strategy)) {
         return strategy.ttl;
       }
     }
 
-    return this.config.defaultTTL;
+    return this.ensureConfig().defaultTTL;
   }
 
   /**
@@ -544,7 +557,7 @@ export class IntelligentCDN extends EventEmitter {
     const vary = ['accept', 'accept-encoding'];
     
     // Add from cache strategies
-    for (const strategy of this.config.cacheStrategies) {
+    for (const strategy of this.ensureConfig().cacheStrategies) {
       if (this.matchesStrategy(request, strategy) && strategy.vary) {
         vary.push(...strategy.vary);
       }
@@ -665,7 +678,7 @@ export class IntelligentCDN extends EventEmitter {
     location: EdgeLocation
   ): Promise<EdgeResponse> {
     // Use edge computing system to fetch
-    return this.edgeSystem.executeFunction('origin-fetch', request);
+    return this.ensureEdgeSystem().executeFunction('origin-fetch', request);
   }
 
   /**
@@ -698,7 +711,7 @@ export class IntelligentCDN extends EventEmitter {
     }
 
     // Check if matches any cache strategy
-    return this.config.cacheStrategies.some(s => this.matchesStrategy(request, s));
+    return this.ensureConfig().cacheStrategies.some(s => this.matchesStrategy(request, s));
   }
 
   /**
@@ -708,7 +721,7 @@ export class IntelligentCDN extends EventEmitter {
     const stats = this.cacheStats.get(locationId);
     if (!stats) return false;
 
-    const maxSize = this.config.maxCacheSize;
+    const maxSize = this.ensureConfig().maxCacheSize;
     
     if (stats.totalSize + requiredSize <= maxSize) {
       return true;
@@ -735,7 +748,7 @@ export class IntelligentCDN extends EventEmitter {
     const entries = Array.from(cache.entries());
 
     // Sort by eviction strategy
-    switch (this.config.purgeStrategy) {
+    switch (this.ensureConfig().purgeStrategy) {
       case 'lru':
         entries.sort((a, b) => 
           a[1].metadata.lastAccessed.getTime() - b[1].metadata.lastAccessed.getTime()
@@ -792,10 +805,10 @@ export class IntelligentCDN extends EventEmitter {
     }
 
     // Record metrics
-    this.metrics.record('cacheHits', event === 'hit' ? 1 : 0, {
+    this.ensureMetrics().record('cacheHits', event === 'hit' ? 1 : 0, {
       location: locationId,
     });
-    this.metrics.record('cacheMisses', event === 'miss' ? 1 : 0, {
+    this.ensureMetrics().record('cacheMisses', event === 'miss' ? 1 : 0, {
       location: locationId,
     });
   }

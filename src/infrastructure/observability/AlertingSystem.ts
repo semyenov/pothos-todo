@@ -1,8 +1,9 @@
 import { EventEmitter } from 'events';
 import { logger } from '@/logger.js';
-import { AnomalyDetectionSystem, Anomaly } from './AnomalyDetection.js';
-import { SLOMonitoringSystem, SLOStatus } from './SLOMonitoring.js';
+import { AnomalyDetectionSystem, type Anomaly } from './AnomalyDetection.js';
+import { SLOMonitoringSystem, type SLOStatus } from './SLOMonitoring.js';
 import { MetricsSystem } from './Metrics.js';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 export interface Alert {
   id: string;
@@ -71,8 +72,7 @@ export interface AlertCorrelation {
 /**
  * Intelligent Alerting System with ML-based correlation
  */
-export class AlertingSystem extends EventEmitter {
-  private static instance: AlertingSystem;
+export class AlertingSystem extends EventEmitterSingletonService<AlertingSystem> {
   private rules: Map<string, AlertRule> = new Map();
   private activeAlerts: Map<string, Alert> = new Map();
   private alertHistory: Alert[] = [];
@@ -84,7 +84,7 @@ export class AlertingSystem extends EventEmitter {
   private sloSystem: SLOMonitoringSystem;
   private metricsSystem: MetricsSystem;
 
-  private constructor() {
+  protected constructor() {
     super();
     this.anomalySystem = AnomalyDetectionSystem.getInstance();
     this.sloSystem = SLOMonitoringSystem.getInstance();
@@ -94,10 +94,7 @@ export class AlertingSystem extends EventEmitter {
   }
 
   static getInstance(): AlertingSystem {
-    if (!AlertingSystem.instance) {
-      AlertingSystem.instance = new AlertingSystem();
-    }
-    return AlertingSystem.instance;
+    return super.getInstance();
   }
 
   /**

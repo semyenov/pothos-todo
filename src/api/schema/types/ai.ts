@@ -225,3 +225,57 @@ export const ProductivityReportInput = builder.inputType('ProductivityReportInpu
     timeRange: t.string({ defaultValue: '30d' }),
   }),
 });
+
+// NLP Command Result Types
+export const NLPCommandResultType = builder.objectType('NLPCommandResult', {
+  fields: (t) => ({
+    success: t.exposeBoolean('success'),
+    action: t.exposeString('action'),
+    confidence: t.exposeFloat('confidence'),
+    result: t.field({
+      type: 'JSON',
+      resolve: (result) => result.result,
+    }),
+    message: t.exposeString('message'),
+    metadata: t.field({
+      type: 'JSON',
+      resolve: (result) => result.metadata || {},
+    }),
+  }),
+});
+
+export const NLPSuggestionType = builder.objectType('NLPSuggestion', {
+  fields: (t) => ({
+    id: t.exposeString('id'),
+    text: t.exposeString('text'),
+    confidence: t.exposeFloat('confidence'),
+    category: t.exposeString('category'),
+    priority: t.exposeString('priority'),
+    metadata: t.field({
+      type: 'JSON',
+      resolve: (suggestion) => suggestion.metadata || {},
+    }),
+  }),
+});
+
+// Todo with AI Predictions Type
+export const TodoWithPredictionsType = builder.objectType('TodoWithPredictions', {
+  fields: (t) => ({
+    id: t.exposeString('id'),
+    title: t.exposeString('title'),
+    description: t.exposeString('description', { nullable: true }),
+    priority: t.exposeString('priority'),
+    status: t.exposeString('status'),
+    dueDate: t.expose('dueDate', { type: 'DateTime', nullable: true }),
+    createdAt: t.expose('createdAt', { type: 'DateTime' }),
+    updatedAt: t.expose('updatedAt', { type: 'DateTime' }),
+    predictions: t.field({
+      type: 'JSON',
+      resolve: (todo) => todo.predictions || {},
+    }),
+    aiMetadata: t.field({
+      type: 'JSON',
+      resolve: (todo) => todo.aiMetadata || {},
+    }),
+  }),
+});

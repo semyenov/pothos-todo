@@ -3,29 +3,19 @@ import type { Redis as RedisClient, RedisOptions } from 'ioredis';
 import { destr } from 'destr';
 // import { env } from '@/config/env.validation.js';
 import { logger } from '../../lib/unjs-utils.js';
-// import { AsyncSingletonService } from '@/infrastructure/core/SingletonService.js';
+import { AsyncSingletonService } from '../core/SingletonService.js';
 
 export interface CacheOptions {
   ttl?: number; // Time to live in seconds
   tags?: string[]; // Tags for cache invalidation
 }
 
-export class CacheManager {
-  private client: RedisClient | null = null;
+export class CacheManager extends AsyncSingletonService<CacheManager> {
+  private client!: RedisClient;
   public isConnected = false;
 
-  private static instance: CacheManager | null = null;
-  
   protected constructor() {
-    // Removed super() call
-  }
-
-  public static async getInstance(): Promise<CacheManager> {
-    if (!CacheManager.instance) {
-      CacheManager.instance = new CacheManager();
-      await CacheManager.instance.connect();
-    }
-    return CacheManager.instance;
+    super();
   }
 
   public async connect(): Promise<void> {
@@ -78,7 +68,7 @@ export class CacheManager {
   public async disconnect(): Promise<void> {
     if (this.client) {
       await this.client.quit();
-      this.client = null;
+      this.client = {} as RedisClient;
       this.isConnected = false;
       logger.info('Redis disconnected');
     }
@@ -91,7 +81,7 @@ export class CacheManager {
     if (!this.isEnabled()) return null;
 
     try {
-      const value = await this.client!.get(key);
+      const value = await this.client.get(key);
       if (!value) return null;
 
       return destr<T>(value);
@@ -116,9 +106,9 @@ export class CacheManager {
       const serialized = JSON.stringify(value);
 
       if (ttl > 0) {
-        await this.client!.setex(key, ttl, serialized);
+        await this.client.setex(key, ttl, serialized);
       } else {
-        await this.client!.set(key, serialized);
+        await this.client.set(key, serialized);
       }
 
       // Handle tags for cache invalidation

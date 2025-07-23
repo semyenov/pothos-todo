@@ -1,5 +1,5 @@
 import type { SpanOptions } from '@opentelemetry/api';
-import { AsyncSingletonService } from '@/lib/base/AsyncSingletonService.js';
+import { AsyncSingletonService } from '@/infrastructure/core/AsyncSingletonService.js';
 import { createLogger } from '@/lib/logger.js';
 import { RedisClusterManager } from '@/infrastructure/cache/RedisClusterManager.js';
 import { DistributedTracing } from '@/infrastructure/observability/DistributedTracing.js';
@@ -463,12 +463,12 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     try {
       this.redis = RedisClusterManager.getInstance();
       this.tracing = await DistributedTracing.getInstance();
-      
+
       await this.loadSchemas();
       await this.loadAlerts();
       await this.loadDashboards();
       await this.startBackgroundTasks();
-      
+
       logger.info('TimeSeriesDatabase initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize TimeSeriesDatabase:', error);
@@ -487,13 +487,13 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     return this.tracing.traceAsync('timeseries_create_schema', spanOptions, async () => {
       try {
         await this.validateSchema(schema);
-        
+
         this.schemas.set(schema.name, schema);
         await this.redis.setObject(`timeseries:schema:${schema.name}`, schema, 86400000 * 30); // 30 days
-        
+
         // Create indices for the schema
         await this.createSchemaIndices(schema);
-        
+
         logger.info(`Time series schema created: ${schema.name}`);
       } catch (error) {
         logger.error(`Failed to create schema ${schema.name}:`, error);
@@ -514,13 +514,13 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
       try {
         // Validate point against schema
         await this.validatePoint(metric, point);
-        
+
         // Add to write buffer
         if (!this.writeBuffer.has(metric)) {
           this.writeBuffer.set(metric, []);
         }
         this.writeBuffer.get(metric)!.push(point);
-        
+
         // Flush if buffer is getting large
         if (this.writeBuffer.get(metric)!.length >= 1000) {
           await this.flushMetric(metric);
@@ -547,13 +547,13 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
         for (const point of points) {
           await this.validatePoint(metric, point);
         }
-        
+
         // Add to write buffer
         if (!this.writeBuffer.has(metric)) {
           this.writeBuffer.set(metric, []);
         }
         this.writeBuffer.get(metric)!.push(...points);
-        
+
         // Flush if buffer is getting large
         if (this.writeBuffer.get(metric)!.length >= 1000) {
           await this.flushMetric(metric);
@@ -585,10 +585,10 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
 
       try {
         const batchSize = request.options?.batchSize || 100;
-        
+
         for (let i = 0; i < request.metrics.length; i += batchSize) {
           const batch = request.metrics.slice(i, i + batchSize);
-          
+
           for (const metric of batch) {
             try {
               await this.writePoints(metric.name, metric.points);
@@ -604,7 +604,7 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
             }
           }
         }
-        
+
         result.duration = Date.now() - startTime;
         return result;
       } catch (error) {
@@ -628,29 +628,29 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     return this.tracing.traceAsync('timeseries_query', spanOptions, async () => {
       try {
         const startTime = Date.now();
-        
+
         // Get raw points from storage
         const rawPoints = await this.getRawPoints(query);
-        
+
         // Apply filters
         let filteredPoints = await this.applyFilters(rawPoints, query.filters || []);
-        
+
         // Apply downsampling if needed
         if (query.downsample || query.resolution) {
           filteredPoints = await this.downsamplePoints(filteredPoints, query);
         }
-        
+
         // Apply aggregation
         const aggregatedPoints = await this.aggregatePoints(filteredPoints, query);
-        
+
         // Apply fill option
         const filledPoints = await this.fillMissingPoints(aggregatedPoints, query);
-        
+
         // Apply limit and offset
         const limitedPoints = this.applyLimitOffset(filledPoints, query);
-        
+
         const executionTime = Date.now() - startTime;
-        
+
         return {
           metric: query.metric,
           points: limitedPoints,
@@ -682,7 +682,7 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
       try {
         const queryPromises = queries.map(query => this.query(query));
         const results = await Promise.allSettled(queryPromises);
-        
+
         return results.map((result, index) => {
           if (result.status === 'fulfilled') {
             return result.value;
@@ -705,23 +705,23 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
         startTime: this.parseTimeRange(timeRange.from),
         endTime: this.parseTimeRange(timeRange.to)
       };
-      
+
       const result = await this.query(query);
       const values = result.points.map(p => p.value).filter(v => v !== null) as number[];
-      
+
       if (values.length === 0) {
         throw new Error(`No data found for metric ${metric} in the specified time range`);
       }
-      
+
       // Calculate statistics
       const statistics = this.calculateStatistics(values);
-      
+
       // Calculate distribution
       const distribution = this.calculateDistribution(values);
-      
+
       // Calculate trends
       const trends = this.calculateTrends(result.points);
-      
+
       return {
         metric,
         timeRange,
@@ -738,10 +738,10 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
   async createAlert(alert: TimeSeriesAlert): Promise<void> {
     try {
       await this.validateAlert(alert);
-      
+
       this.alerts.set(alert.id, alert);
       await this.redis.setObject(`timeseries:alert:${alert.id}`, alert, 86400000 * 30); // 30 days
-      
+
       logger.info(`Time series alert created: ${alert.name} (${alert.id})`);
     } catch (error) {
       logger.error(`Failed to create alert ${alert.id}:`, error);
@@ -752,10 +752,10 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
   async createDashboard(dashboard: MetricDashboard): Promise<void> {
     try {
       await this.validateDashboard(dashboard);
-      
+
       this.dashboards.set(dashboard.id, dashboard);
       await this.redis.setObject(`timeseries:dashboard:${dashboard.id}`, dashboard, 86400000 * 30); // 30 days
-      
+
       logger.info(`Dashboard created: ${dashboard.name} (${dashboard.id})`);
     } catch (error) {
       logger.error(`Failed to create dashboard ${dashboard.id}:`, error);
@@ -769,16 +769,16 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
       if (!alert || !alert.enabled) {
         return;
       }
-      
+
       const result = await this.query(alert.query);
       const shouldAlert = await this.evaluateAlertCondition(alert.condition, result);
-      
+
       if (shouldAlert) {
         await this.triggerAlert(alert, result);
       } else {
         await this.clearAlert(alert);
       }
-      
+
       alert.state.lastEvaluation = new Date();
       await this.redis.setObject(`timeseries:alert:${alertId}`, alert, 86400000 * 30);
     } catch (error) {
@@ -790,7 +790,7 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     if (!schema.name || schema.fields.length === 0) {
       throw new Error('Schema name and fields are required');
     }
-    
+
     // Validate field types
     for (const field of schema.fields) {
       if (!['float', 'integer', 'string', 'boolean'].includes(field.type)) {
@@ -805,14 +805,14 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
       // Allow points for metrics without explicit schema
       return;
     }
-    
+
     // Validate required tags
     for (const tag of schema.tags) {
       if (tag.required && (!point.tags || !point.tags[tag.name])) {
         throw new Error(`Required tag missing: ${tag.name}`);
       }
     }
-    
+
     // Validate fields
     if (point.fields) {
       for (const [fieldName, value] of Object.entries(point.fields)) {
@@ -844,24 +844,24 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
         }
         break;
     }
-    
+
     // Validation rules
     if (field.validation) {
       if (field.validation.min !== undefined && typeof value === 'number' && value < field.validation.min) {
         throw new Error(`Field ${field.name} must be at least ${field.validation.min}`);
       }
-      
+
       if (field.validation.max !== undefined && typeof value === 'number' && value > field.validation.max) {
         throw new Error(`Field ${field.name} must be at most ${field.validation.max}`);
       }
-      
+
       if (field.validation.pattern && typeof value === 'string') {
         const regex = new RegExp(field.validation.pattern);
         if (!regex.test(value)) {
           throw new Error(`Field ${field.name} does not match pattern: ${field.validation.pattern}`);
         }
       }
-      
+
       if (field.validation.enum && !field.validation.enum.includes(value)) {
         throw new Error(`Field ${field.name} must be one of: ${field.validation.enum.join(', ')}`);
       }
@@ -879,24 +879,24 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     if (!points || points.length === 0) {
       return;
     }
-    
+
     try {
       // Store points in Redis with time-based keys
       const batches = this.batchPointsByTime(points);
-      
+
       for (const [timeKey, batchPoints] of batches) {
         const key = `timeseries:data:${metric}:${timeKey}`;
         await this.redis.listPush(key, batchPoints);
-        
+
         // Set expiration based on retention policy
         const schema = this.schemas.get(metric);
         const retention = schema?.retention?.duration || 86400000 * 30; // 30 days default
         await this.redis.expire(key, Math.ceil(retention / 1000));
       }
-      
+
       // Clear buffer
       this.writeBuffer.set(metric, []);
-      
+
       logger.debug(`Flushed ${points.length} points for metric ${metric}`);
     } catch (error) {
       logger.error(`Failed to flush metric ${metric}:`, error);
@@ -905,40 +905,40 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
 
   private batchPointsByTime(points: TimeSeriesPoint[]): Map<string, TimeSeriesPoint[]> {
     const batches = new Map<string, TimeSeriesPoint[]>();
-    
+
     for (const point of points) {
       // Group by hour
       const hour = Math.floor(point.timestamp / 3600000) * 3600000;
       const timeKey = hour.toString();
-      
+
       if (!batches.has(timeKey)) {
         batches.set(timeKey, []);
       }
       batches.get(timeKey)!.push(point);
     }
-    
+
     return batches;
   }
 
   private async getRawPoints(query: TimeSeriesQuery): Promise<TimeSeriesPoint[]> {
     const points: TimeSeriesPoint[] = [];
-    
+
     // Calculate time range keys
     const startHour = Math.floor(query.startTime / 3600000) * 3600000;
     const endHour = Math.floor(query.endTime / 3600000) * 3600000;
-    
+
     for (let hour = startHour; hour <= endHour; hour += 3600000) {
       const key = `timeseries:data:${query.metric}:${hour}`;
       const hourPoints = await this.redis.getList<TimeSeriesPoint>(key) || [];
-      
+
       // Filter by exact time range
-      const filteredPoints = hourPoints.filter(p => 
+      const filteredPoints = hourPoints.filter(p =>
         p.timestamp >= query.startTime && p.timestamp <= query.endTime
       );
-      
+
       points.push(...filteredPoints);
     }
-    
+
     return points.sort((a, b) => a.timestamp - b.timestamp);
   }
 
@@ -946,11 +946,11 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     if (filters.length === 0) {
       return points;
     }
-    
+
     return points.filter(point => {
       return filters.every(filter => {
         const tagValue = point.tags?.[filter.tag];
-        
+
         switch (filter.operator) {
           case 'equals':
             return tagValue === filter.value;
@@ -976,36 +976,36 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     if (!resolution) {
       return points;
     }
-    
+
     const aggregation = query.downsample?.aggregation || query.aggregation || AggregationFunction.AVG;
     const buckets = new Map<number, TimeSeriesPoint[]>();
-    
+
     // Group points into time buckets
     for (const point of points) {
       const bucketTime = Math.floor(point.timestamp / resolution) * resolution;
-      
+
       if (!buckets.has(bucketTime)) {
         buckets.set(bucketTime, []);
       }
       buckets.get(bucketTime)!.push(point);
     }
-    
+
     // Aggregate each bucket
     const aggregatedPoints: TimeSeriesPoint[] = [];
-    
+
     for (const [bucketTime, bucketPoints] of buckets) {
       const aggregatedValue = this.aggregateValues(
         bucketPoints.map(p => p.value),
         aggregation
       );
-      
+
       aggregatedPoints.push({
         timestamp: bucketTime,
         value: aggregatedValue,
         tags: bucketPoints[0].tags // Use first point's tags
       });
     }
-    
+
     return aggregatedPoints.sort((a, b) => a.timestamp - b.timestamp);
   }
 
@@ -1017,33 +1017,33 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
         tags: p.tags
       }));
     }
-    
+
     // Group by specified tags
     const groups = new Map<string, TimeSeriesPoint[]>();
-    
+
     for (const point of points) {
       const groupKey = query.groupBy.map(tag => point.tags?.[tag] || '').join('|');
-      
+
       if (!groups.has(groupKey)) {
         groups.set(groupKey, []);
       }
       groups.get(groupKey)!.push(point);
     }
-    
+
     // Aggregate each group
     const aggregatedPoints: AggregatedPoint[] = [];
-    
+
     for (const [groupKey, groupPoints] of groups) {
       const aggregation = query.aggregation || AggregationFunction.AVG;
       const aggregatedValue = this.aggregateValues(
         groupPoints.map(p => p.value),
         aggregation
       );
-      
+
       // Use the timestamp of the first point in the group
       const timestamp = groupPoints[0].timestamp;
       const tags = groupPoints[0].tags;
-      
+
       aggregatedPoints.push({
         timestamp,
         value: aggregatedValue,
@@ -1052,7 +1052,7 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
         aggregation
       });
     }
-    
+
     return aggregatedPoints.sort((a, b) => a.timestamp - b.timestamp);
   }
 
@@ -1060,7 +1060,7 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     if (values.length === 0) {
       return 0;
     }
-    
+
     switch (aggregation) {
       case AggregationFunction.SUM:
         return values.reduce((sum, v) => sum + v, 0);
@@ -1096,7 +1096,7 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
   private calculatePercentile(values: number[], percentile: number): number {
     const sorted = [...values].sort((a, b) => a - b);
     const index = (percentile / 100) * (sorted.length - 1);
-    
+
     if (Math.floor(index) === index) {
       return sorted[index];
     } else {
@@ -1110,26 +1110,26 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     if (!query.fill || query.fill === FillOption.NONE) {
       return points;
     }
-    
+
     const resolution = query.resolution || this.inferResolution(points);
     if (!resolution) {
       return points;
     }
-    
+
     const filledPoints: AggregatedPoint[] = [];
     let currentTime = query.startTime;
     let pointIndex = 0;
-    
+
     while (currentTime <= query.endTime) {
       const existingPoint = points.find(p => Math.abs(p.timestamp - currentTime) < resolution / 2);
-      
+
       if (existingPoint) {
         filledPoints.push(existingPoint);
         pointIndex++;
       } else {
         // Fill missing point
         let fillValue: number | null = null;
-        
+
         switch (query.fill) {
           case FillOption.ZERO:
             fillValue = 0;
@@ -1147,16 +1147,16 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
             fillValue = null;
             break;
         }
-        
+
         filledPoints.push({
           timestamp: currentTime,
           value: fillValue
         });
       }
-      
+
       currentTime += resolution;
     }
-    
+
     return filledPoints;
   }
 
@@ -1164,7 +1164,7 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     // Find surrounding points
     let before: AggregatedPoint | null = null;
     let after: AggregatedPoint | null = null;
-    
+
     for (const point of points) {
       if (point.timestamp < timestamp && (!before || point.timestamp > before.timestamp)) {
         before = point;
@@ -1173,26 +1173,26 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
         after = point;
       }
     }
-    
+
     if (!before || !after || before.value === null || after.value === null) {
       return null;
     }
-    
+
     const ratio = (timestamp - before.timestamp) / (after.timestamp - before.timestamp);
     return before.value + (after.value - before.value) * ratio;
   }
 
   private applyLimitOffset(points: AggregatedPoint[], query: TimeSeriesQuery): AggregatedPoint[] {
     let result = points;
-    
+
     if (query.offset) {
       result = result.slice(query.offset);
     }
-    
+
     if (query.limit) {
       result = result.slice(0, query.limit);
     }
-    
+
     return result;
   }
 
@@ -1200,31 +1200,31 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     if (points.length < 2) {
       return 60000; // 1 minute default
     }
-    
+
     const intervals = [];
     for (let i = 1; i < Math.min(points.length, 10); i++) {
       intervals.push(points[i].timestamp - points[i - 1].timestamp);
     }
-    
+
     return intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length;
   }
 
   private generateQueryWarnings(query: TimeSeriesQuery, points: AggregatedPoint[]): string[] {
     const warnings: string[] = [];
-    
+
     if (points.length === 0) {
       warnings.push('No data found for the specified time range');
     }
-    
+
     if (query.limit && points.length === query.limit) {
       warnings.push('Result set truncated due to limit');
     }
-    
+
     const timeRange = query.endTime - query.startTime;
     if (timeRange > 86400000 * 30) { // 30 days
       warnings.push('Large time range may impact query performance');
     }
-    
+
     return warnings;
   }
 
@@ -1234,7 +1234,7 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     const sum = values.reduce((s, v) => s + v, 0);
     const avg = sum / count;
     const variance = values.reduce((s, v) => s + Math.pow(v - avg, 2), 0) / count;
-    
+
     return {
       count,
       min: sorted[0],
@@ -1260,16 +1260,16 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     const range = max - min;
     const bucketCount = Math.min(10, Math.ceil(Math.sqrt(values.length)));
     const bucketSize = range / bucketCount;
-    
+
     const buckets: DistributionBucket[] = [];
     const outliers: OutlierData[] = [];
-    
+
     // Create distribution buckets
     for (let i = 0; i < bucketCount; i++) {
       const bucketMin = min + i * bucketSize;
       const bucketMax = min + (i + 1) * bucketSize;
       const count = values.filter(v => v >= bucketMin && v < bucketMax).length;
-      
+
       buckets.push({
         min: bucketMin,
         max: bucketMax,
@@ -1277,11 +1277,11 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
         percentage: (count / values.length) * 100
       });
     }
-    
+
     // Identify outliers (values beyond 2 standard deviations)
     const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
     const stddev = Math.sqrt(values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length);
-    
+
     for (const value of values) {
       const zscore = Math.abs((value - mean) / stddev);
       if (zscore > 2) {
@@ -1292,7 +1292,7 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
         });
       }
     }
-    
+
     return { buckets, outliers };
   }
 
@@ -1304,13 +1304,13 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
         confidence: 0
       };
     }
-    
+
     const values = points.filter(p => p.value !== null).map(p => p.value) as number[];
     const firstValue = values[0];
     const lastValue = values[values.length - 1];
     const change = lastValue - firstValue;
     const percentChange = Math.abs(change) / firstValue * 100;
-    
+
     return {
       direction: change > 0 ? 'up' : change < 0 ? 'down' : 'stable',
       magnitude: percentChange,
@@ -1322,15 +1322,15 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     if (result.points.length === 0) {
       return condition.type === 'absence';
     }
-    
+
     const latestPoint = result.points[result.points.length - 1];
-    
+
     switch (condition.type) {
       case 'threshold':
         if (!latestPoint.value || !condition.threshold || !condition.operator) {
           return false;
         }
-        
+
         switch (condition.operator) {
           case 'greater_than':
             return latestPoint.value > condition.threshold;
@@ -1343,18 +1343,18 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
           default:
             return false;
         }
-        
+
       case 'change':
         // Implement change detection logic
         return false;
-        
+
       case 'anomaly':
         // Implement anomaly detection logic
         return false;
-        
+
       case 'absence':
         return result.points.length === 0;
-        
+
       default:
         return false;
     }
@@ -1364,7 +1364,7 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     alert.state.status = 'alerting';
     alert.state.lastAlert = new Date();
     alert.state.alertCount++;
-    
+
     // Execute alert actions
     for (const action of alert.actions) {
       try {
@@ -1373,7 +1373,7 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
         logger.error(`Failed to execute alert action for ${alert.id}:`, error);
       }
     }
-    
+
     logger.warn(`Alert triggered: ${alert.name}`, {
       alertId: alert.id,
       value: result.points[result.points.length - 1]?.value
@@ -1384,7 +1384,7 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     if (alert.state.status === 'alerting') {
       alert.state.status = 'ok';
       alert.state.message = undefined;
-      
+
       logger.info(`Alert cleared: ${alert.name}`, { alertId: alert.id });
     }
   }
@@ -1439,16 +1439,16 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     if (typeof time === 'number') {
       return time;
     }
-    
+
     // Parse relative time strings like "now-1h", "now-1d", etc.
     if (time === 'now') {
       return Date.now();
     }
-    
+
     if (time.startsWith('now-')) {
       const duration = time.slice(4);
       const now = Date.now();
-      
+
       if (duration.endsWith('m')) {
         return now - parseInt(duration) * 60000;
       } else if (duration.endsWith('h')) {
@@ -1457,7 +1457,7 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
         return now - parseInt(duration) * 86400000;
       }
     }
-    
+
     // Try to parse as ISO date
     return new Date(time).getTime();
   }
@@ -1496,7 +1496,7 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
         await this.flushMetric(metric);
       }
     }, 30000);
-    
+
     // Evaluate alerts every minute
     this.alertInterval = setInterval(async () => {
       for (const alertId of this.alerts.keys()) {
@@ -1509,16 +1509,16 @@ export class TimeSeriesDatabase extends AsyncSingletonService<TimeSeriesDatabase
     if (this.flushInterval) {
       clearInterval(this.flushInterval);
     }
-    
+
     if (this.alertInterval) {
       clearInterval(this.alertInterval);
     }
-    
+
     // Flush remaining data
     for (const metric of this.writeBuffer.keys()) {
       await this.flushMetric(metric);
     }
-    
+
     logger.info('TimeSeriesDatabase shutdown completed');
   }
 }

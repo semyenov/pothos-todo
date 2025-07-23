@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
-import { SingletonService, AsyncSingletonService } from '../SingletonService';
+import { SingletonService, AsyncSingletonService } from '../SingletonService.js';
 
 // Test implementations
 class TestService extends SingletonService<TestService> {

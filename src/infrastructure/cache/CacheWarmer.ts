@@ -6,7 +6,7 @@ import { logger } from '../../lib/unjs-utils.js';
 // import { DistributedTracing } from '../observability/DistributedTracing';
 // import { Container } from '../container/Container';
 import { hash } from 'ohash';
-import EventEmitter from 'events';
+import { EventEmitterSingletonService } from '../core/SingletonService.js';
 
 // Temporary interfaces for missing dependencies
 interface DistributedCacheManager {
@@ -120,14 +120,13 @@ export interface PredictiveModel {
   }>;
 }
 
-export class CacheWarmer extends EventEmitter {
-  private static instance: CacheWarmer;
-  private distributedCache: DistributedCacheManager | null;
-  private graphqlCache: GraphQLCacheManager | null;
-  private localCache: AdvancedCacheManager | null;
-  private metrics: MetricsCollector | null;
-  private tracing: DistributedTracing | null;
-  private container: Container | null;
+export class CacheWarmer extends EventEmitterSingletonService<CacheWarmer> {
+  private distributedCache: DistributedCacheManager | null = null;
+  private graphqlCache: GraphQLCacheManager | null = null;
+  private localCache: AdvancedCacheManager | null = null;
+  private metrics: MetricsCollector | null = null;
+  private tracing: DistributedTracing | null = null;
+  private container: Container | null = null;
 
   private strategies: Map<string, CacheWarmingStrategy> = new Map();
   private userPatterns: Map<string, UserBehaviorPattern> = new Map();
@@ -155,8 +154,12 @@ export class CacheWarmer extends EventEmitter {
     fromCache: boolean;
   }> = [];
 
-  private constructor() {
+  protected constructor() {
     super();
+    this.initialize();
+  }
+
+  private initialize(): void {
     this.distributedCache = null; // DistributedCacheManager.getInstance();
     this.graphqlCache = null; // GraphQLCacheManager.getInstance();
     this.localCache = null; // AdvancedCacheManager.getAdvancedInstance();
@@ -170,10 +173,7 @@ export class CacheWarmer extends EventEmitter {
   }
 
   public static getInstance(): CacheWarmer {
-    if (!CacheWarmer.instance) {
-      CacheWarmer.instance = new CacheWarmer();
-    }
-    return CacheWarmer.instance;
+    return super.getInstance();
   }
 
   /**

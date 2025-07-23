@@ -1,10 +1,18 @@
 import type { SpanOptions } from '@opentelemetry/api';
-import { AsyncSingletonService } from '@/lib/base/AsyncSingletonService.js';
-import { createLogger } from '@/lib/logger.js';
 import { RedisClusterManager } from '@/infrastructure/cache/RedisClusterManager.js';
 import { DistributedTracing } from '@/infrastructure/observability/DistributedTracing.js';
+import { AsyncSingletonService } from '@/infrastructure/core/SingletonService.js';
+import { createLogger } from '@/logger.js';
 
-const logger = createLogger('ElasticsearchManager');
+const logger = createLogger({
+  service: 'elasticsearch',
+  version: '1.0.0',
+  dir: '.out/logs',
+  files: {
+    debug: 'debug.log',
+    error: 'errors.log',
+  },
+});
 
 export interface SearchIndex {
   name: string;
@@ -333,61 +341,57 @@ export interface JoinFieldQuery {
   id: string;
 }
 
-export interface GeoDistanceQuery {
+export type GeoDistanceQuery = {
   distance: string;
   distanceType?: 'arc' | 'plane';
   optimizeBbox?: 'memory' | 'indexed' | 'none';
   validationMethod?: 'ignore_malformed' | 'coerce' | 'strict';
   boost?: number;
-  [field: string]: any;
-}
+} & Record<string, GeoPoint>;
 
-export interface GeoBoundingBoxQuery {
+export type GeoBoundingBoxQuery = {
   validationMethod?: 'ignore_malformed' | 'coerce' | 'strict';
   type?: 'memory' | 'indexed';
   boost?: number;
-  [field: string]: {
-    topLeft: GeoPoint;
-    bottomRight: GeoPoint;
-  };
-}
+} & Record<string, {
+  topLeft: GeoPoint;
+  bottomRight: GeoPoint;
+}>;
 
-export interface GeoPolygonQuery {
+export type GeoPolygonQuery = {
   validationMethod?: 'ignore_malformed' | 'coerce' | 'strict';
   boost?: number;
-  [field: string]: {
-    points: GeoPoint[];
-  };
-}
+} & Record<string, {
+  points: GeoPoint[];
+}>;
 
-export interface GeoShapeQuery {
+export type GeoShapeQuery = {
   boost?: number;
   ignoreUnmapped?: boolean;
-  [field: string]: {
-    shape?: GeoShape;
-    indexedShape?: IndexedShape;
-    relation?: 'intersects' | 'disjoint' | 'within' | 'contains';
-  };
-}
+} & Record<string, {
+  shape?: GeoShape;
+  indexedShape?: IndexedShape;
+  relation?: 'intersects' | 'disjoint' | 'within' | 'contains';
+}>;
 
-export interface GeoPoint {
+export type GeoPoint = {
   lat: number;
   lon: number;
-}
+};
 
-export interface GeoShape {
+export type GeoShape = {
   type: string;
   coordinates: any;
-}
+};
 
-export interface IndexedShape {
+export type IndexedShape = {
   id: string;
   index: string;
   path: string;
   routing?: string;
-}
+};
 
-export interface MoreLikeThisQuery {
+export type MoreLikeThisQuery = {
   fields?: string[];
   like: LikeClause[];
   unlike?: LikeClause[];
@@ -403,7 +407,7 @@ export interface MoreLikeThisQuery {
   boostTerms?: number;
   include?: boolean;
   boost?: number;
-}
+};
 
 export interface LikeClause {
   index?: string;
@@ -416,28 +420,28 @@ export interface LikeClause {
   versionType?: string;
 }
 
-export interface ScriptQuery {
+export type ScriptQuery = {
   script: Script;
   boost?: number;
-}
+};
 
-export interface Script {
+export type Script = {
   source?: string;
   id?: string;
   params?: Record<string, any>;
   lang?: string;
-}
+};
 
-export interface WrapperQuery {
+export type WrapperQuery = {
   query: string;
-}
+};
 
-export interface ConstantScoreQuery {
+export type ConstantScoreQuery = {
   filter: QueryDSL;
   boost?: number;
-}
+};
 
-export interface FunctionScoreQuery {
+export type FunctionScoreQuery = {
   query?: QueryDSL;
   boost?: number;
   functions?: FunctionScore[];
@@ -445,9 +449,9 @@ export interface FunctionScoreQuery {
   scoreMode?: 'multiply' | 'sum' | 'avg' | 'first' | 'max' | 'min';
   boostMode?: 'multiply' | 'replace' | 'sum' | 'avg' | 'max' | 'min';
   minScore?: number;
-}
+};
 
-export interface FunctionScore {
+export type FunctionScore = {
   filter?: QueryDSL;
   weight?: number;
   randomScore?: RandomScore;
@@ -456,50 +460,50 @@ export interface FunctionScore {
   linearDecay?: DecayFunction;
   expDecay?: DecayFunction;
   gaussDecay?: DecayFunction;
-}
+};
 
-export interface RandomScore {
+export type RandomScore = {
   seed?: number;
   field?: string;
-}
+};
 
-export interface FieldValueFactor {
+export type FieldValueFactor = {
   field: string;
   factor?: number;
   modifier?: 'none' | 'log' | 'log1p' | 'log2p' | 'ln' | 'ln1p' | 'ln2p' | 'square' | 'sqrt' | 'reciprocal';
   missing?: number;
-}
+};
 
-export interface ScriptScore {
+export type ScriptScore = {
   script: Script;
 }
 
-export interface DecayFunction {
+export type DecayFunction = {
   [field: string]: {
     origin: any;
     scale: any;
     offset?: any;
     decay?: number;
   };
-}
+};
 
-export interface BoostingQuery {
+export type BoostingQuery = {
   positive: QueryDSL;
   negative: QueryDSL;
   negativeBoost: number;
-}
+};
 
-export interface DisMaxQuery {
+export type DisMaxQuery = {
   queries: QueryDSL[];
   tieBreaker?: number;
   boost?: number;
-}
+};
 
-export interface SortClause {
+export type SortClause = {
   [field: string]: SortOptions | string;
 }
 
-export interface SortOptions {
+export type SortOptions = {
   order?: 'asc' | 'desc';
   mode?: 'min' | 'max' | 'sum' | 'avg' | 'median';
   numericType?: 'long' | 'double' | 'date' | 'date_nanos';
@@ -507,16 +511,16 @@ export interface SortOptions {
   unmappedType?: string;
   nested?: NestedSort;
   format?: string;
-}
+};
 
-export interface NestedSort {
+export type NestedSort = {
   path: string;
   filter?: QueryDSL;
   maxChildren?: number;
   nested?: NestedSort;
-}
+};
 
-export interface HighlightConfig {
+export type HighlightConfig = {
   fields: Record<string, HighlightField>;
   type?: 'unified' | 'plain' | 'fvh';
   fragmenter?: 'simple' | 'span';
@@ -538,9 +542,9 @@ export interface HighlightConfig {
   matchedFields?: string[];
   phraseLimit?: number;
   maxAnalyzedOffset?: number;
-}
+};
 
-export interface HighlightField {
+export type HighlightField = {
   type?: 'unified' | 'plain' | 'fvh';
   fragmenter?: 'simple' | 'span';
   fragmentSize?: number;
@@ -561,9 +565,9 @@ export interface HighlightField {
   matchedFields?: string[];
   phraseLimit?: number;
   maxAnalyzedOffset?: number;
-}
+};
 
-export interface AggregationConfig {
+export type AggregationConfig = {
   terms?: TermsAggregation;
   histogram?: HistogramAggregation;
   dateHistogram?: DateHistogramAggregation;
@@ -599,7 +603,7 @@ export interface AggregationConfig {
   aggregations?: Record<string, AggregationConfig>;
 }
 
-export interface TermsAggregation {
+export type TermsAggregation = {
   field?: string;
   script?: Script;
   size?: number;
@@ -614,9 +618,9 @@ export interface TermsAggregation {
   valueType?: string;
   collectMode?: 'depth_first' | 'breadth_first';
   executionHint?: 'map' | 'global_ordinals' | 'global_ordinals_hash' | 'global_ordinals_low_cardinality';
-}
+};
 
-export interface HistogramAggregation {
+export type HistogramAggregation = {
   field?: string;
   script?: Script;
   interval: number;
@@ -627,7 +631,7 @@ export interface HistogramAggregation {
   keyed?: boolean;
 }
 
-export interface DateHistogramAggregation {
+export type DateHistogramAggregation = {
   field?: string;
   script?: Script;
   interval?: string;
@@ -640,9 +644,9 @@ export interface DateHistogramAggregation {
   timeZone?: string;
   format?: string;
   keyed?: boolean;
-}
+};
 
-export interface RangeAggregation {
+export type RangeAggregation = {
   field?: string;
   script?: Script;
   ranges: Array<{
@@ -653,7 +657,7 @@ export interface RangeAggregation {
   keyed?: boolean;
 }
 
-export interface DateRangeAggregation {
+export type DateRangeAggregation = {
   field?: string;
   script?: Script;
   ranges: Array<{
@@ -685,7 +689,7 @@ export interface ReverseNestedAggregation {
   path?: string;
 }
 
-export interface GlobalAggregation {}
+export interface GlobalAggregation { }
 
 export interface MissingAggregation {
   field: string;
@@ -1144,34 +1148,22 @@ export interface FuzzyOptions {
   unicodeAware?: boolean;
 }
 
-export class ElasticsearchManager extends AsyncSingletonService<ElasticsearchManager> {
+export class ElasticsearchManager extends AsyncSingletonService {
   private redis!: RedisClusterManager;
   private tracing!: DistributedTracing;
   private client: any = null; // Elasticsearch client placeholder
   private indices: Map<string, SearchIndex> = new Map();
   private templates: Map<string, IndexTemplate> = new Map();
-  private connectionConfig: ElasticsearchConfig;
-
-  protected constructor() {
-    super();
-    this.connectionConfig = this.getDefaultConfig();
-  }
-
-  static async getInstance(): Promise<ElasticsearchManager> {
-    return super.getInstanceAsync(async (instance) => {
-      await instance.initialize();
-    });
-  }
 
   private async initialize(): Promise<void> {
     try {
       this.redis = RedisClusterManager.getInstance();
-      this.tracing = await DistributedTracing.getInstance();
-      
+      this.tracing = DistributedTracing.getInstance();
+
       await this.connectToElasticsearch();
       await this.loadIndexDefinitions();
       await this.createDefaultIndices();
-      
+
       logger.info('ElasticsearchManager initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize ElasticsearchManager:', error);
@@ -1191,14 +1183,14 @@ export class ElasticsearchManager extends AsyncSingletonService<ElasticsearchMan
       try {
         // Validate index definition
         await this.validateIndexDefinition(index);
-        
+
         // Create index in Elasticsearch
         await this.createElasticsearchIndex(index);
-        
+
         // Store index definition
         this.indices.set(index.name, index);
         await this.redis.setObject(`search:index:${index.name}`, index, 86400000 * 7); // 7 days
-        
+
         logger.info(`Search index created: ${index.name}`);
       } catch (error) {
         logger.error(`Failed to create search index ${index.name}:`, error);
@@ -1220,18 +1212,18 @@ export class ElasticsearchManager extends AsyncSingletonService<ElasticsearchMan
       try {
         // Validate query
         await this.validateSearchQuery(query);
-        
+
         // Execute search
         const response = await this.executeSearch<T>(indexName, query);
-        
+
         // Cache results if appropriate
         if (this.shouldCacheQuery(query)) {
           await this.cacheSearchResults(indexName, query, response);
         }
-        
+
         // Log search metrics
         await this.logSearchMetrics(indexName, query, response);
-        
+
         return response;
       } catch (error) {
         logger.error(`Search failed on index ${indexName}:`, error);
@@ -1251,14 +1243,14 @@ export class ElasticsearchManager extends AsyncSingletonService<ElasticsearchMan
     return this.tracing.traceAsync('elasticsearch_multi_search', spanOptions, async () => {
       try {
         const responses: SearchResponse<T>[] = [];
-        
+
         // Execute searches in parallel
-        const searchPromises = searches.map(({ index, query }) => 
+        const searchPromises = searches.map(({ index, query }) =>
           this.search<T>(index, query)
         );
-        
+
         const results = await Promise.allSettled(searchPromises);
-        
+
         for (const result of results) {
           if (result.status === 'fulfilled') {
             responses.push(result.value);
@@ -1268,7 +1260,7 @@ export class ElasticsearchManager extends AsyncSingletonService<ElasticsearchMan
             responses.push(this.createEmptyResponse<T>());
           }
         }
-        
+
         return responses;
       } catch (error) {
         logger.error('Multi-search failed:', error);
@@ -1290,10 +1282,10 @@ export class ElasticsearchManager extends AsyncSingletonService<ElasticsearchMan
       try {
         // Validate document
         await this.validateDocument(indexName, document);
-        
+
         // Index document
         await this.indexElasticsearchDocument(indexName, document, id);
-        
+
         logger.debug(`Document indexed in ${indexName}`, { id });
       } catch (error) {
         logger.error(`Failed to index document in ${indexName}:`, error);
@@ -1314,13 +1306,13 @@ export class ElasticsearchManager extends AsyncSingletonService<ElasticsearchMan
       try {
         // Validate bulk operations
         await this.validateBulkOperations(operations);
-        
+
         // Execute bulk operation
         const response = await this.executeBulkOperation(operations);
-        
+
         // Log bulk metrics
         await this.logBulkMetrics(operations, response);
-        
+
         return response;
       } catch (error) {
         logger.error('Bulk index operation failed:', error);
@@ -1341,7 +1333,7 @@ export class ElasticsearchManager extends AsyncSingletonService<ElasticsearchMan
     return this.tracing.traceAsync('elasticsearch_delete_document', spanOptions, async () => {
       try {
         await this.deleteElasticsearchDocument(indexName, id);
-        
+
         logger.debug(`Document deleted from ${indexName}`, { id });
       } catch (error) {
         logger.error(`Failed to delete document from ${indexName}:`, error);
@@ -1362,7 +1354,7 @@ export class ElasticsearchManager extends AsyncSingletonService<ElasticsearchMan
     return this.tracing.traceAsync('elasticsearch_update_document', spanOptions, async () => {
       try {
         await this.updateElasticsearchDocument(indexName, id, updates);
-        
+
         logger.debug(`Document updated in ${indexName}`, { id });
       } catch (error) {
         logger.error(`Failed to update document in ${indexName}:`, error);
@@ -1392,13 +1384,13 @@ export class ElasticsearchManager extends AsyncSingletonService<ElasticsearchMan
   async createIndexTemplate(template: IndexTemplate): Promise<void> {
     try {
       await this.validateIndexTemplate(template);
-      
+
       // Create template in Elasticsearch
       await this.createElasticsearchTemplate(template);
-      
+
       this.templates.set(template.name, template);
       await this.redis.setObject(`search:template:${template.name}`, template, 86400000 * 30); // 30 days
-      
+
       logger.info(`Index template created: ${template.name}`);
     } catch (error) {
       logger.error(`Failed to create index template ${template.name}:`, error);
@@ -1418,7 +1410,7 @@ export class ElasticsearchManager extends AsyncSingletonService<ElasticsearchMan
     return this.tracing.traceAsync('elasticsearch_reindex', spanOptions, async () => {
       try {
         await this.executeReindex(sourceIndex, targetIndex, query);
-        
+
         logger.info(`Reindex completed: ${sourceIndex} -> ${targetIndex}`);
       } catch (error) {
         logger.error(`Reindex failed: ${sourceIndex} -> ${targetIndex}:`, error);
@@ -1702,7 +1694,7 @@ export class ElasticsearchManager extends AsyncSingletonService<ElasticsearchMan
       // Close Elasticsearch client connection
       logger.info('Closing Elasticsearch connection');
     }
-    
+
     logger.info('ElasticsearchManager shutdown completed');
   }
 }
