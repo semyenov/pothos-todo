@@ -1,10 +1,8 @@
-import { GraphQLSchema, buildSchema, execute, parse, validate } from 'graphql';
-import { makeExecutableSchema } from '@graphql-tools/schema';
-import { logger } from '../lib/unjs-utils.js';
-import chalk from 'chalk';
-import { writeFile, readFile } from 'fs/promises';
-import { join } from 'path';
-import fetch from 'node-fetch';
+import { logger } from "../lib/unjs-utils.js";
+import chalk from "chalk";
+import { writeFile, readFile } from "fs/promises";
+import { join } from "path";
+import fetch from "node-fetch";
 
 // Test types
 export interface TestCase {
@@ -33,7 +31,7 @@ export interface TestSuite {
 export interface TestResult {
   suite: string;
   test: string;
-  status: 'passed' | 'failed' | 'skipped';
+  status: "passed" | "failed" | "skipped";
   duration: number;
   error?: string;
   actualResult?: any;
@@ -64,16 +62,18 @@ export class FederationTestRunner {
   private results: TestResult[] = [];
   private startTime: number = 0;
 
-  constructor(private options: {
-    verbose?: boolean;
-    bail?: boolean;
-    timeout?: number;
-    coverage?: boolean;
-  } = {}) {}
+  constructor(
+    private options: {
+      verbose?: boolean;
+      bail?: boolean;
+      timeout?: number;
+      coverage?: boolean;
+    } = {}
+  ) {}
 
   async runSuite(suite: TestSuite): Promise<TestResult[]> {
     const suiteResults: TestResult[] = [];
-    
+
     logger.info(chalk.blue(`\nRunning test suite: ${suite.name}`));
     if (suite.description) {
       logger.info(chalk.dim(suite.description));
@@ -84,7 +84,7 @@ export class FederationTestRunner {
       try {
         await suite.beforeAll();
       } catch (error) {
-        logger.error(chalk.red('beforeAll hook failed:'), error);
+        logger.error(chalk.red("beforeAll hook failed:"), error);
         if (this.options.bail) {
           throw error;
         }
@@ -97,21 +97,21 @@ export class FederationTestRunner {
         try {
           await this.executeQuery(suite.endpoint, query);
         } catch (error) {
-          logger.error(chalk.red('Setup query failed:'), error);
+          logger.error(chalk.red("Setup query failed:"), error);
         }
       }
     }
 
     // Run tests
-    const testsToRun = suite.tests.filter(test => !test.skipReason);
-    const onlyTests = testsToRun.filter(test => test.only);
+    const testsToRun = suite.tests.filter((test) => !test.skipReason);
+    const onlyTests = testsToRun.filter((test) => test.only);
     const actualTests = onlyTests.length > 0 ? onlyTests : testsToRun;
 
     for (const test of actualTests) {
       const result = await this.runTest(suite, test);
       suiteResults.push(result);
-      
-      if (result.status === 'failed' && this.options.bail) {
+
+      if (result.status === "failed" && this.options.bail) {
         break;
       }
     }
@@ -122,7 +122,7 @@ export class FederationTestRunner {
         try {
           await this.executeQuery(suite.endpoint, query);
         } catch (error) {
-          logger.error(chalk.red('Teardown query failed:'), error);
+          logger.error(chalk.red("Teardown query failed:"), error);
         }
       }
     }
@@ -132,7 +132,7 @@ export class FederationTestRunner {
       try {
         await suite.afterAll();
       } catch (error) {
-        logger.error(chalk.red('afterAll hook failed:'), error);
+        logger.error(chalk.red("afterAll hook failed:"), error);
       }
     }
 
@@ -144,11 +144,11 @@ export class FederationTestRunner {
     const startTime = Date.now();
 
     if (test.skipReason) {
-      this.logTestResult('skipped', test.name, test.skipReason);
+      this.logTestResult("skipped", test.name, test.skipReason);
       return {
         suite: suite.name,
         test: test.name,
-        status: 'skipped',
+        status: "skipped",
         duration: 0,
       };
     }
@@ -165,8 +165,8 @@ export class FederationTestRunner {
       // Check for GraphQL errors
       if (result.errors && test.expectedErrors) {
         const actualErrors = result.errors.map((e: any) => e.message);
-        const passed = test.expectedErrors.every(expected =>
-          actualErrors.some(actual => actual.includes(expected))
+        const passed = test.expectedErrors.every((expected) =>
+          actualErrors.some((actual: string) => actual.includes(expected))
         );
 
         if (!passed) {
@@ -175,7 +175,9 @@ export class FederationTestRunner {
           );
         }
       } else if (result.errors && !test.expectedErrors) {
-        throw new Error(`Unexpected errors: ${JSON.stringify(result.errors, null, 2)}`);
+        throw new Error(
+          `Unexpected errors: ${JSON.stringify(result.errors, null, 2)}`
+        );
       } else if (!result.errors && test.expectedErrors) {
         throw new Error(`Expected errors but none were returned`);
       }
@@ -190,26 +192,27 @@ export class FederationTestRunner {
       }
 
       const duration = Date.now() - startTime;
-      this.logTestResult('passed', test.name, `${duration}ms`);
+      this.logTestResult("passed", test.name, `${duration}ms`);
 
       return {
         suite: suite.name,
         test: test.name,
-        status: 'passed',
+        status: "passed",
         duration,
         actualResult: result.data,
         expectedResult: test.expectedResult,
       };
     } catch (error) {
       const duration = Date.now() - startTime;
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      
-      this.logTestResult('failed', test.name, errorMessage);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      this.logTestResult("failed", test.name, errorMessage);
 
       return {
         suite: suite.name,
         test: test.name,
-        status: 'failed',
+        status: "failed",
         duration,
         error: errorMessage,
       };
@@ -222,9 +225,9 @@ export class FederationTestRunner {
     variables?: Record<string, any>
   ): Promise<any> {
     const response = await fetch(endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({ query, variables }),
     });
@@ -240,12 +243,15 @@ export class FederationTestRunner {
     endpoint: string,
     query: string,
     variables?: Record<string, any>,
-    timeout: number
+    timeout?: number
   ): Promise<any> {
     return Promise.race([
       this.executeQuery(endpoint, query, variables),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`Test timeout after ${timeout}ms`)), timeout)
+        setTimeout(
+          () => reject(new Error(`Test timeout after ${timeout}ms`)),
+          timeout
+        )
       ),
     ]);
   }
@@ -255,13 +261,13 @@ export class FederationTestRunner {
     if (a == null || b == null) return false;
     if (typeof a !== typeof b) return false;
 
-    if (typeof a === 'object') {
+    if (typeof a === "object") {
       const keysA = Object.keys(a);
       const keysB = Object.keys(b);
-      
+
       if (keysA.length !== keysB.length) return false;
-      
-      return keysA.every(key => this.deepEqual(a[key], b[key]));
+
+      return keysA.every((key) => this.deepEqual(a[key], b[key]));
     }
 
     return false;
@@ -269,31 +275,44 @@ export class FederationTestRunner {
 
   private generateDiff(expected: any, actual: any): string {
     // Simple diff for now
-    return `Expected:\n${JSON.stringify(expected, null, 2)}\n\nActual:\n${JSON.stringify(actual, null, 2)}`;
+    return `Expected:\n${JSON.stringify(
+      expected,
+      null,
+      2
+    )}\n\nActual:\n${JSON.stringify(actual, null, 2)}`;
   }
 
-  private logTestResult(status: 'passed' | 'failed' | 'skipped', name: string, detail?: string) {
-    const icon = status === 'passed' ? '✓' : status === 'failed' ? '✗' : '○';
-    const color = status === 'passed' ? chalk.green : status === 'failed' ? chalk.red : chalk.gray;
-    
+  private logTestResult(
+    status: "passed" | "failed" | "skipped",
+    name: string,
+    detail?: string
+  ) {
+    const icon = status === "passed" ? "✓" : status === "failed" ? "✗" : "○";
+    const color =
+      status === "passed"
+        ? chalk.green
+        : status === "failed"
+        ? chalk.red
+        : chalk.gray;
+
     let message = `  ${color(icon)} ${name}`;
-    if (detail && (this.options.verbose || status === 'failed')) {
+    if (detail && (this.options.verbose || status === "failed")) {
       message += chalk.dim(` - ${detail}`);
     }
-    
+
     logger.info(message);
   }
 
   async generateReport(): Promise<TestReport> {
     const duration = Date.now() - this.startTime;
-    const passed = this.results.filter(r => r.status === 'passed').length;
-    const failed = this.results.filter(r => r.status === 'failed').length;
-    const skipped = this.results.filter(r => r.status === 'skipped').length;
+    const passed = this.results.filter((r) => r.status === "passed").length;
+    const failed = this.results.filter((r) => r.status === "failed").length;
+    const skipped = this.results.filter((r) => r.status === "skipped").length;
 
     const report: TestReport = {
       timestamp: new Date().toISOString(),
       duration,
-      suites: new Set(this.results.map(r => r.suite)).size,
+      suites: new Set(this.results.map((r) => r.suite)).size,
       tests: this.results.length,
       passed,
       failed,
@@ -309,7 +328,7 @@ export class FederationTestRunner {
     return report;
   }
 
-  private async calculateCoverage(): Promise<TestReport['coverage']> {
+  private async calculateCoverage(): Promise<TestReport["coverage"]> {
     // This would analyze the executed queries against the schema
     // For now, returning placeholder values
     return {
@@ -325,16 +344,16 @@ export class FederationTestRunner {
     this.startTime = Date.now();
     this.results = [];
 
-    logger.info(chalk.bold('\n🧪 Running Federation Tests\n'));
+    logger.info(chalk.bold("\n🧪 Running Federation Tests\n"));
 
     for (const suite of suites) {
       await this.runSuite(suite);
     }
 
     const report = await this.generateReport();
-    
+
     // Print summary
-    logger.info(chalk.bold('\n📊 Test Summary\n'));
+    logger.info(chalk.bold("\n📊 Test Summary\n"));
     logger.info(`Total: ${report.tests}`);
     logger.info(chalk.green(`Passed: ${report.passed}`));
     if (report.failed > 0) {
@@ -346,7 +365,7 @@ export class FederationTestRunner {
     logger.info(`Duration: ${(report.duration / 1000).toFixed(2)}s`);
 
     // Save report
-    const reportPath = join(process.cwd(), 'federation-test-report.json');
+    const reportPath = join(process.cwd(), "federation-test-report.json");
     await writeFile(reportPath, JSON.stringify(report, null, 2));
     logger.info(chalk.dim(`\nReport saved to: ${reportPath}`));
 
@@ -357,9 +376,9 @@ export class FederationTestRunner {
 // Test assertions
 export class Assertions {
   static hasField(result: any, path: string): void {
-    const parts = path.split('.');
+    const parts = path.split(".");
     let current = result;
-    
+
     for (const part of parts) {
       if (current == null || !(part in current)) {
         throw new Error(`Field "${path}" not found in result`);
@@ -371,26 +390,35 @@ export class Assertions {
   static equals(actual: any, expected: any, message?: string): void {
     if (actual !== expected) {
       throw new Error(
-        message || `Expected ${JSON.stringify(expected)} but got ${JSON.stringify(actual)}`
+        message ||
+          `Expected ${JSON.stringify(expected)} but got ${JSON.stringify(
+            actual
+          )}`
       );
     }
   }
 
   static includes(array: any[], item: any, message?: string): void {
     if (!array.includes(item)) {
-      throw new Error(message || `Array does not include ${JSON.stringify(item)}`);
+      throw new Error(
+        message || `Array does not include ${JSON.stringify(item)}`
+      );
     }
   }
 
   static matches(actual: string, pattern: RegExp, message?: string): void {
     if (!pattern.test(actual)) {
-      throw new Error(message || `"${actual}" does not match pattern ${pattern}`);
+      throw new Error(
+        message || `"${actual}" does not match pattern ${pattern}`
+      );
     }
   }
 
   static isNull(value: any, message?: string): void {
     if (value !== null) {
-      throw new Error(message || `Expected null but got ${JSON.stringify(value)}`);
+      throw new Error(
+        message || `Expected null but got ${JSON.stringify(value)}`
+      );
     }
   }
 
@@ -402,7 +430,9 @@ export class Assertions {
 
   static isEmpty(value: any[], message?: string): void {
     if (!Array.isArray(value) || value.length > 0) {
-      throw new Error(message || `Expected empty array but got ${JSON.stringify(value)}`);
+      throw new Error(
+        message || `Expected empty array but got ${JSON.stringify(value)}`
+      );
     }
   }
 
@@ -416,7 +446,9 @@ export class Assertions {
 // Test data generators
 export class TestDataGenerator {
   static randomString(length: number = 10): string {
-    return Math.random().toString(36).substring(2, length + 2);
+    return Math.random()
+      .toString(36)
+      .substring(2, length + 2);
   }
 
   static randomEmail(): string {
@@ -437,8 +469,13 @@ export class TestDataGenerator {
     return date.toISOString();
   }
 
-  static randomEnum<T>(values: T[]): T {
-    return values[this.randomInt(0, values.length - 1)];
+  static randomEnum<T>(values: T[]): T | undefined {
+    if (values.length === 0) {
+      return undefined;
+    }
+
+    const index = this.randomInt(0, values.length - 1);
+    return values[index];
   }
 }
 
@@ -446,22 +483,22 @@ export class TestDataGenerator {
 export class SnapshotTester {
   private snapshotDir: string;
 
-  constructor(snapshotDir: string = join(process.cwd(), '__snapshots__')) {
+  constructor(snapshotDir: string = join(process.cwd(), "__snapshots__")) {
     this.snapshotDir = snapshotDir;
   }
 
   async toMatchSnapshot(name: string, data: any): Promise<void> {
     const snapshotPath = join(this.snapshotDir, `${name}.json`);
-    
+
     try {
-      const existingSnapshot = await readFile(snapshotPath, 'utf-8');
+      const existingSnapshot = await readFile(snapshotPath, "utf-8");
       const existing = JSON.parse(existingSnapshot);
-      
+
       if (!this.deepEqual(existing, data)) {
         throw new Error(`Snapshot mismatch for "${name}"`);
       }
     } catch (error) {
-      if ((error as any).code === 'ENOENT') {
+      if ((error as any).code === "ENOENT") {
         // Create new snapshot
         await writeFile(snapshotPath, JSON.stringify(data, null, 2));
         logger.info(chalk.yellow(`Created new snapshot: ${name}`));
