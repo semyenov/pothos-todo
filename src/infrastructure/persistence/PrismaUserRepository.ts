@@ -1,53 +1,21 @@
 import { PrismaClient, type User as PrismaUser } from '@prisma/client';
 import type { UserRepository } from '../../domain/repositories/UserRepository.js';
 import { User } from '../../domain/aggregates/User.js';
+import { BaseRepository } from '../core/BaseRepository.js';
 
-export class PrismaUserRepository implements UserRepository {
-  constructor(private readonly prisma: PrismaClient) {}
-
-  async findById(id: string): Promise<User | null> {
-    const userData = await this.prisma.user.findUnique({
-      where: { id },
-    });
-
-    if (!userData) return null;
-
-    return this.mapToDomainEntity(userData);
+export class PrismaUserRepository 
+  extends BaseRepository<User, PrismaUser>
+  implements UserRepository {
+  
+  constructor(prisma: PrismaClient) {
+    super(prisma);
   }
 
-  async findByEmail(email: string): Promise<User | null> {
-    const userData = await this.prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (!userData) return null;
-
-    return this.mapToDomainEntity(userData);
+  protected getModelName(): string {
+    return 'user';
   }
 
-  async save(user: User): Promise<void> {
-    const data = {
-      email: user.email,
-      name: user.name,
-    };
-
-    await this.prisma.user.upsert({
-      where: { id: user.id },
-      update: data,
-      create: {
-        id: user.id,
-        ...data,
-      },
-    });
-  }
-
-  async delete(id: string): Promise<void> {
-    await this.prisma.user.delete({
-      where: { id },
-    });
-  }
-
-  private mapToDomainEntity(userData: PrismaUser): User {
+  protected mapToDomain(userData: PrismaUser): User {
     return new User(
       userData.id,
       userData.email,
@@ -55,5 +23,30 @@ export class PrismaUserRepository implements UserRepository {
       userData.createdAt,
       userData.updatedAt
     );
+  }
+
+  protected mapToCreateInput(user: User): any {
+    return {
+      email: user.email,
+      name: user.name,
+    };
+  }
+
+  protected mapToUpdateInput(user: User): any {
+    return {
+      email: user.email,
+      name: user.name,
+    };
+  }
+
+  // Additional method specific to UserRepository
+  async findByEmail(email: string): Promise<User | null> {
+    const userData = await this.getModel().findUnique({
+      where: { email },
+    });
+
+    if (!userData) return null;
+
+    return this.mapToDomain(userData);
   }
 }

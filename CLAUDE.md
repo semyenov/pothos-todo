@@ -710,6 +710,144 @@ Performance tests are located in `src/tests/performance/`. Run tests with:
 bun test src/tests/performance/
 ```
 
+## Refactoring and Code Quality
+
+### Base Classes for Code Reuse
+The project uses base classes to eliminate code duplication and enforce consistent patterns:
+
+#### SingletonService Pattern
+All infrastructure services extend from base singleton classes:
+```typescript
+// For synchronous services
+export class MyService extends SingletonService<MyService> {
+  protected constructor() {
+    super();
+  }
+  
+  static getInstance(): MyService {
+    return super.getInstance();
+  }
+}
+
+// For services requiring async initialization
+export class VectorStore extends AsyncSingletonService<VectorStore> {
+  static async getInstance(): Promise<VectorStore> {
+    return super.getInstanceAsync(async (instance) => {
+      await instance.initialize();
+    });
+  }
+}
+```
+
+#### BaseRepository Pattern
+All repositories extend BaseRepository for consistent CRUD operations:
+```typescript
+export class UserRepository extends BaseRepository<User, PrismaUser> {
+  protected getModelName(): string {
+    return 'user';
+  }
+  
+  protected mapToDomain(data: PrismaUser): User {
+    return new User(data.id, data.email, data.name);
+  }
+}
+```
+
+#### BaseAggregate Pattern
+Domain aggregates extend BaseAggregate for automatic timestamp and version management:
+```typescript
+export class Todo extends BaseAggregate {
+  update(updates: { title?: string; priority?: Priority }): void {
+    const hasChanges = this.updateFields(updates);
+    if (hasChanges) {
+      this.validate();
+      this.addDomainEvent(new TodoUpdated(this.id, updates));
+    }
+  }
+  
+  protected validate(): void {
+    this.ensureNotEmpty(this._title, 'title');
+    this.ensureInRange(this._priority, 0, 4, 'priority');
+  }
+}
+```
+
+### GraphQL Middleware
+Use composable middleware for authentication and authorization:
+```typescript
+// Simple authentication
+const resolver = authenticated(async (parent, args, context) => {
+  // context.user is guaranteed to exist
+  return todoService.create(context.user.id, args.input);
+});
+
+// With permissions and rate limiting
+const adminResolver = compose(
+  authenticated,
+  withPermissions(['admin']),
+  rateLimit({ window: 60000, max: 10 })
+)(resolver);
+
+// With ownership check
+const ownerResolver = ownsResource({
+  getOwnerId: async (args) => {
+    const todo = await todoService.findById(args.id);
+    return todo?.userId;
+  }
+})(resolver);
+```
+
+### Cache Management
+Use centralized cache invalidation helpers:
+```typescript
+// Automatic cache invalidation
+const mutation = withCacheInvalidation(
+  CachePatterns.TODO,
+  (result) => ({ entityId: result.id, userId: result.userId })
+)(resolver);
+
+// Batch invalidation
+await batchInvalidate([
+  { pattern: CachePatterns.TODO, data: { entityId: todo.id } },
+  { pattern: CachePatterns.USER, data: { userId } }
+]);
+```
+
+### DataLoader Factory
+Create DataLoaders using the factory pattern:
+```typescript
+const loaders = {
+  users: createBatchLoader(prisma, { modelName: 'user' }),
+  todosByUser: createRelationLoader(prisma, {
+    modelName: 'todo',
+    relationField: 'userId',
+    orderBy: { createdAt: 'desc' }
+  })
+};
+```
+
+### Refactoring Tools
+The project includes automated refactoring tools:
+
+```bash
+# Analyze codebase for refactoring opportunities
+bun run refactor:analyze
+
+# Preview migration changes (dry run)
+bun run refactor:migrate:dry
+
+# Apply migrations
+bun run refactor:migrate
+
+# Migrate specific patterns
+bun scripts/migrate-to-base-classes.ts --type=singleton --path=src/infrastructure
+```
+
+For detailed refactoring guidelines, see:
+- `REFACTORING_BEST_PRACTICES.md` - Best practices for using new patterns
+- `scripts/MIGRATION_SCRIPTS_README.md` - Guide for using migration scripts
+- `examples/migrations/` - Migration examples for different patterns
+
 ## Working with AR/VR Features
 The project includes AR/VR capabilities through the infrastructure layer. When implementing AR/VR features:
 - Use the AR/VR manager services in `src/infrastructure/ar/` and `src/infrastructure/vr/`

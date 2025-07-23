@@ -1,12 +1,13 @@
-import { AggregateRoot } from './base/AggregateRoot.js';
+import { BaseAggregate } from '../core/BaseAggregate.js';
 import { TodoCreated } from '../events/TodoCreated.js';
 import { TodoCompleted } from '../events/TodoCompleted.js';
 import { TodoDeleted } from '../events/TodoDeleted.js';
 import { TodoAssigned } from '../events/TodoAssigned.js';
 import { TodoUpdated } from '../events/TodoUpdated.js';
 import { Priority as PrismaPriority, TodoStatus as PrismaTodoStatus } from '@prisma/client';
+import { DueDate } from '../value-objects/DueDate.js';
 
-export class Todo extends AggregateRoot {
+export class Todo extends BaseAggregate {
   private _title: string;
   private _status: PrismaTodoStatus;
   private _priority: PrismaPriority;
@@ -15,8 +16,6 @@ export class Todo extends AggregateRoot {
   private _completedAt: Date | null;
   private _userId: string;
   private _todoListId: string | null;
-  private _createdAt: Date;
-  private _updatedAt: Date;
   private _tags: string[];
 
   constructor(
@@ -32,8 +31,9 @@ export class Todo extends AggregateRoot {
     completedAt: Date | null = null,
     createdAt: Date = new Date(),
     updatedAt: Date = new Date(),
+    version: number = 0,
   ) {
-    super(id);
+    super(id, createdAt, updatedAt, version);
     this._title = title;
     this._status = status;
     this._priority = priority;
@@ -41,8 +41,6 @@ export class Todo extends AggregateRoot {
     this._completedAt = completedAt;
     this._userId = userId;
     this._todoListId = todoListId;
-    this._createdAt = createdAt;
-    this._updatedAt = updatedAt;
     this._description = description;
     this._tags = tags;
   }
@@ -74,6 +72,7 @@ export class Todo extends AggregateRoot {
       completedAt,
       createdAt,
       updatedAt,
+      0, // Initial version
     );
 
     todo.addDomainEvent(
@@ -126,13 +125,6 @@ export class Todo extends AggregateRoot {
     return this._todoListId;
   }
 
-  get createdAt(): Date {
-    return this._createdAt;
-  }
-
-  get updatedAt(): Date {
-    return this._updatedAt;
-  }
 
   get description(): string | null {
     return this._description;
@@ -144,73 +136,68 @@ export class Todo extends AggregateRoot {
 
   public update(
     title?: string,
-    priority: PrismaPriority = PrismaPriority.MEDIUM,
-    dueDate?: Date,
+    priority?: PrismaPriority,
+    dueDate?: Date | null,
     description?: string | null,
     tags?: string[],
     status?: PrismaTodoStatus,
     completedAt?: Date | null,
     updatedBy?: string,
   ): void {
-    const updatedFields: Record<string, any> = {};
-    let hasChanges = false;
+    // Track what fields actually changed for the event
+    const changedFields: Record<string, any> = {};
+    const previousValues = {
+      title: this._title,
+      priority: this._priority,
+      status: this._status,
+      dueDate: this._dueDate,
+      tags: this._tags,
+      description: this._description,
+      completedAt: this._completedAt,
+    };
 
-    if (title && title !== this._title) {
-      this._title = title;
-      updatedFields.title = title;
-      hasChanges = true;
-    }
-
-    if (priority && priority !== this._priority) {
-      this._priority = priority;
-      updatedFields.priority = priority;
-      hasChanges = true;
-    }
-
-    if (status && status !== this._status) {
-      this._status = status;
-      updatedFields.status = status;
-      hasChanges = true;
-    }
-
-    if (dueDate !== undefined && (!dueDate || !this._dueDate || this._dueDate !== dueDate)) {
-      this._dueDate = dueDate;
-      updatedFields.dueDate = dueDate;
-      hasChanges = true;
-    }
-
-    if (tags && tags !== this._tags) {
-      this._tags = tags;
-      updatedFields.tags = tags;
-      hasChanges = true;
-    }
-
-    if (description && description !== this._description) {
-      this._description = description;
-      updatedFields.description = description;
-      hasChanges = true;
-    }
-
-    if (completedAt && completedAt !== this._completedAt) {
-      this._completedAt = completedAt;
-      updatedFields.completedAt = completedAt;
-      hasChanges = true;
-    }
-
-    if (updatedBy && updatedBy !== this._userId) {
-      this._userId = updatedBy;
-      updatedFields.updatedBy = updatedBy;
-      hasChanges = true;
-    } else if (updatedBy) {
-      updatedFields.updatedBy = updatedBy;
-    }
+    // Use BaseAggregate's updateFields method
+    const hasChanges = this.updateFields({
+      title,
+      priority,
+      status,
+      dueDate,
+      tags,
+      description,
+      completedAt,
+    });
 
     if (hasChanges) {
-      this._updatedAt = new Date();
+      // Build the changed fields for the event
+      if (title !== undefined && title !== previousValues.title) {
+        changedFields.title = title;
+      }
+      if (priority !== undefined && priority !== previousValues.priority) {
+        changedFields.priority = priority;
+      }
+      if (status !== undefined && status !== previousValues.status) {
+        changedFields.status = status;
+      }
+      if (dueDate !== undefined && dueDate !== previousValues.dueDate) {
+        changedFields.dueDate = dueDate;
+      }
+      if (tags !== undefined && tags !== previousValues.tags) {
+        changedFields.tags = tags;
+      }
+      if (description !== undefined && description !== previousValues.description) {
+        changedFields.description = description;
+      }
+      if (completedAt !== undefined && completedAt !== previousValues.completedAt) {
+        changedFields.completedAt = completedAt;
+      }
+      if (updatedBy) {
+        changedFields.updatedBy = updatedBy;
+      }
+
       this.addDomainEvent(
         new TodoUpdated(
           this.id,
-          updatedFields,
+          changedFields,
           updatedBy || this._userId,
           this.version
         )
@@ -227,14 +214,18 @@ export class Todo extends AggregateRoot {
       throw new Error(`Cannot complete todo from ${this._status} status`);
     }
 
-    this._status = PrismaTodoStatus.COMPLETED;
-    this._completedAt = completedAt || new Date();
-    this._updatedAt = new Date();
+    const completionDate = completedAt || new Date();
+    
+    // Use updateFields to track changes and update timestamp
+    this.updateFields({
+      status: PrismaTodoStatus.COMPLETED,
+      completedAt: completionDate,
+    });
 
     this.addDomainEvent(
       new TodoCompleted(
         this.id,
-        completedAt || new Date(),
+        completionDate,
         userId,
         this.version
       )
@@ -250,13 +241,15 @@ export class Todo extends AggregateRoot {
       throw new Error(`Cannot cancel todo from ${this._status} status`);
     }
 
-    this._status = PrismaTodoStatus.CANCELLED;
-    this._updatedAt = new Date();
+    // Use updateFields to track changes and update timestamp
+    this.updateFields({
+      status: PrismaTodoStatus.CANCELLED,
+    });
 
     this.addDomainEvent(
       new TodoUpdated(
         this.id,
-        { status: this._status },
+        { status: PrismaTodoStatus.CANCELLED },
         this._userId,
         this.version
       )
@@ -268,8 +261,10 @@ export class Todo extends AggregateRoot {
       return;
     }
 
-    this._todoListId = todoListId;
-    this._updatedAt = new Date();
+    // Use updateFields to track changes and update timestamp
+    this.updateFields({
+      todoListId,
+    });
 
     this.addDomainEvent(
       new TodoAssigned(
@@ -294,14 +289,40 @@ export class Todo extends AggregateRoot {
   }
 
   public isOverdue(): boolean {
-    return this._dueDate ? new Date(this._dueDate) < new Date() : false;
+    if (!this._dueDate) return false;
+    return new DueDate(this._dueDate).isOverdue();
   }
 
   public isDueToday(): boolean {
-    return this._dueDate ? new Date(this._dueDate).getDate() === new Date().getDate() && new Date(this._dueDate).getMonth() === new Date().getMonth() && new Date(this._dueDate).getFullYear() === new Date().getFullYear() : false;
+    if (!this._dueDate) return false;
+    return new DueDate(this._dueDate).isDueToday();
   }
 
   public isDueSoon(daysThreshold: number = 3): boolean {
-    return this._dueDate ? new Date(this._dueDate).getDate() + daysThreshold >= new Date().getDate() && new Date(this._dueDate).getMonth() === new Date().getMonth() && new Date(this._dueDate).getFullYear() === new Date().getFullYear() : false;
+    if (!this._dueDate) return false;
+    return new DueDate(this._dueDate).isDueSoon(daysThreshold);
+  }
+
+  /**
+   * Implement the abstract validate method from BaseAggregate
+   */
+  protected validate(): void {
+    this.ensureNotEmpty(this._title, 'title');
+    this.ensureNotEmpty(this._userId, 'userId');
+    
+    // Ensure title length is reasonable
+    if (this._title.length > 200) {
+      throw new Error('Title must not exceed 200 characters');
+    }
+    
+    // Ensure description length is reasonable
+    if (this._description && this._description.length > 1000) {
+      throw new Error('Description must not exceed 1000 characters');
+    }
+    
+    // Validate tags
+    if (this._tags.length > 10) {
+      throw new Error('Cannot have more than 10 tags');
+    }
   }
 }

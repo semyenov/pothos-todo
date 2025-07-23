@@ -1,0 +1,28 @@
+FROM oven/bun:1.2.10-alpine
+
+WORKDIR /app
+
+# Install curl for healthcheck
+RUN apk add --no-cache curl
+
+# Copy package files
+COPY package*.json ./
+COPY bun.lockb* ./
+
+# Install dependencies
+RUN bun install --frozen-lockfile
+
+# Copy source code (only what's needed for gateway)
+COPY src ./src
+COPY tsconfig.json ./
+COPY .env* ./
+
+# Expose port
+EXPOSE 4000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:4000/graphql?query=%7B__typename%7D || exit 1
+
+# Start the development gateway
+CMD ["bun", "run", "src/gateway/dev-gateway.ts"]

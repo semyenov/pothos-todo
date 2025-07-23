@@ -1,6 +1,7 @@
 import { logger } from '@/logger';
 import { QdrantClient } from '@qdrant/js-client-rest';
 import type { EmbeddingResult } from './EmbeddingService';
+import { AsyncSingletonService } from '@/infrastructure/core/SingletonService.js';
 
 export interface VectorSearchOptions {
   limit?: number;
@@ -14,18 +15,18 @@ export interface VectorDocument {
   payload: Record<string, any>;
 }
 
-export class VectorStore {
-  private static instance: VectorStore | null = null;
+export class VectorStore extends AsyncSingletonService<VectorStore> {
   private client: QdrantClient | null = null;
   private isConnected = false;
 
-  private constructor() { }
+  protected constructor() {
+    super();
+  }
 
-  public static getInstance(): VectorStore {
-    if (!VectorStore.instance) {
-      VectorStore.instance = new VectorStore();
-    }
-    return VectorStore.instance;
+  public static async getInstance(): Promise<VectorStore> {
+    return super.getInstanceAsync(async (instance) => {
+      await instance.connect();
+    });
   }
 
   public async connect(url: string = 'http://localhost:6333'): Promise<void> {

@@ -3,6 +3,12 @@ import { createYoga } from "graphql-yoga";
 import { schema } from "./schema.js";
 import { logger } from "../../lib/unjs-utils.js";
 import { Container } from "../../infrastructure/container/Container.js";
+import { loadAppConfig } from "../../config/index.js";
+import { 
+  createMonitoringPlugin, 
+  startMetricsServer, 
+  initializeOpenTelemetry 
+} from "../../federation/monitoring.js";
 
 const PORT = process.env.USER_SUBGRAPH_PORT || 4001;
 
@@ -15,10 +21,19 @@ const PORT = process.env.USER_SUBGRAPH_PORT || 4001;
  * - User preferences
  */
 export async function startUserSubgraph() {
+  // Load configuration first
+  await loadAppConfig();
+  
   // Initialize container and dependencies
   const container = Container.getInstance();
 
-  // Create Yoga server
+  // Initialize OpenTelemetry
+  initializeOpenTelemetry('user-subgraph');
+  
+  // Start metrics server
+  startMetricsServer(9091);
+  
+  // Create Yoga server with monitoring
   const yoga = createYoga({
     schema,
     context: async ({ request }) => {
@@ -30,6 +45,7 @@ export async function startUserSubgraph() {
     },
     graphqlEndpoint: "/graphql",
     logging: logger.withTag("user-subgraph"),
+    plugins: [createMonitoringPlugin('user')],
   });
 
   // Create HTTP server

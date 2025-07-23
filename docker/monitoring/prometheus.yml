@@ -1,0 +1,43 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Hive Gateway metrics
+  - job_name: 'hive-gateway'
+    static_configs:
+      - targets: ['hive-gateway:4000']
+    metrics_path: '/metrics'
+
+  # User Subgraph metrics
+  - job_name: 'user-subgraph'
+    static_configs:
+      - targets: ['user-subgraph:4001']
+    metrics_path: '/metrics'
+
+  # Todo Subgraph metrics
+  - job_name: 'todo-subgraph'
+    static_configs:
+      - targets: ['todo-subgraph:4002']
+    metrics_path: '/metrics'
+
+  # AI Subgraph metrics
+  - job_name: 'ai-subgraph'
+    static_configs:
+      - targets: ['ai-subgraph:4003']
+    metrics_path: '/metrics'
+
+  # PostgreSQL exporter
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # Redis exporter
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  # Node exporter for system metrics
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']

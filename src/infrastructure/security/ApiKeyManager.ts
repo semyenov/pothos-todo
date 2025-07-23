@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { CacheManager } from '../cache/CacheManager.js';
 import { logger } from '@/logger.js';
+import { SingletonService } from '@/infrastructure/core/SingletonService.js';
 
 export interface ApiKey {
   id: string;
@@ -32,17 +33,22 @@ export interface ApiKeyUsage {
 /**
  * API Key Management System
  */
-export class ApiKeyManager {
-  private static instance: ApiKeyManager;
-  private cache = CacheManager.getInstance();
+export class ApiKeyManager extends SingletonService<ApiKeyManager> {
+  private cache: CacheManager | null = null;
 
-  private constructor() { }
+  protected constructor() {
+    super();
+  }
 
   static getInstance(): ApiKeyManager {
-    if (!ApiKeyManager.instance) {
-      ApiKeyManager.instance = new ApiKeyManager();
+    return super.getInstance();
+  }
+
+  private async getCache(): Promise<CacheManager> {
+    if (!this.cache) {
+      this.cache = await CacheManager.getInstance();
     }
-    return ApiKeyManager.instance;
+    return this.cache;
   }
 
   /**

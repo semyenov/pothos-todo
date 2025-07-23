@@ -37,8 +37,18 @@
     "subgraph:ai": "bun run --watch src/subgraphs/ai/index.ts",
     "federation:dev": "bun run ./scripts/test-federation.ts",
     "federation:dev:manual": "concurrently \"bun run subgraph:user\" \"bun run subgraph:todo\" \"bun run subgraph:ai\" \"bun run gateway:dev\"",
+    "federation:docker": "docker compose up hive-gateway user-subgraph todo-subgraph ai-subgraph",
+    "federation:docker:dev": "./scripts/start-federation-docker.sh",
+    "federation:docker:build": "docker compose build hive-gateway user-subgraph todo-subgraph ai-subgraph",
     "hive:publish": "bunx @graphql-hive/cli schema:publish",
-    "hive:check": "bunx @graphql-hive/cli schema:check"
+    "hive:check": "bunx @graphql-hive/cli schema:check",
+    "refactor:analyze": "bun scripts/analyze-refactoring-opportunities.ts",
+    "refactor:migrate": "bun scripts/migrate-to-base-classes.ts",
+    "refactor:migrate:dry": "bun scripts/migrate-to-base-classes.ts --dry-run",
+    "refactor:benchmark": "bun test src/tests/performance/refactoring-benchmarks.test.ts",
+    "refactor:compare": "bun scripts/performance-comparison.ts",
+    "generate": "bun scripts/generate-from-template.ts",
+    "hooks:setup": "bash scripts/setup-hooks.sh"
   },
   "devDependencies": {
     "@arethetypeswrong/core": "^0.18.2",

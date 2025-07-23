@@ -1,0 +1,72 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'pothos-todo-federation'
+    env: 'development'
+
+scrape_configs:
+  # Gateway metrics
+  - job_name: 'gateway'
+    static_configs:
+      - targets: ['hive-gateway:9090']
+        labels:
+          service: 'gateway'
+          subgraph: 'gateway'
+
+  # User subgraph metrics
+  - job_name: 'user-subgraph'
+    static_configs:
+      - targets: ['user-subgraph:9091']
+        labels:
+          service: 'user-subgraph'
+          subgraph: 'user'
+
+  # Todo subgraph metrics
+  - job_name: 'todo-subgraph'
+    static_configs:
+      - targets: ['todo-subgraph:9092']
+        labels:
+          service: 'todo-subgraph'
+          subgraph: 'todo'
+
+  # AI subgraph metrics
+  - job_name: 'ai-subgraph'
+    static_configs:
+      - targets: ['ai-subgraph:9093']
+        labels:
+          service: 'ai-subgraph'
+          subgraph: 'ai'
+
+  # PostgreSQL exporter
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgres'
+          database: 'pothos_todo'
+
+  # Redis exporter
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+          cache: 'primary'
+
+  # Node exporter for system metrics
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'system'
+
+# Alerting rules
+rule_files:
+  - '/etc/prometheus/alerts/*.yml'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']

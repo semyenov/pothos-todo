@@ -1,0 +1,141 @@
+name: Pattern Compliance Check
+
+on:
+  pull_request:
+    paths:
+      - 'src/**/*.ts'
+      - 'src/**/*.js'
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'src/**/*.ts'
+      - 'src/**/*.js'
+
+jobs:
+  pattern-check:
+    name: Check Code Pattern Compliance
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+          
+      - name: Install dependencies
+        run: bun install
+        
+      - name: Run pattern analysis
+        id: analyze
+        run: |
+          bun scripts/analyze-refactoring-opportunities.ts > analysis-report.txt
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat analysis-report.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+      - name: Check for non-compliant patterns
+        run: |
+          # Extract counts from the analysis report
+          SINGLETON_COUNT=$(grep "Singleton services found:" analysis-report.txt | grep -o '[0-9]\+' || echo "0")
+          MANUAL_AUTH_COUNT=$(grep "GraphQL auth checks found:" analysis-report.txt | grep -o '[0-9]\+' || echo "0")
+          
+          echo "Found $SINGLETON_COUNT non-migrated singletons"
+          echo "Found $MANUAL_AUTH_COUNT manual auth checks"
+          
+          # Set warning thresholds
+          SINGLETON_THRESHOLD=5
+          AUTH_THRESHOLD=5
+          
+          # Check if we exceed thresholds
+          if [ "$SINGLETON_COUNT" -gt "$SINGLETON_THRESHOLD" ] || [ "$MANUAL_AUTH_COUNT" -gt "$AUTH_THRESHOLD" ]; then
+            echo "⚠️ Warning: Found patterns that should be migrated to base classes"
+            echo "Consider running: bun run refactor:migrate"
+            exit 0  # Don't fail the build, just warn
+          else
+            echo "✅ Pattern compliance check passed"
+          fi
+          
+      - name: Post analysis comment (PR only)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const report = `${{ steps.analyze.outputs.report }}`;
+            const singletonCount = (report.match(/Singleton services found: (\d+)/) || [,0])[1];
+            const authCount = (report.match(/GraphQL auth checks found: (\d+)/) || [,0])[1];
+            
+            if (parseInt(singletonCount) > 0 || parseInt(authCount) > 0) {
+              const comment = `## 🔍 Pattern Compliance Check
+              
+              Found some code patterns that could be migrated to base classes:
+              
+              - **Non-migrated Singletons:** ${singletonCount}
+              - **Manual Auth Checks:** ${authCount}
+              
+              Consider running \`bun run refactor:migrate --dry-run\` to see potential improvements.
+              
+              <details>
+              <summary>Full Analysis Report</summary>
+              
+              \`\`\`
+              ${report}
+              \`\`\`
+              </details>`;
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            }
+            
+  type-check:
+    name: TypeScript Type Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+          
+      - name: Install dependencies
+        run: bun install
+        
+      - name: Run type check
+        run: bun run check:types
+        
+  test-base-classes:
+    name: Test Base Classes
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+          
+      - name: Install dependencies
+        run: bun install
+        
+      - name: Run base class tests
+        run: |
+          bun test src/tests/unit/SingletonService.test.ts
+          bun test src/tests/unit/BaseRepository.test.ts
+          bun test src/tests/unit/BaseAggregate.test.ts
+          bun test src/tests/unit/ErrorHandler.test.ts
+          
+      - name: Run integration tests
+        run: bun test src/tests/integration/refactoring.test.ts

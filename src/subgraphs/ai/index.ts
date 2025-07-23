@@ -1,8 +1,14 @@
 import { createServer } from 'node:http';
 import { createYoga } from 'graphql-yoga';
-import { schema } from './simple-schema.js';
+import { schema } from './schema.js';
 import { logger } from '../../lib/unjs-utils.js';
 import { Container } from '../../infrastructure/container/Container.js';
+import { loadAppConfig } from '../../config/index.js';
+import { 
+  createMonitoringPlugin, 
+  startMetricsServer, 
+  initializeOpenTelemetry 
+} from '../../federation/monitoring.js';
 
 const PORT = process.env.AI_SUBGRAPH_PORT || 4003;
 
@@ -16,10 +22,19 @@ const PORT = process.env.AI_SUBGRAPH_PORT || 4003;
  * - Predictive analytics
  */
 export async function startAISubgraph() {
+  // Load configuration first
+  await loadAppConfig();
+  
   // Initialize container and dependencies
   const container = Container.getInstance();
 
-  // Create Yoga server
+  // Initialize OpenTelemetry
+  initializeOpenTelemetry('ai-subgraph');
+  
+  // Start metrics server
+  startMetricsServer(9093);
+  
+  // Create Yoga server with monitoring
   const yoga = createYoga({
     schema,
     context: async ({ request }) => {
@@ -31,6 +46,7 @@ export async function startAISubgraph() {
     },
     graphqlEndpoint: '/graphql',
     logging: logger.withTag('ai-subgraph'),
+    plugins: [createMonitoringPlugin('ai')],
   });
 
   // Create HTTP server

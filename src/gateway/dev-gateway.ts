@@ -15,12 +15,16 @@ const PORT = process.env.GATEWAY_PORT || 4000;
  */
 export async function startDevGateway() {
   logger.info('Starting Development Gateway (without Hive)...');
+  
+  // Wait a bit for subgraphs to start
+  logger.info('Waiting for subgraphs to initialize...');
+  await new Promise(resolve => setTimeout(resolve, 3000));
 
   // Define subgraph endpoints
   const subgraphs = [
-    { name: 'user', url: 'http://localhost:4001/graphql' },
-    { name: 'todo', url: 'http://localhost:4002/graphql' },
-    { name: 'ai', url: 'http://localhost:4003/graphql' },
+    { name: 'user', url: process.env.USER_SUBGRAPH_URL || 'http://localhost:4001/graphql' },
+    { name: 'todo', url: process.env.TODO_SUBGRAPH_URL || 'http://localhost:4002/graphql' },
+    { name: 'ai', url: process.env.AI_SUBGRAPH_URL || 'http://localhost:4003/graphql' },
   ];
 
   // Create executors for each subgraph

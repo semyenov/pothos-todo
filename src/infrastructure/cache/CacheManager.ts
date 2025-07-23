@@ -3,24 +3,25 @@ import type { Redis as RedisClient, RedisOptions } from 'ioredis';
 import { destr } from 'destr';
 import { env } from '@/config/env.validation.js';
 import { logger } from '@/logger';
+import { AsyncSingletonService } from '@/infrastructure/core/SingletonService.js';
 
 export interface CacheOptions {
   ttl?: number; // Time to live in seconds
   tags?: string[]; // Tags for cache invalidation
 }
 
-export class CacheManager {
-  private static instance: CacheManager | null = null;
+export class CacheManager extends AsyncSingletonService<CacheManager> {
   private client: RedisClient | null = null;
   public isConnected = false;
 
-  private constructor() { }
+  protected constructor() {
+    super();
+  }
 
-  public static getInstance(): CacheManager {
-    if (!CacheManager.instance) {
-      CacheManager.instance = new CacheManager();
-    }
-    return CacheManager.instance;
+  public static async getInstance(): Promise<CacheManager> {
+    return super.getInstanceAsync(async (instance) => {
+      await instance.connect();
+    });
   }
 
   public async connect(): Promise<void> {

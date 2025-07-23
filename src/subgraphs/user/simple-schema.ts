@@ -1,106 +1,65 @@
-import { makeExecutableSchema } from '@graphql-tools/schema';
-import { mergeSchemas } from '@graphql-tools/schema';
-import prisma from '../../lib/prisma.js';
-import bcrypt from 'bcrypt';
+import { builder } from "@/api/schema/subgraph-builder";
+import prisma from "@/lib/prisma";
 
-// Federation directives for production use
-const federationDirectives = /* GraphQL */ `
-  directive @key(fields: String!) on OBJECT | INTERFACE
-  directive @extends on OBJECT | INTERFACE
-  directive @external on OBJECT | FIELD_DEFINITION
-  directive @requires(fields: String!) on FIELD_DEFINITION
-  directive @provides(fields: String!) on FIELD_DEFINITION
-  directive @shareable on FIELD_DEFINITION | OBJECT
-  directive @tag(name: String!) repeatable on FIELD_DEFINITION | INTERFACE | OBJECT | UNION | ARGUMENT_DEFINITION | SCALAR | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
-  directive @inaccessible on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | INTERFACE | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
-  directive @override(from: String!) on FIELD_DEFINITION
-`;
+// Define User type for this subgraph
+builder.prismaObject('User', {
+  directives: {
+    key: { fields: 'id' },
+  },
+  fields: (t) => ({
+    id: t.exposeID('id'),
+    email: t.exposeString('email'),
+    name: t.exposeString('name', { nullable: true }),
+    createdAt: t.expose('createdAt', { type: 'DateTime' }),
+    updatedAt: t.expose('updatedAt', { type: 'DateTime' }),
+  }),
+});
 
-export const schema = makeExecutableSchema({
-  typeDefs: /* GraphQL */ `
-    ${federationDirectives}
-    type User {
-      id: ID!
-      email: String!
-      name: String
-      createdAt: String!
-      updatedAt: String!
-    }
-
-    type Query {
-      user(id: ID!): User
-      me: User
-      users: [User!]!
-    }
-
-    type Mutation {
-      createUser(
-        email: String!
-        name: String
-        password: String!
-      ): User!
-      
-      updateUser(
-        id: ID!
-        email: String
-        name: String
-      ): User
-      
-      deleteUser(id: ID!): User
-    }
-  `,
-  resolvers: {
-    User: {
-      createdAt: (parent) => parent.createdAt.toISOString(),
-      updatedAt: (parent) => parent.updatedAt.toISOString(),
-    },
-    Query: {
-      user: async (_, args) => {
+// Query type
+builder.queryType({
+  fields: (t) => ({
+    me: t.prismaField({
+      type: 'User',
+      nullable: true,
+      resolve: async (query, root, args, ctx) => {
+        // For now, just return the first user
+        return prisma.user.findFirst();
+      },
+    }),
+    user: t.prismaField({
+      type: 'User',
+      nullable: true,
+      args: {
+        id: t.arg.id({ required: true }),
+      },
+      resolve: async (query, root, args) => {
         return prisma.user.findUnique({
+          ...query,
           where: { id: args.id },
         });
       },
-      me: async (_, args, context) => {
-        // In a real app, get user from context
-        if (!context.user) return null;
-        return prisma.user.findUnique({
-          where: { id: context.user.id },
-        });
-      },
-      users: async () => {
+    }),
+    users: t.prismaField({
+      type: ['User'],
+      resolve: async (query) => {
         return prisma.user.findMany({
+          ...query,
           orderBy: { createdAt: 'desc' },
         });
       },
-    },
-    Mutation: {
-      createUser: async (_, args) => {
-        // Hash password before storing
-        const hashedPassword = await bcrypt.hash(args.password, 10);
-        
-        return prisma.user.create({
-          data: {
-            email: args.email,
-            name: args.name,
-            password: hashedPassword,
-          },
-        });
-      },
-      updateUser: async (_, args) => {
-        const data: any = {};
-        if (args.email !== undefined) data.email = args.email;
-        if (args.name !== undefined) data.name = args.name;
+    }),
+  }),
+});
 
-        return prisma.user.update({
-          where: { id: args.id },
-          data,
-        });
-      },
-      deleteUser: async (_, args) => {
-        return prisma.user.delete({
-          where: { id: args.id },
-        });
-      },
-    },
-  },
+// Simple mutation type
+builder.mutationType({
+  fields: (t) => ({
+    _userSubgraphHealthCheck: t.boolean({
+      resolve: () => true,
+    }),
+  }),
+});
+
+export const schema = builder.toSubGraphSchema({
+  linkUrl: "http://localhost:4001/graphql",
 });

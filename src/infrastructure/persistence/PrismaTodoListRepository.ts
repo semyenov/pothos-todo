@@ -1,53 +1,21 @@
 import { PrismaClient, type TodoList as PrismaTodoList } from '@prisma/client';
 import type { TodoListRepository } from '../../domain/repositories/TodoListRepository.js';
 import { TodoList } from '../../domain/aggregates/TodoList.js';
+import { BaseRepository } from '../core/BaseRepository.js';
 
-export class PrismaTodoListRepository implements TodoListRepository {
-  constructor(private readonly prisma: PrismaClient) {}
-
-  async findById(id: string): Promise<TodoList | null> {
-    const todoListData = await this.prisma.todoList.findUnique({
-      where: { id },
-    });
-
-    if (!todoListData) return null;
-
-    return this.mapToDomainEntity(todoListData);
+export class PrismaTodoListRepository 
+  extends BaseRepository<TodoList, PrismaTodoList>
+  implements TodoListRepository {
+  
+  constructor(prisma: PrismaClient) {
+    super(prisma);
   }
 
-  async findByUserId(userId: string): Promise<TodoList[]> {
-    const todoListsData = await this.prisma.todoList.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    return todoListsData.map(this.mapToDomainEntity);
+  protected getModelName(): string {
+    return 'todoList';
   }
 
-  async save(todoList: TodoList): Promise<void> {
-    const data = {
-      title: todoList.title,
-      description: todoList.description,
-      userId: todoList.userId,
-    };
-
-    await this.prisma.todoList.upsert({
-      where: { id: todoList.id },
-      update: data,
-      create: {
-        id: todoList.id,
-        ...data,
-      },
-    });
-  }
-
-  async delete(id: string): Promise<void> {
-    await this.prisma.todoList.delete({
-      where: { id },
-    });
-  }
-
-  private mapToDomainEntity(todoListData: PrismaTodoList): TodoList {
+  protected mapToDomain(todoListData: PrismaTodoList): TodoList {
     return new TodoList(
       todoListData.id,
       todoListData.title,
@@ -56,5 +24,27 @@ export class PrismaTodoListRepository implements TodoListRepository {
       todoListData.createdAt,
       todoListData.updatedAt
     );
+  }
+
+  protected mapToCreateInput(todoList: TodoList): any {
+    return {
+      title: todoList.title,
+      description: todoList.description,
+      userId: todoList.userId,
+    };
+  }
+
+  protected mapToUpdateInput(todoList: TodoList): any {
+    return {
+      title: todoList.title,
+      description: todoList.description,
+    };
+  }
+
+  // Additional method specific to TodoListRepository
+  async findByUserId(userId: string): Promise<TodoList[]> {
+    return this.findByField('userId', userId, {
+      orderBy: { createdAt: 'desc' },
+    });
   }
 }

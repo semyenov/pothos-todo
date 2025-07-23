@@ -1,61 +1,7 @@
 import { AggregateRoot } from './base/AggregateRoot.js';
-import { DomainEvent } from '../events/DomainEvent.js';
-
-export class TodoListCreated extends DomainEvent {
-  constructor(
-    aggregateId: string,
-    public readonly title: string,
-    public readonly description: string | null,
-    public readonly userId: string,
-    version: number = 1
-  ) {
-    super(aggregateId, 'TodoListCreated', version);
-  }
-
-  getEventData(): Record<string, any> {
-    return {
-      title: this.title,
-      description: this.description,
-      userId: this.userId,
-    };
-  }
-}
-
-export class TodoListUpdated extends DomainEvent {
-  constructor(
-    aggregateId: string,
-    public readonly title?: string,
-    public readonly description?: string | null,
-    public readonly updatedBy?: string,
-    version: number = 1
-  ) {
-    super(aggregateId, 'TodoListUpdated', version);
-  }
-
-  getEventData(): Record<string, any> {
-    return {
-      title: this.title,
-      description: this.description,
-      updatedBy: this.updatedBy,
-    };
-  }
-}
-
-export class TodoListDeleted extends DomainEvent {
-  constructor(
-    aggregateId: string,
-    public readonly deletedBy: string,
-    version: number = 1
-  ) {
-    super(aggregateId, 'TodoListDeleted', version);
-  }
-
-  getEventData(): Record<string, any> {
-    return {
-      deletedBy: this.deletedBy,
-    };
-  }
-}
+import { TodoListCreated } from '../events/TodoListCreated.js';
+import { TodoListUpdated } from '../events/TodoListUpdated.js';
+import { TodoListDeleted } from '../events/TodoListDeleted.js';
 
 export class TodoList extends AggregateRoot {
   private _title: string;

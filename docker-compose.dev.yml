@@ -1,0 +1,67 @@
+version: '3.8'
+
+# Development override for local federation testing without Hive credentials
+services:
+  # Override the Hive Gateway with our development gateway
+  hive-gateway:
+    build:
+      context: .
+      dockerfile: ./docker/gateway/Dockerfile.dev
+    image: pothos-todo-dev-gateway:latest
+    environment:
+      # Development gateway doesn't need Hive credentials
+      HIVE_CDN_ENDPOINT: ""
+      HIVE_CDN_KEY: ""
+      HIVE_TOKEN: ""
+      # Use development mode
+      NODE_ENV: development
+      # Enable debug logging
+      DEBUG: "*"
+      # Override subgraph URLs to use container names
+      USER_SUBGRAPH_URL: http://user-subgraph:4001/graphql
+      TODO_SUBGRAPH_URL: http://todo-subgraph:4002/graphql
+      AI_SUBGRAPH_URL: http://ai-subgraph:4003/graphql
+    volumes:
+      # Mount source code for hot reloading
+      - ./src:/app/src
+      - ./package.json:/app/package.json
+      - ./bun.lockb:/app/bun.lockb
+      - ./.env.docker:/app/.env
+    command: ["bun", "run", "--watch", "src/gateway/dev-gateway.ts"]
+
+  # Mount source code for subgraphs in development
+  user-subgraph:
+    volumes:
+      - ./src:/app/src
+      - ./prisma:/app/prisma
+      - ./package.json:/app/package.json
+      - ./bun.lockb:/app/bun.lockb
+      - ./.env.docker:/app/.env
+    command: ["bun", "run", "--watch", "src/subgraphs/user/index.ts"]
+    environment:
+      NODE_ENV: development
+      DEBUG: "*"
+
+  todo-subgraph:
+    volumes:
+      - ./src:/app/src
+      - ./prisma:/app/prisma
+      - ./package.json:/app/package.json
+      - ./bun.lockb:/app/bun.lockb
+      - ./.env.docker:/app/.env
+    command: ["bun", "run", "--watch", "src/subgraphs/todo/index.ts"]
+    environment:
+      NODE_ENV: development
+      DEBUG: "*"
+
+  ai-subgraph:
+    volumes:
+      - ./src:/app/src
+      - ./prisma:/app/prisma
+      - ./package.json:/app/package.json
+      - ./bun.lockb:/app/bun.lockb
+      - ./.env.docker:/app/.env
+    command: ["bun", "run", "--watch", "src/subgraphs/ai/index.ts"]
+    environment:
+      NODE_ENV: development
+      DEBUG: "*"

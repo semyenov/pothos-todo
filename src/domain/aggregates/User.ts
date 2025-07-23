@@ -1,45 +1,6 @@
 import { AggregateRoot } from './base/AggregateRoot.js';
-import { DomainEvent } from '../events/DomainEvent.js';
-
-export class UserCreated extends DomainEvent {
-  constructor(
-    aggregateId: string,
-    public readonly email: string,
-    public readonly name: string | null,
-    version: number = 1
-  ) {
-    super(aggregateId, 'UserCreated', version);
-  }
-
-  getEventData(): Record<string, any> {
-    return {
-      email: this.email,
-      name: this.name,
-    };
-  }
-}
-
-export class UserUpdated extends DomainEvent {
-  constructor(
-    aggregateId: string,
-    public readonly email?: string,
-    public readonly name?: string | null,
-    public readonly role?: string,
-    public readonly permissions?: string[],
-    version: number = 1
-  ) {
-    super(aggregateId, 'UserUpdated', version);
-  }
-
-  getEventData(): Record<string, any> {
-    return {
-      email: this.email,
-      name: this.name,
-      role: this.role,
-      permissions: this.permissions,
-    };
-  }
-}
+import { UserCreated } from '../events/UserCreated.js';
+import { UserUpdated } from '../events/UserUpdated.js';
 
 export class User extends AggregateRoot {
   private _email: string;

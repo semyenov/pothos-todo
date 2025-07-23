@@ -17,6 +17,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - pothos-network
 
   redis:
     image: ${REDIS_IMAGE:-redis:7-alpine}
@@ -31,6 +33,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - pothos-network
 
   qdrant:
     image: ${QDRANT_IMAGE:-qdrant/qdrant:latest}
@@ -44,6 +48,109 @@ services:
       QDRANT__SERVICE__HTTP_PORT: 6333
       QDRANT__SERVICE__GRPC_PORT: 6334
       QDRANT__LOG_LEVEL: INFO
+    networks:
+      - pothos-network
+
+  # Hive Gateway - GraphQL Federation Gateway
+  hive-gateway:
+    image: ${HIVE_GATEWAY_IMAGE:-ghcr.io/graphql-hive/gateway:latest}
+    container_name: ${HIVE_GATEWAY_CONTAINER:-pothos-todo-gateway}
+    ports:
+      - "${GATEWAY_PORT:-4000}:4000"
+    environment:
+      # Hive Configuration
+      HIVE_CDN_ENDPOINT: ${HIVE_CDN_ENDPOINT}
+      HIVE_CDN_KEY: ${HIVE_CDN_KEY}
+      HIVE_TOKEN: ${HIVE_TOKEN}
+      # Gateway Configuration
+      PORT: 4000
+      # Subgraph URLs (for development mode)
+      USER_SUBGRAPH_URL: ${USER_SUBGRAPH_URL:-http://user-subgraph:4001/graphql}
+      TODO_SUBGRAPH_URL: ${TODO_SUBGRAPH_URL:-http://todo-subgraph:4002/graphql}
+      AI_SUBGRAPH_URL: ${AI_SUBGRAPH_URL:-http://ai-subgraph:4003/graphql}
+      # Monitoring
+      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-true}
+    depends_on:
+      - user-subgraph
+      - todo-subgraph
+      - ai-subgraph
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pothos-network
+    restart: on-failure:5
+
+  # User Subgraph
+  user-subgraph:
+    build:
+      context: .
+      dockerfile: ./docker/subgraphs/user/Dockerfile
+    container_name: ${USER_SUBGRAPH_CONTAINER:-pothos-todo-user-subgraph}
+    ports:
+      - "${USER_SUBGRAPH_PORT:-4001}:4001"
+    environment:
+      PORT: 4001
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:password@postgres:5432/pothos_todo}
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: ${NODE_ENV:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - pothos-network
+
+  # Todo Subgraph
+  todo-subgraph:
+    build:
+      context: .
+      dockerfile: ./docker/subgraphs/todo/Dockerfile
+    container_name: ${TODO_SUBGRAPH_CONTAINER:-pothos-todo-todo-subgraph}
+    ports:
+      - "${TODO_SUBGRAPH_PORT:-4002}:4002"
+    environment:
+      PORT: 4002
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:password@postgres:5432/pothos_todo}
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: ${NODE_ENV:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - pothos-network
+
+  # AI Subgraph
+  ai-subgraph:
+    build:
+      context: .
+      dockerfile: ./docker/subgraphs/ai/Dockerfile
+    container_name: ${AI_SUBGRAPH_CONTAINER:-pothos-todo-ai-subgraph}
+    ports:
+      - "${AI_SUBGRAPH_PORT:-4003}:4003"
+    environment:
+      PORT: 4003
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:password@postgres:5432/pothos_todo}
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6333
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      NODE_ENV: ${NODE_ENV:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    networks:
+      - pothos-network
+
+networks:
+  pothos-network:
+    driver: bridge
 
 volumes:
   postgres_data:
