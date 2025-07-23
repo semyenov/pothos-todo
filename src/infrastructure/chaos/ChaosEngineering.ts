@@ -1,10 +1,10 @@
-import { EventEmitter } from 'events';
 import { logger } from '@/logger.js';
+import { EventEmitter } from 'events';
 import { SystemIntegration } from '../SystemIntegration.js';
-import { EdgeComputingSystem, EdgeLocation } from '../edge/EdgeComputing.js';
-import { DataReplicationSystem, ReplicationNode } from '../edge/DataReplication.js';
-import { MetricsSystem } from '../observability/Metrics.js';
+import { DataReplicationSystem } from '../edge/DataReplication.js';
+import { EdgeComputingSystem } from '../edge/EdgeComputing.js';
 import { AlertingSystem } from '../observability/AlertingSystem.js';
+import { MetricsSystem } from '../observability/Metrics.js';
 
 export interface ChaosExperiment {
   id: string;
@@ -22,7 +22,7 @@ export interface ChaosExperiment {
   rollbackOn: RollbackCondition[];
 }
 
-export type ChaosType = 
+export type ChaosType =
   | 'network_latency'
   | 'network_partition'
   | 'service_failure'
@@ -88,7 +88,7 @@ export class ChaosEngineeringSystem extends EventEmitter {
   private experiments: Map<string, ChaosExperiment> = new Map();
   private activeExperiments: Map<string, ExperimentResult> = new Map();
   private experimentHistory: ExperimentResult[] = [];
-  
+
   private system: SystemIntegration;
   private edgeComputing: EdgeComputingSystem;
   private dataReplication: DataReplicationSystem;
@@ -275,11 +275,11 @@ export class ChaosEngineeringSystem extends EventEmitter {
   } {
     const total = this.experimentHistory.length;
     const successful = this.experimentHistory.filter(r => r.status === 'completed').length;
-    
+
     let totalAvailabilityImpact = 0;
     let totalPerformanceImpact = 0;
     let totalErrorsImpact = 0;
-    
+
     const findingsMap = new Map<string, number>();
     const recommendationsSet = new Set<string>();
 
@@ -323,7 +323,7 @@ export class ChaosEngineeringSystem extends EventEmitter {
     result: ExperimentResult
   ): void {
     const startMetrics = this.captureMetrics();
-    
+
     const interval = setInterval(async () => {
       // Check if experiment is still active
       if (!this.activeExperiments.has(result.id)) {
@@ -332,13 +332,13 @@ export class ChaosEngineeringSystem extends EventEmitter {
       }
 
       const currentMetrics = this.captureMetrics();
-      
+
       // Calculate impact
-      result.impact.availability = 
+      result.impact.availability =
         ((startMetrics.availability - currentMetrics.availability) / startMetrics.availability) * 100;
-      result.impact.performance = 
+      result.impact.performance =
         ((currentMetrics.responseTime - startMetrics.responseTime) / startMetrics.responseTime) * 100;
-      result.impact.errors = 
+      result.impact.errors =
         ((currentMetrics.errorRate - startMetrics.errorRate) / (startMetrics.errorRate || 0.01)) * 100;
 
       // Check rollback conditions
@@ -348,10 +348,10 @@ export class ChaosEngineeringSystem extends EventEmitter {
             experimentId: experiment.id,
             condition,
           });
-          
+
           result.status = 'rolled_back';
           result.findings.push(`Rolled back due to ${condition.metric} ${condition.operator} ${condition.threshold}`);
-          
+
           await this.cleanupExperiment(experiment, result);
           clearInterval(interval);
           return;
@@ -361,15 +361,15 @@ export class ChaosEngineeringSystem extends EventEmitter {
       // Check safeguards
       if (this.config.safeguards.autoRollback) {
         if (result.impact.availability > this.config.safeguards.maxImpact ||
-            currentMetrics.availability < this.config.safeguards.minAvailability) {
+          currentMetrics.availability < this.config.safeguards.minAvailability) {
           logger.error('Safeguard triggered, rolling back experiment', {
             experimentId: experiment.id,
             impact: result.impact,
           });
-          
+
           result.status = 'rolled_back';
           result.findings.push('Safeguard triggered - impact exceeded limits');
-          
+
           await this.cleanupExperiment(experiment, result);
           clearInterval(interval);
           return;
@@ -388,17 +388,17 @@ export class ChaosEngineeringSystem extends EventEmitter {
         const now = new Date();
         const hour = now.getHours();
         return hour >= 9 && hour <= 17; // Business hours only
-        
+
       case 'metric':
         // Check if metrics are healthy
         const metrics = this.captureMetrics();
         return metrics.availability > 99 && metrics.errorRate < 0.01;
-        
+
       case 'state':
         // Check system state
         const health = await this.system.getSystemHealth();
         return health.status === 'healthy';
-        
+
       default:
         return condition.check({});
     }
@@ -415,35 +415,35 @@ export class ChaosEngineeringSystem extends EventEmitter {
       case 'network_latency':
         await this.injectNetworkLatency(experiment, result);
         break;
-        
+
       case 'network_partition':
         await this.injectNetworkPartition(experiment, result);
         break;
-        
+
       case 'service_failure':
         await this.injectServiceFailure(experiment, result);
         break;
-        
+
       case 'resource_exhaustion':
         await this.injectResourceExhaustion(experiment, result);
         break;
-        
+
       case 'data_corruption':
         await this.injectDataCorruption(experiment, result);
         break;
-        
+
       case 'clock_skew':
         await this.injectClockSkew(experiment, result);
         break;
-        
+
       case 'dependency_failure':
         await this.injectDependencyFailure(experiment, result);
         break;
-        
+
       case 'security_breach':
         await this.injectSecurityBreach(experiment, result);
         break;
-        
+
       default:
         throw new Error(`Unknown chaos type: ${experiment.type}`);
     }
@@ -458,7 +458,7 @@ export class ChaosEngineeringSystem extends EventEmitter {
   ): Promise<void> {
     const latency = experiment.parameters.latency || 1000; // milliseconds
     const jitter = experiment.parameters.jitter || 100;
-    
+
     logger.info(`Injecting network latency: ${latency}ms ±${jitter}ms`);
     result.findings.push(`Injected ${latency}ms network latency`);
 
@@ -486,7 +486,7 @@ export class ChaosEngineeringSystem extends EventEmitter {
       for (const node of nodes) {
         (node as any).status = 'offline';
       }
-      
+
       const cleanup = () => {
         for (const node of nodes) {
           (node as any).status = 'active';
@@ -504,7 +504,7 @@ export class ChaosEngineeringSystem extends EventEmitter {
     result: ExperimentResult
   ): Promise<void> {
     const failureRate = experiment.parameters.failureRate || 0.5;
-    
+
     logger.info(`Injecting service failure with ${failureRate * 100}% failure rate`);
     result.findings.push(`Service failing ${failureRate * 100}% of requests`);
 
@@ -522,7 +522,7 @@ export class ChaosEngineeringSystem extends EventEmitter {
   ): Promise<void> {
     const resource = experiment.parameters.resource || 'cpu';
     const usage = experiment.parameters.usage || 0.9;
-    
+
     logger.info(`Injecting ${resource} exhaustion at ${usage * 100}%`);
     result.findings.push(`${resource} exhausted to ${usage * 100}%`);
 
@@ -541,7 +541,7 @@ export class ChaosEngineeringSystem extends EventEmitter {
   ): () => void {
     // In real implementation, would modify network rules
     // For now, we'll add artificial delays to responses
-    
+
     const originalFetch = global.fetch;
     global.fetch = async (...args) => {
       const delay = latency + (Math.random() - 0.5) * 2 * jitter;
@@ -578,7 +578,7 @@ export class ChaosEngineeringSystem extends EventEmitter {
   private mockResourceExhaustion(resource: string, usage: number): () => void {
     // Simulate high resource usage
     let interval: NodeJS.Timeout | undefined;
-    
+
     if (resource === 'cpu') {
       // CPU intensive loop
       interval = setInterval(() => {
@@ -638,7 +638,7 @@ export class ChaosEngineeringSystem extends EventEmitter {
     metrics: any
   ): boolean {
     const value = metrics[condition.metric];
-    
+
     switch (condition.operator) {
       case '>': return value > condition.threshold;
       case '<': return value < condition.threshold;
@@ -677,11 +677,11 @@ export class ChaosEngineeringSystem extends EventEmitter {
       case 'network_partition':
         result.recommendations.push('Implement partition-tolerant data synchronization');
         break;
-        
+
       case 'service_failure':
         result.recommendations.push('Add health checks and automatic recovery');
         break;
-        
+
       case 'resource_exhaustion':
         result.recommendations.push('Implement resource limits and auto-scaling');
         break;
@@ -743,7 +743,7 @@ export class ChaosEngineeringSystem extends EventEmitter {
     result: ExperimentResult
   ): Promise<void> {
     const skew = experiment.parameters.skew || 3600000; // 1 hour default
-    
+
     logger.info(`Injecting clock skew: ${skew}ms`);
     result.findings.push(`Clock skew of ${skew}ms injected`);
     result.recommendations.push('Use vector clocks for distributed consistency');
@@ -757,7 +757,7 @@ export class ChaosEngineeringSystem extends EventEmitter {
     result: ExperimentResult
   ): Promise<void> {
     const dependency = experiment.parameters.dependency || 'redis';
-    
+
     logger.info(`Injecting ${dependency} failure`);
     result.findings.push(`${dependency} dependency failed`);
     result.recommendations.push(`Implement fallback for ${dependency}`);
@@ -771,7 +771,7 @@ export class ChaosEngineeringSystem extends EventEmitter {
     result: ExperimentResult
   ): Promise<void> {
     const breachType = experiment.parameters.type || 'unauthorized_access';
-    
+
     logger.warn(`Simulating security breach: ${breachType}`);
     result.findings.push(`Security breach scenario: ${breachType}`);
     result.recommendations.push('Review and strengthen security controls');

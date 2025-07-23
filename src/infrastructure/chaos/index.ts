@@ -1,3 +1,4 @@
 // Chaos Engineering Infrastructure
-export { ChaosEngineering } from './ChaosEngineering.js';
+export { ChaosEngineeringSystem } from './ChaosEngineering.js';
 export * from './experiments/index.js';
+

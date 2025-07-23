@@ -19,6 +19,11 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
+    "noImplicitAny": false,
+    
+    // Decorators
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
 
     // Some stricter flags (disabled by default)
     "noUnusedLocals": false,
