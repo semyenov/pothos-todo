@@ -60,7 +60,7 @@ const envSchema = z.object({
   QDRANT_API_KEY: z.string().optional(),
 
   // Telemetry (optional)
-  TELEMETRY_ENABLED: z.boolean().default(false),
+  TELEMETRY_ENABLED: z.string().transform(v => v === 'true').default(false),
   TELEMETRY_SERVICE_NAME: z.string().default('pothos-todo-api'),
   TELEMETRY_SERVICE_VERSION: z.string().default('1.0.0'),
   TELEMETRY_SAMPLING_RATE: z.string().regex(/^[0-9.]+$/).transform(Number).default(1.0),
@@ -68,7 +68,7 @@ const envSchema = z.object({
   OTEL_EXPORTER_OTLP_HEADERS: z.string().optional(),
 
   // Security
-  CSP_REPORT_URI: z.string().url().optional(),
+  CSP_REPORT_URI: z.url().optional(),
   TLS_CERT_PATH: z.string().optional(),
   TLS_KEY_PATH: z.string().optional(),
   TLS_CA_PATH: z.string().optional(),

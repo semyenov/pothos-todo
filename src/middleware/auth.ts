@@ -2,6 +2,7 @@ import { getCurrentSessionFromEventH3, type SessionWithUser } from '@/lib/auth';
 import type { Context } from '@/api/schema/builder';
 import type { H3Event } from 'h3';
 import { User } from '@/domain/aggregates/User';
+import { Container } from '@/infrastructure/container/Container';
 
 /**
  * Authentication middleware for GraphQL Yoga using H3 useSession
@@ -50,7 +51,7 @@ export async function authMiddleware(event: H3Event): Promise<Partial<Context>> 
  * Enhanced context factory that combines auth middleware with other context
  * @deprecated Use createH3GraphQLContext instead
  */
-export function createGraphQLContext(container: any) {
+export function createGraphQLContext(container: Container) {
 	return async ({ request }: { request: Request }): Promise<Context> => {
 		console.warn('createGraphQLContext is deprecated, use createH3GraphQLContext instead');
 		
@@ -66,7 +67,7 @@ export function createGraphQLContext(container: any) {
 /**
  * H3-compatible context factory for GraphQL Yoga using H3 sessions
  */
-export function createH3GraphQLContext(container: any) {
+export function createH3GraphQLContext(container: Container) {
 	return async (event: H3Event): Promise<Context> => {
 		// Get auth context from H3 event using H3 sessions
 		const authContext = await authMiddleware(event);
@@ -117,7 +118,7 @@ export const h3AuthPlugin = {
 	/**
 	 * Plugin for GraphQL Yoga to handle authentication with H3 events and H3 sessions
 	 */
-	onRequest: async (event: H3Event, context: any) => {
+	onRequest: async (event: H3Event, context: Context) => {
 		// CSRF protection
 		if (!csrfMiddleware(event)) {
 			throw new Error('CSRF validation failed');
@@ -137,7 +138,7 @@ export const luciaAuthPlugin = {
 	/**
 	 * Plugin for GraphQL Yoga to handle Lucia authentication
 	 */
-	onRequest: async (request: Request, context: any) => {
+		onRequest: async (request: Request, context: Context) => {
 		console.warn('luciaAuthPlugin is deprecated, use h3AuthPlugin with H3 sessions instead');
 		
 		// Temporary fallback

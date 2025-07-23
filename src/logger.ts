@@ -1,8 +1,7 @@
-import { createConsola, type ConsolaInstance } from 'consola';
+import { createConsola, type ConsolaInstance, type LogObject } from 'consola';
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'pathe';
-import { getCurrentConfig } from './config/index.js';
-import { isDevelopment } from 'std-env';
+import { getCurrentConfig } from '@/config/index.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { nanoid } from 'nanoid';
 
@@ -45,16 +44,16 @@ export function createLogger(): ConsolaInstance {
     reporters: [
       // Default reporter for console output
       ...(loggerConfig.console?.enabled !== false ? [{
-        log: (logObj: any) => {
+        log: (logObj: unknown) => {
           // Use consola's default console reporter
           return;
         }
       }] : []),
       // File reporter for errors
       {
-        log: (logObj: any) => {
+        log: (logObj: LogObject) => {
           if (!loggerConfig.dir || !loggerConfig.files) return;
-          
+
           const context = correlationStore.getStore();
           const timestamp = new Date().toISOString();
           const logEntry = {
@@ -67,7 +66,6 @@ export function createLogger(): ConsolaInstance {
             version: loggerConfig.version,
             correlationId: context?.correlationId,
             requestId: context?.requestId,
-            ...(logObj.additional || {}),
           };
 
           // Write errors to error log
@@ -106,7 +104,7 @@ function mapLogLevel(level: string): number {
 export const logger = createLogger();
 
 // Re-export common log methods for convenience
-export const { 
+export const {
   error,
   warn,
   info,

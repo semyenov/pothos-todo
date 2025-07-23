@@ -1,8 +1,8 @@
 import { logger } from '@/logger.js';
 import { EventBus } from './events/EventBus.js';
-import { EventStore } from './events/EventStore.js';
+import type   { EventStore } from './events/EventStore.js';
 import { CommandBus } from './cqrs/CommandBus.js';
-import { QueryBus } from './cqrs/QueryBus.js';
+import { QueryBus } from './cqrs/QueryBus.js'; 
 import { ProjectionEngine } from './cqrs/ProjectionEngine.js';
 import { SagaOrchestrator } from './sagas/SagaOrchestrator.js';
 import { TelemetrySystem } from './observability/Telemetry.js';

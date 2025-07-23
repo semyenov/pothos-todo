@@ -1,18 +1,20 @@
-import { builder } from '../builder.js';
-import { TodoStatus as TodoStatusEnum, Priority as PriorityEnum } from '../enums.js';
-import prisma from '@/lib/prisma';
-import * as TodoListCrud from '@/graphql/__generated__/TodoList';
+import { builder } from "../builder.js";
+import {
+  TodoStatus as TodoStatusEnum,
+  Priority as PriorityEnum,
+} from "../enums.js";
+import prisma from "@/lib/prisma";
+import * as TodoListCrud from "@/graphql/__generated__/TodoList";
 
-
-export const TodoListType = builder.prismaNode('TodoList', {
-  id: { field: 'id' },
+export const TodoListType = builder.prismaNode("TodoList", {
+  id: { field: "id" },
   findUnique: (id) => ({ id }),
   fields: (t) => ({
     ...(() => {
       const { id, ...rest } = TodoListCrud.TodoListObject.fields(t);
       return rest;
     })(),
-    todos: t.relation('todos', {
+    todos: t.relation("todos", {
       args: {
         status: t.arg({ type: TodoStatusEnum, required: false }),
         priority: t.arg({ type: PriorityEnum, required: false }),
@@ -23,9 +25,9 @@ export const TodoListType = builder.prismaNode('TodoList', {
           ...(args.priority && { priority: args.priority }),
         },
         orderBy: [
-          { priority: 'desc' },
-          { dueDate: 'asc' },
-          { createdAt: 'desc' },
+          { priority: "desc" },
+          { dueDate: "asc" },
+          { createdAt: "desc" },
         ],
       }),
     }),
@@ -41,7 +43,7 @@ export const TodoListType = builder.prismaNode('TodoList', {
         return prisma.todo.count({
           where: {
             todoListId: todoList.id,
-            status: 'COMPLETED',
+            status: "COMPLETED",
           },
         });
       },
@@ -51,7 +53,7 @@ export const TodoListType = builder.prismaNode('TodoList', {
         return prisma.todo.count({
           where: {
             todoListId: todoList.id,
-            status: { in: ['PENDING', 'IN_PROGRESS'] },
+            status: { in: ["PENDING", "IN_PROGRESS"] },
           },
         });
       },
@@ -62,14 +64,14 @@ export const TodoListType = builder.prismaNode('TodoList', {
           where: { todoListId: todoList.id },
         });
         if (total === 0) return 0;
-        
+
         const completed = await prisma.todo.count({
           where: {
             todoListId: todoList.id,
-            status: 'COMPLETED',
+            status: "COMPLETED",
           },
         });
-        
+
         return (completed / total) * 100;
       },
     }),
@@ -83,7 +85,7 @@ export const TodoListQueries = builder.queryFields((t) => {
   const count = TodoListCrud.countTodoListQueryObject(t);
   return {
     todoList: t.prismaField({
-      type: 'TodoList',
+      type: "TodoList",
       nullable: true,
       authScopes: { authenticated: true },
       args: {
@@ -102,7 +104,10 @@ export const TodoListQueries = builder.queryFields((t) => {
 
     findFirstTodoList: t.prismaField({
       ...findFirst,
-      args: {...findFirst.args, customArg: t.arg({ type: 'String', required: false })},
+      args: {
+        ...findFirst.args,
+        customArg: t.arg({ type: "String", required: false }),
+      },
       authScopes: { authenticated: true },
       resolve: (query, root, args, context, info) => {
         const { customArg } = args;
@@ -113,7 +118,10 @@ export const TodoListQueries = builder.queryFields((t) => {
 
     findManyTodoList: t.prismaField({
       ...findMany,
-      args: {...findMany.args, customArg: t.arg({ type: 'String', required: false })},
+      args: {
+        ...findMany.args,
+        customArg: t.arg({ type: "String", required: false }),
+      },
       authScopes: { authenticated: true },
       resolve: (query, root, args, context, info) => {
         const { customArg } = args;
@@ -124,7 +132,10 @@ export const TodoListQueries = builder.queryFields((t) => {
 
     findUniqueTodoList: t.prismaField({
       ...findUnique,
-      args: {...findUnique.args, customArg: t.arg({ type: 'String', required: false })},
+      args: {
+        ...findUnique.args,
+        customArg: t.arg({ type: "String", required: false }),
+      },
       authScopes: { authenticated: true },
       resolve: (query, root, args, context, info) => {
         const { customArg } = args;
@@ -132,9 +143,9 @@ export const TodoListQueries = builder.queryFields((t) => {
         return findUnique.resolve(query, root, args, context, info);
       },
     }),
-    
+
     todoLists: t.prismaField({
-      type: ['TodoList'],
+      type: ["TodoList"],
       authScopes: { authenticated: true },
       args: {
         search: t.arg.string({ required: false }),
@@ -148,19 +159,19 @@ export const TodoListQueries = builder.queryFields((t) => {
 
         if (args.search) {
           where.OR = [
-            { title: { contains: args.search, mode: 'insensitive' } },
-            { description: { contains: args.search, mode: 'insensitive' } },
+            { title: { contains: args.search, mode: "insensitive" } },
+            { description: { contains: args.search, mode: "insensitive" } },
           ];
         }
 
         return prisma.todoList.findMany({
           ...query,
           where,
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: "desc" },
           take: args.limit || undefined,
           skip: args.offset || undefined,
         });
       },
     }),
-  }
+  };
 });

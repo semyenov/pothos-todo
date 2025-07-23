@@ -1,5 +1,6 @@
 import { logger } from '@/logger';
 import { QdrantClient } from '@qdrant/js-client-rest';
+import type { EmbeddingResult } from './EmbeddingService';
 
 export interface VectorSearchOptions {
   limit?: number;
@@ -9,7 +10,7 @@ export interface VectorSearchOptions {
 
 export interface VectorDocument {
   id: string;
-  vector: number[];
+  vector: number[]; 
   payload: Record<string, any>;
 }
 

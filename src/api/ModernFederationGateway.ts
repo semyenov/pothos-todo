@@ -1,9 +1,9 @@
 import { createYoga, type YogaServerOptions } from 'graphql-yoga';
 import { useResponseCache } from '@graphql-yoga/plugin-response-cache';
-// import { useRateLimiter } from '@graphql-yoga/plugin-rate-limiter';
-// import { useDeferStream } from '@graphql-yoga/plugin-defer-stream';
-// import { useGraphQLSSE } from '@graphql-yoga/plugin-graphql-sse';
-import { logger } from '@/logger.js';
+import { useRateLimiter } from '@envelop/rate-limiter';
+import { useGraphQLSSE } from '@graphql-yoga/plugin-graphql-sse';
+import { logger } from '../lib/logger.js';
+import { HiveGatewayService } from '../infrastructure/gateway/HiveGatewayService.js';
 // import { SystemIntegration } from '@/infrastructure/SystemIntegration.js';
 
 // Stub types for missing imports
@@ -55,6 +55,7 @@ export class ModernFederationGateway {
   private config: ModernGatewayConfig;
   private system!: SystemIntegration;
   private yoga!: ReturnType<typeof createYoga>;
+  private hiveGateway: HiveGatewayService;
 
   // Infrastructure components
   private edgeComputing?: EdgeComputingSystem;
@@ -72,6 +73,7 @@ export class ModernFederationGateway {
 
   constructor(config: ModernGatewayConfig) {
     this.config = config;
+    this.hiveGateway = HiveGatewayService.getInstance();
   }
 
   /**

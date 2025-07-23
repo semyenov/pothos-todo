@@ -72,6 +72,8 @@ bun run db:reset
 bun run db:seed
 ```
 
+Note: The project uses `docker compose` (not `docker-compose`) for container management.
+
 ### Service Management
 ```bash
 # Start all Docker services (PostgreSQL + Qdrant)
@@ -552,6 +554,13 @@ When working with the advanced enterprise features:
 - Federation components are currently simplified (placeholder implementations)
 - Date objects need `.toISOString()` when passing to domain constructors
 
+### Common Type Issues and Solutions
+- **Import types properly**: Use `import type { Type }` for type-only imports to avoid circular dependencies
+- **Domain constructors**: Always pass properly formatted data (e.g., dates as ISO strings)
+- **Optional parameters**: Use `undefined` instead of `null` for consistency
+- **Enum values**: Use exact casing from enum definitions (e.g., `Priority.medium`, not `Priority.Medium`)
+- **GraphQL resolvers**: Let Pothos handle type generation - don't manually type resolvers
+
 ### Performance Considerations
 - Use DataLoaders for any database queries in GraphQL resolvers
 - AI operations are cached - check cache invalidation logic
@@ -580,14 +589,33 @@ bun test src/tests/performance/
 
 ## Environment Setup
 
-1. Copy `.env.example` to `.env`
-2. Configure OAuth credentials (Google, GitHub)
-3. Set OpenAI API key for AI features
-4. Configure Qdrant URL for vector search
-5. Set session encryption key
-6. Run `bun run services:up` to start all services
-7. Run `bun run db:migrate` to initialize database
-8. Run `bun run dev` to start development server
+1. Create a `.env` file in the project root
+2. Configure the following essential environment variables:
+   ```bash
+   # Database
+   DATABASE_URL="postgresql://user:password@localhost:5432/pothos_todo"
+   
+   # Authentication
+   SESSION_SECRET="your-session-secret"
+   GOOGLE_CLIENT_ID="your-google-client-id"
+   GOOGLE_CLIENT_SECRET="your-google-client-secret"
+   GITHUB_CLIENT_ID="your-github-client-id"
+   GITHUB_CLIENT_SECRET="your-github-client-secret"
+   
+   # AI Features (Optional)
+   OPENAI_API_KEY="your-openai-api-key"
+   OPENAI_EMBEDDING_MODEL="text-embedding-3-small"
+   OPENAI_EMBEDDING_DIMENSIONS="1536"
+   QDRANT_URL="http://localhost:6333"
+   AI_ENABLED="true"
+   
+   # Server
+   PORT="4000"
+   NODE_ENV="development"
+   ```
+3. Run `bun run services:up` to start all services
+4. Run `bun run db:migrate` to initialize database
+5. Run `bun run dev` to start development server
 
 ## Production Deployment
 
@@ -646,3 +674,44 @@ bun test src/tests/performance/
 - All async operations use Bun's optimized runtime
 - Federation support is prepared but currently uses placeholder implementations
 - The project prioritizes type safety - compilation errors should be resolved before deployment
+
+## Quick Reference
+
+### Most Common Development Tasks
+```bash
+# Start development with hot reload
+bun run dev
+
+# Check types before committing (CRITICAL)
+bun run check:types
+
+# Database workflow after schema changes
+bun run db:generate && bun run db:migrate
+
+# Start all services (PostgreSQL + Qdrant)
+bun run services:up
+```
+
+### Import Path Aliases
+The project uses the `@/*` alias for the `src` directory:
+```typescript
+import { Todo } from '@/domain/aggregates/Todo.js';
+```
+
+### CLI Access
+The project includes a comprehensive CLI:
+```bash
+bun run cli help
+```
+
+### Testing
+Performance tests are located in `src/tests/performance/`. Run tests with:
+```bash
+bun test src/tests/performance/
+```
+
+## Working with AR/VR Features
+The project includes AR/VR capabilities through the infrastructure layer. When implementing AR/VR features:
+- Use the AR/VR manager services in `src/infrastructure/ar/` and `src/infrastructure/vr/`
+- Follow the existing patterns for real-time data synchronization
+- Ensure WebSocket connections are properly managed for low-latency requirements

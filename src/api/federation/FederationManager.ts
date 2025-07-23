@@ -1,7 +1,7 @@
-import { buildSubgraphSchema } from '@apollo/subgraph';
 import { GraphQLSchema, printSchema } from 'graphql';
-import { logger } from '@/logger.js';
-import { MetricsCollector } from '@/infrastructure/monitoring/MetricsCollector.js';
+import { logger } from '../../lib/unjs-utils.js';
+import { MetricsCollector } from '../../infrastructure/monitoring/MetricsCollector.js';
+import { HiveGatewayService } from '../../infrastructure/gateway/HiveGatewayService.js';
 import type { DocumentNode } from 'graphql';
 
 export interface ServiceDefinition {

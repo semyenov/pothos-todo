@@ -1,7 +1,7 @@
 import prisma from '@/lib/prisma';
 import type { User, Session } from '@prisma/client';
-import { setCookie, deleteCookie, getCookie, useSession, type H3Event } from 'h3';
-import { isProduction, getSessionConfig } from '@/config/index.js';
+import { setCookie, deleteCookie, getCookie, useSession, type H3Event, type SessionData } from 'h3';
+import { isProduction, getSessionConfig } from '@/config/index';
 import { getUserById } from './user.js';
 import { nanoid } from 'nanoid';
 
@@ -11,7 +11,7 @@ export interface SessionWithUser {
 }
 
 // H3 session data structure
-export interface H3SessionData {
+export interface H3SessionData extends SessionData {
 	userId: string;
 	loginTime: number;
 	lastActivity: number;
