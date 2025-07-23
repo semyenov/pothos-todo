@@ -82,6 +82,57 @@ bun run db:reset
 bun run db:seed
 ```
 
+### Federation Commands
+```bash
+# Start federation development with all subgraphs
+bun run federation:dev
+
+# Start individual subgraphs manually
+bun run federation:dev:manual
+
+# Start federation services in Docker
+bun run federation:docker
+
+# Start federation with Docker in development mode
+bun run federation:docker:dev
+
+# Build federation Docker images
+bun run federation:docker:build
+
+# Test federation setup
+bun run gateway:test
+
+# Publish schema to Hive
+bun run hive:publish
+
+# Check schema compatibility
+bun run hive:check
+```
+
+### Refactoring Commands
+```bash
+# Analyze codebase for refactoring opportunities
+bun run refactor:analyze
+
+# Preview migration changes (dry run)
+bun run refactor:migrate:dry
+
+# Apply migrations
+bun run refactor:migrate
+
+# Run refactoring benchmarks
+bun run refactor:benchmark
+
+# Compare performance before/after refactoring
+bun run refactor:compare
+
+# Generate code from templates
+bun run generate
+
+# Setup git hooks
+bun run hooks:setup
+```
+
 Note: The project uses `docker compose` (not `docker-compose`) for container management.
 
 ### Service Management
@@ -612,6 +663,24 @@ bun test src/tests/performance/
 - Use `undefined` instead of `null` for optional parameters
 - Performance tests require specific trace expectations
 
+### Testing Commands
+```bash
+# Run all tests
+bun test
+
+# Run performance tests specifically
+bun test src/tests/performance/
+
+# Run refactoring benchmarks
+bun run refactor:benchmark
+
+# Run test with coverage
+bun test --coverage
+
+# Run specific test file
+bun test src/tests/unit/todo.test.ts
+```
+
 ## Environment Setup
 
 1. Create a `.env` file in the project root
@@ -728,6 +797,12 @@ The project uses the `@/*` alias for the `src` directory:
 ```typescript
 import { Todo } from '@/domain/aggregates/Todo.js';
 ```
+
+### Module System
+- **ES Modules**: Project uses `"type": "module"` with `.js` extensions for TypeScript imports
+- **Bun Runtime**: Optimized for Bun's fast JavaScript runtime
+- **TypeScript Config**: Uses `verbatimModuleSyntax: true` for explicit import/export syntax
+- **Module Resolution**: Bundler mode with import extensions allowed
 
 ### CLI Access
 The project includes a comprehensive CLI:
