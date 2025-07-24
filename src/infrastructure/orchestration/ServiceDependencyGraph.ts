@@ -1,504 +1,237 @@
-import { z } from 'zod';
 import { logger } from '@/lib/unjs-utils.js';
+import { TypedEventEmitter } from './TypedEventEmitter.js';
 
-/**
- * Retry policy for service startup
- */
-export interface RetryPolicy {
-  attempts: number;
-  delay: number;
-  maxDelay: number;
-  backoff: 'fixed' | 'exponential' | 'linear';
-  retryIf?: (error: Error) => boolean;
-}
-
-/**
- * Health requirement for a service
- */
-export interface HealthRequirement {
-  check: string;
-  threshold: 'healthy' | 'degraded' | 'any';
-  timeout?: number;
-}
-
-/**
- * Service definition with dependencies and metadata
- */
 export interface ServiceDefinition {
   name: string;
   critical: boolean;
   dependencies: string[];
   optionalDependencies?: string[];
-  startupTimeout?: number;
-  retryPolicy?: RetryPolicy;
-  healthRequirements?: HealthRequirement[];
-  metadata?: Record<string, any>;
-}
-
-/**
- * Service node in the dependency graph
- */
-interface ServiceNode {
-  definition: ServiceDefinition;
-  dependents: Set<string>; // Services that depend on this one
-  depth: number; // Depth in dependency tree
-  visited: boolean; // For cycle detection
-  visiting: boolean; // For cycle detection
-}
-
-/**
- * Group of services that can be started in parallel
- */
-export interface ServiceGroup {
-  services: string[];
-  depth: number;
   timeout: number;
+  retryPolicy?: {
+    attempts: number;
+    delay: number;
+    backoff: 'linear' | 'exponential';
+  };
+  healthChecks?: {
+    startup?: string;
+    runtime?: string[];
+  };
+  resources?: {
+    cpu?: string;
+    memory?: string;
+    storage?: string;
+  };
+  capabilities?: string[];
+  version?: string;
+}
+
+export interface DependencyGroup {
+  level: number;
+  services: string[];
+  parallel: boolean;
   critical: boolean;
 }
 
-/**
- * Validation result for the dependency graph
- */
-export interface ValidationResult {
-  valid: boolean;
-  errors: string[];
-  warnings: string[];
-  cycles: string[][];
-  missingDependencies: Map<string, string[]>;
+export interface CriticalPath {
+  services: string[];
+  totalTime: number;
+  bottleneck?: string;
+}
+
+interface DependencyGraphEventMap {
+  'dependency:added': {
+    service: string;
+    dependency: string;
+    type: 'required' | 'optional';
+  };
+  'dependency:removed': {
+    service: string;
+    dependency: string;
+  };
+  'circular:detected': {
+    cycle: string[];
+  };
+  'graph:updated': {
+    timestamp: Date;
+  };
 }
 
 /**
- * Service dependency graph for managing service startup order
- * 
- * Features:
- * - Topological sort for dependency resolution
- * - Circular dependency detection
- * - Parallel group identification
- * - Critical path analysis
- * - Dynamic dependency updates
+ * Service Dependency Graph for orchestration
+ * Provides topological sorting, parallel group identification, and critical path analysis
  */
-export class ServiceDependencyGraph {
-  private graph: Map<string, ServiceNode> = new Map();
-  private topologicalOrder: string[] = [];
-  private parallelGroups: ServiceGroup[] = [];
-  
-  /**
-   * Add a service to the dependency graph
-   */
-  addService(service: ServiceDefinition): void {
-    if (this.graph.has(service.name)) {
-      logger.warn(`Service ${service.name} already exists in dependency graph`);
-      return;
-    }
-
-    const node: ServiceNode = {
-      definition: service,
-      dependents: new Set(),
-      depth: -1,
-      visited: false,
-      visiting: false,
-    };
-
-    this.graph.set(service.name, node);
-    
-    // Update dependents for all dependencies
-    for (const dep of service.dependencies) {
-      const depNode = this.graph.get(dep);
-      if (depNode) {
-        depNode.dependents.add(service.name);
-      }
-    }
-    
-    // Update dependents for optional dependencies
-    if (service.optionalDependencies) {
-      for (const dep of service.optionalDependencies) {
-        const depNode = this.graph.get(dep);
-        if (depNode) {
-          depNode.dependents.add(service.name);
-        }
-      }
-    }
-
-    // Recalculate topology when adding new service
-    this.calculateTopology();
-  }
+export class ServiceDependencyGraph extends TypedEventEmitter<DependencyGraphEventMap> {
+  private services: Map<string, ServiceDefinition> = new Map();
+  private dependencyMatrix: Map<string, Set<string>> = new Map();
+  private reverseDependencyMatrix: Map<string, Set<string>> = new Map();
+  private lastSortedGroups: DependencyGroup[] = [];
 
   /**
-   * Remove a service from the dependency graph
+   * Add a service definition to the graph
    */
-  removeService(serviceName: string): void {
-    const node = this.graph.get(serviceName);
-    if (!node) return;
+  addService(definition: ServiceDefinition): void {
+    const existingService = this.services.get(definition.name);
+    this.services.set(definition.name, definition);
 
-    // Remove from dependents of all dependencies
-    for (const dep of node.definition.dependencies) {
-      const depNode = this.graph.get(dep);
-      if (depNode) {
-        depNode.dependents.delete(serviceName);
-      }
-    }
+    // Update dependency matrices
+    this.updateDependencyMatrix(definition.name, definition.dependencies, definition.optionalDependencies || []);
 
-    // Remove from graph
-    this.graph.delete(serviceName);
-
-    // Recalculate topology
-    this.calculateTopology();
-  }
-
-  /**
-   * Update service dependencies
-   */
-  updateDependencies(serviceName: string, dependencies: string[], optionalDependencies?: string[]): void {
-    const node = this.graph.get(serviceName);
-    if (!node) {
-      throw new Error(`Service ${serviceName} not found in dependency graph`);
-    }
-
-    // Remove old dependencies
-    for (const dep of node.definition.dependencies) {
-      const depNode = this.graph.get(dep);
-      if (depNode) {
-        depNode.dependents.delete(serviceName);
-      }
-    }
-
-    // Update dependencies
-    node.definition.dependencies = dependencies;
-    node.definition.optionalDependencies = optionalDependencies;
-
-    // Add new dependencies
-    for (const dep of dependencies) {
-      const depNode = this.graph.get(dep);
-      if (depNode) {
-        depNode.dependents.add(serviceName);
-      }
-    }
-
-    if (optionalDependencies) {
-      for (const dep of optionalDependencies) {
-        const depNode = this.graph.get(dep);
-        if (depNode) {
-          depNode.dependents.add(serviceName);
-        }
-      }
-    }
-
-    // Recalculate topology
-    this.calculateTopology();
-  }
-
-  /**
-   * Get topological sort of services (startup order)
-   */
-  getStartupOrder(): string[] {
-    return [...this.topologicalOrder];
-  }
-
-  /**
-   * Get services grouped by parallelization opportunity
-   */
-  getParallelGroups(): ServiceGroup[] {
-    return [...this.parallelGroups];
-  }
-
-  /**
-   * Validate the dependency graph
-   */
-  validateGraph(): ValidationResult {
-    const result: ValidationResult = {
-      valid: true,
-      errors: [],
-      warnings: [],
-      cycles: [],
-      missingDependencies: new Map(),
-    };
-
-    // Reset visited flags
-    for (const node of this.graph.values()) {
-      node.visited = false;
-      node.visiting = false;
-    }
-
-    // Check for cycles
-    const cycles = this.detectCycles();
-    if (cycles.length > 0) {
-      result.valid = false;
-      result.cycles = cycles;
-      result.errors.push(`Circular dependencies detected: ${cycles.map(c => c.join(' -> ')).join(', ')}`);
-    }
-
-    // Check for missing dependencies
-    for (const [serviceName, node] of this.graph.entries()) {
-      const missing: string[] = [];
-      
-      for (const dep of node.definition.dependencies) {
-        if (!this.graph.has(dep)) {
-          missing.push(dep);
-        }
+    // Emit events for new dependencies
+    if (!existingService) {
+      for (const dep of definition.dependencies) {
+        this.emit('dependency:added', {
+          service: definition.name,
+          dependency: dep,
+          type: 'required',
+        });
       }
       
-      if (missing.length > 0) {
-        result.valid = false;
-        result.missingDependencies.set(serviceName, missing);
-        result.errors.push(`Service ${serviceName} has missing dependencies: ${missing.join(', ')}`);
-      }
-    }
-
-    // Check for optional missing dependencies (warnings only)
-    for (const [serviceName, node] of this.graph.entries()) {
-      if (!node.definition.optionalDependencies) continue;
-      
-      const missingOptional = node.definition.optionalDependencies.filter(dep => !this.graph.has(dep));
-      if (missingOptional.length > 0) {
-        result.warnings.push(`Service ${serviceName} has missing optional dependencies: ${missingOptional.join(', ')}`);
-      }
-    }
-
-    // Warn about services with no dependents (leaf services)
-    const leafServices = Array.from(this.graph.entries())
-      .filter(([_, node]) => node.dependents.size === 0)
-      .map(([name]) => name);
-    
-    if (leafServices.length > 0) {
-      result.warnings.push(`Leaf services with no dependents: ${leafServices.join(', ')}`);
-    }
-
-    return result;
-  }
-
-  /**
-   * Get critical path (longest dependency chain)
-   */
-  getCriticalPath(): string[] {
-    const paths: string[][] = [];
-    
-    // Find all root services (no dependencies)
-    const roots = Array.from(this.graph.entries())
-      .filter(([_, node]) => node.definition.dependencies.length === 0)
-      .map(([name]) => name);
-
-    // DFS from each root to find all paths
-    for (const root of roots) {
-      this.findPaths(root, [root], paths);
-    }
-
-    // Find longest path
-    let criticalPath: string[] = [];
-    let maxLength = 0;
-    
-    for (const path of paths) {
-      const length = this.calculatePathTime(path);
-      if (length > maxLength) {
-        maxLength = length;
-        criticalPath = path;
-      }
-    }
-
-    return criticalPath;
-  }
-
-  /**
-   * Get service depth (distance from root)
-   */
-  getServiceDepth(serviceName: string): number {
-    const node = this.graph.get(serviceName);
-    return node?.depth ?? -1;
-  }
-
-  /**
-   * Get all services at a specific depth
-   */
-  getServicesAtDepth(depth: number): string[] {
-    return Array.from(this.graph.entries())
-      .filter(([_, node]) => node.depth === depth)
-      .map(([name]) => name);
-  }
-
-  /**
-   * Calculate topology and parallel groups
-   */
-  private calculateTopology(): void {
-    // Perform topological sort
-    this.topologicalOrder = this.topologicalSort();
-    
-    // Calculate depths
-    this.calculateDepths();
-    
-    // Group by depth for parallel execution
-    this.calculateParallelGroups();
-  }
-
-  /**
-   * Topological sort using DFS
-   */
-  private topologicalSort(): string[] {
-    const result: string[] = [];
-    const visited = new Set<string>();
-    const visiting = new Set<string>();
-
-    const visit = (serviceName: string): void => {
-      if (visited.has(serviceName)) return;
-      if (visiting.has(serviceName)) {
-        throw new Error(`Circular dependency detected involving ${serviceName}`);
-      }
-
-      visiting.add(serviceName);
-      const node = this.graph.get(serviceName);
-      
-      if (node) {
-        // Visit dependencies first
-        for (const dep of node.definition.dependencies) {
-          if (this.graph.has(dep)) {
-            visit(dep);
-          }
-        }
-        
-        // Visit optional dependencies
-        if (node.definition.optionalDependencies) {
-          for (const dep of node.definition.optionalDependencies) {
-            if (this.graph.has(dep)) {
-              visit(dep);
-            }
-          }
-        }
-      }
-
-      visiting.delete(serviceName);
-      visited.add(serviceName);
-      result.push(serviceName);
-    };
-
-    // Visit all nodes
-    for (const serviceName of this.graph.keys()) {
-      visit(serviceName);
-    }
-
-    return result;
-  }
-
-  /**
-   * Calculate depth for each service
-   */
-  private calculateDepths(): void {
-    // Reset depths
-    for (const node of this.graph.values()) {
-      node.depth = -1;
-    }
-
-    // BFS to calculate depths
-    const queue: string[] = [];
-    
-    // Start with root services (no dependencies)
-    for (const [name, node] of this.graph.entries()) {
-      if (node.definition.dependencies.length === 0) {
-        node.depth = 0;
-        queue.push(name);
-      }
-    }
-
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      const currentNode = this.graph.get(current)!;
-      
-      // Update dependents
-      for (const dependent of currentNode.dependents) {
-        const depNode = this.graph.get(dependent);
-        if (depNode) {
-          const newDepth = currentNode.depth + 1;
-          if (depNode.depth < newDepth) {
-            depNode.depth = newDepth;
-            queue.push(dependent);
-          }
-        }
-      }
-    }
-  }
-
-  /**
-   * Calculate parallel execution groups
-   */
-  private calculateParallelGroups(): void {
-    this.parallelGroups = [];
-    
-    // Find max depth
-    let maxDepth = 0;
-    for (const node of this.graph.values()) {
-      if (node.depth > maxDepth) {
-        maxDepth = node.depth;
-      }
-    }
-
-    // Group services by depth
-    for (let depth = 0; depth <= maxDepth; depth++) {
-      const services = this.getServicesAtDepth(depth);
-      
-      if (services.length > 0) {
-        // Calculate timeout for group (max of all services)
-        let groupTimeout = 30000; // Default 30s
-        let hasCritical = false;
-        
-        for (const serviceName of services) {
-          const node = this.graph.get(serviceName)!;
-          const timeout = node.definition.startupTimeout || 30000;
-          if (timeout > groupTimeout) {
-            groupTimeout = timeout;
-          }
-          if (node.definition.critical) {
-            hasCritical = true;
-          }
-        }
-
-        this.parallelGroups.push({
-          services,
-          depth,
-          timeout: groupTimeout,
-          critical: hasCritical,
+      for (const dep of definition.optionalDependencies || []) {
+        this.emit('dependency:added', {
+          service: definition.name,
+          dependency: dep,
+          type: 'optional',
         });
       }
     }
+
+    this.emit('graph:updated', { timestamp: new Date() });
   }
 
   /**
-   * Detect cycles in the graph
+   * Remove a service from the graph
    */
-  private detectCycles(): string[][] {
+  removeService(serviceName: string): void {
+    const service = this.services.get(serviceName);
+    if (!service) return;
+
+    // Remove from services
+    this.services.delete(serviceName);
+
+    // Clean up dependency matrices
+    this.dependencyMatrix.delete(serviceName);
+    this.reverseDependencyMatrix.delete(serviceName);
+
+    // Remove references from other services
+    for (const [name, deps] of this.dependencyMatrix.entries()) {
+      if (deps.has(serviceName)) {
+        deps.delete(serviceName);
+        this.emit('dependency:removed', {
+          service: name,
+          dependency: serviceName,
+        });
+      }
+    }
+
+    for (const [name, deps] of this.reverseDependencyMatrix.entries()) {
+      deps.delete(serviceName);
+    }
+
+    this.emit('graph:updated', { timestamp: new Date() });
+  }
+
+  /**
+   * Add a dependency between services
+   */
+  addDependency(serviceName: string, dependencyName: string, optional: boolean = false): void {
+    const service = this.services.get(serviceName);
+    if (!service) {
+      throw new Error(`Service ${serviceName} not found`);
+    }
+
+    // Update service definition
+    if (optional) {
+      service.optionalDependencies = service.optionalDependencies || [];
+      if (!service.optionalDependencies.includes(dependencyName)) {
+        service.optionalDependencies.push(dependencyName);
+      }
+    } else {
+      if (!service.dependencies.includes(dependencyName)) {
+        service.dependencies.push(dependencyName);
+      }
+    }
+
+    // Update matrices
+    this.updateDependencyMatrix(serviceName, service.dependencies, service.optionalDependencies || []);
+
+    this.emit('dependency:added', {
+      service: serviceName,
+      dependency: dependencyName,
+      type: optional ? 'optional' : 'required',
+    });
+
+    this.emit('graph:updated', { timestamp: new Date() });
+  }
+
+  /**
+   * Remove a dependency
+   */
+  removeDependency(serviceName: string, dependencyName: string): void {
+    const service = this.services.get(serviceName);
+    if (!service) return;
+
+    // Remove from required dependencies
+    const reqIndex = service.dependencies.indexOf(dependencyName);
+    if (reqIndex !== -1) {
+      service.dependencies.splice(reqIndex, 1);
+    }
+
+    // Remove from optional dependencies
+    if (service.optionalDependencies) {
+      const optIndex = service.optionalDependencies.indexOf(dependencyName);
+      if (optIndex !== -1) {
+        service.optionalDependencies.splice(optIndex, 1);
+      }
+    }
+
+    // Update matrices
+    this.updateDependencyMatrix(serviceName, service.dependencies, service.optionalDependencies || []);
+
+    this.emit('dependency:removed', {
+      service: serviceName,
+      dependency: dependencyName,
+    });
+
+    this.emit('graph:updated', { timestamp: new Date() });
+  }
+
+  /**
+   * Detect circular dependencies
+   */
+  detectCircularDependencies(): string[][] {
     const cycles: string[][] = [];
     const visited = new Set<string>();
-    const recStack = new Set<string>();
-    const path: string[] = [];
+    const recursionStack = new Set<string>();
 
-    const detectCycleUtil = (serviceName: string): boolean => {
-      visited.add(serviceName);
-      recStack.add(serviceName);
-      path.push(serviceName);
-
-      const node = this.graph.get(serviceName);
-      if (!node) return false;
-
-      for (const dep of node.definition.dependencies) {
-        if (!visited.has(dep)) {
-          if (detectCycleUtil(dep)) {
-            return true;
-          }
-        } else if (recStack.has(dep)) {
-          // Found cycle
-          const cycleStart = path.indexOf(dep);
-          const cycle = path.slice(cycleStart);
-          cycle.push(dep); // Complete the cycle
-          cycles.push(cycle);
-          return true;
-        }
+    const dfs = (serviceName: string, path: string[]): void => {
+      if (recursionStack.has(serviceName)) {
+        // Found a cycle
+        const cycleStart = path.indexOf(serviceName);
+        const cycle = path.slice(cycleStart).concat([serviceName]);
+        cycles.push(cycle);
+        
+        this.emit('circular:detected', { cycle });
+        return;
       }
 
-      path.pop();
-      recStack.delete(serviceName);
-      return false;
+      if (visited.has(serviceName)) {
+        return;
+      }
+
+      visited.add(serviceName);
+      recursionStack.add(serviceName);
+
+      const dependencies = this.dependencyMatrix.get(serviceName) || new Set();
+      for (const dep of dependencies) {
+        dfs(dep, [...path, serviceName]);
+      }
+
+      recursionStack.delete(serviceName);
     };
 
-    // Check each unvisited node
-    for (const serviceName of this.graph.keys()) {
+    for (const serviceName of this.services.keys()) {
       if (!visited.has(serviceName)) {
-        detectCycleUtil(serviceName);
+        dfs(serviceName, []);
       }
     }
 
@@ -506,121 +239,478 @@ export class ServiceDependencyGraph {
   }
 
   /**
-   * Find all paths from a service to leaf nodes
+   * Perform topological sort to determine startup order
    */
-  private findPaths(serviceName: string, currentPath: string[], allPaths: string[][]): void {
-    const node = this.graph.get(serviceName);
-    if (!node) return;
-
-    if (node.dependents.size === 0) {
-      // Leaf node - add path
-      allPaths.push([...currentPath]);
-      return;
+  topologicalSort(includeOptional: boolean = false): DependencyGroup[] {
+    const cycles = this.detectCircularDependencies();
+    if (cycles.length > 0) {
+      throw new Error(`Circular dependencies detected: ${cycles.map(c => c.join(' -> ')).join(', ')}`);
     }
 
-    for (const dependent of node.dependents) {
-      currentPath.push(dependent);
-      this.findPaths(dependent, currentPath, allPaths);
-      currentPath.pop();
-    }
-  }
+    const inDegree = new Map<string, number>();
+    const groups: DependencyGroup[] = [];
+    const visited = new Set<string>();
 
-  /**
-   * Calculate total time for a path
-   */
-  private calculatePathTime(path: string[]): number {
-    let totalTime = 0;
-    
-    for (const serviceName of path) {
-      const node = this.graph.get(serviceName);
-      if (node) {
-        totalTime += node.definition.startupTimeout || 30000;
-      }
+    // Initialize in-degree count
+    for (const serviceName of this.services.keys()) {
+      inDegree.set(serviceName, 0);
     }
-    
-    return totalTime;
-  }
 
-  /**
-   * Export graph as DOT format for visualization
-   */
-  exportDOT(): string {
-    const lines: string[] = ['digraph ServiceDependencies {'];
-    lines.push('  rankdir=BT;'); // Bottom to top
-    lines.push('  node [shape=box];');
-    
-    // Add nodes with attributes
-    for (const [name, node] of this.graph.entries()) {
-      const attrs: string[] = [];
-      
-      if (node.definition.critical) {
-        attrs.push('color=red', 'style=bold');
-      }
-      
-      if (node.depth === 0) {
-        attrs.push('shape=ellipse', 'fillcolor=lightblue', 'style=filled');
-      }
-      
-      const label = `${name}\\n(depth: ${node.depth})`;
-      attrs.push(`label="${label}"`);
-      
-      lines.push(`  "${name}" [${attrs.join(', ')}];`);
-    }
-    
-    // Add edges
-    for (const [name, node] of this.graph.entries()) {
-      for (const dep of node.definition.dependencies) {
-        if (this.graph.has(dep)) {
-          lines.push(`  "${dep}" -> "${name}";`);
+    // Calculate in-degrees
+    for (const [serviceName, deps] of this.dependencyMatrix.entries()) {
+      for (const dep of deps) {
+        if (this.services.has(dep)) {
+          inDegree.set(dep, (inDegree.get(dep) || 0) + 1);
         }
       }
-      
-      // Optional dependencies with dashed lines
-      if (node.definition.optionalDependencies) {
-        for (const dep of node.definition.optionalDependencies) {
-          if (this.graph.has(dep)) {
-            lines.push(`  "${dep}" -> "${name}" [style=dashed];`);
+
+      // Include optional dependencies if requested
+      if (includeOptional) {
+        const service = this.services.get(serviceName);
+        if (service?.optionalDependencies) {
+          for (const dep of service.optionalDependencies) {
+            if (this.services.has(dep)) {
+              inDegree.set(dep, (inDegree.get(dep) || 0) + 0.5); // Weight optional deps less
+            }
           }
         }
       }
     }
-    
-    lines.push('}');
-    return lines.join('\n');
+
+    let level = 0;
+    while (visited.size < this.services.size) {
+      // Find services with no dependencies
+      const readyServices: string[] = [];
+      
+      for (const [serviceName, degree] of inDegree.entries()) {
+        if (!visited.has(serviceName) && degree === 0) {
+          readyServices.push(serviceName);
+        }
+      }
+
+      if (readyServices.length === 0) {
+        // Handle remaining services with circular or missing dependencies
+        const remaining = Array.from(this.services.keys()).filter(s => !visited.has(s));
+        logger.warn('Breaking dependency deadlock for services:', remaining);
+        readyServices.push(...remaining);
+      }
+
+      // Determine if services in this group can run in parallel
+      const canRunParallel = this.canRunInParallel(readyServices);
+      const hasCriticalService = readyServices.some(s => this.services.get(s)?.critical);
+
+      groups.push({
+        level,
+        services: readyServices,
+        parallel: canRunParallel,
+        critical: hasCriticalService,
+      });
+
+      // Mark as visited and update in-degrees
+      for (const serviceName of readyServices) {
+        visited.add(serviceName);
+        
+        const reverseDeps = this.reverseDependencyMatrix.get(serviceName) || new Set();
+        for (const dependent of reverseDeps) {
+          if (!visited.has(dependent)) {
+            inDegree.set(dependent, Math.max(0, (inDegree.get(dependent) || 0) - 1));
+          }
+        }
+      }
+
+      level++;
+    }
+
+    this.lastSortedGroups = groups;
+    return groups;
   }
 
   /**
-   * Get service statistics
+   * Calculate the critical path through the dependency graph
    */
-  getStatistics(): {
-    totalServices: number;
-    criticalServices: number;
-    maxDepth: number;
-    averageDependencies: number;
-    rootServices: number;
-    leafServices: number;
-  } {
-    let criticalCount = 0;
-    let maxDepth = 0;
-    let totalDependencies = 0;
-    let rootCount = 0;
-    let leafCount = 0;
+  calculateCriticalPath(): CriticalPath {
+    const groups = this.lastSortedGroups.length > 0 
+      ? this.lastSortedGroups 
+      : this.topologicalSort();
 
-    for (const node of this.graph.values()) {
-      if (node.definition.critical) criticalCount++;
-      if (node.depth > maxDepth) maxDepth = node.depth;
-      totalDependencies += node.definition.dependencies.length;
-      if (node.definition.dependencies.length === 0) rootCount++;
-      if (node.dependents.size === 0) leafCount++;
+    let totalTime = 0;
+    let bottleneck: string | undefined;
+    let maxServiceTime = 0;
+    const criticalServices: string[] = [];
+
+    for (const group of groups) {
+      if (group.parallel) {
+        // For parallel groups, time is determined by the slowest service
+        let groupMaxTime = 0;
+        let groupBottleneck: string | undefined;
+
+        for (const serviceName of group.services) {
+          const service = this.services.get(serviceName);
+          const serviceTime = service?.timeout || 30000;
+          
+          if (serviceTime > groupMaxTime) {
+            groupMaxTime = serviceTime;
+            groupBottleneck = serviceName;
+          }
+        }
+
+        totalTime += groupMaxTime;
+        if (groupMaxTime > maxServiceTime) {
+          maxServiceTime = groupMaxTime;
+          bottleneck = groupBottleneck;
+        }
+
+        if (groupBottleneck) {
+          criticalServices.push(groupBottleneck);
+        }
+      } else {
+        // For sequential groups, add all service times
+        for (const serviceName of group.services) {
+          const service = this.services.get(serviceName);
+          const serviceTime = service?.timeout || 30000;
+          
+          totalTime += serviceTime;
+          criticalServices.push(serviceName);
+
+          if (serviceTime > maxServiceTime) {
+            maxServiceTime = serviceTime;
+            bottleneck = serviceName;
+          }
+        }
+      }
     }
 
     return {
-      totalServices: this.graph.size,
-      criticalServices: criticalCount,
-      maxDepth,
-      averageDependencies: this.graph.size > 0 ? totalDependencies / this.graph.size : 0,
-      rootServices: rootCount,
-      leafServices: leafCount,
+      services: criticalServices,
+      totalTime,
+      bottleneck,
     };
   }
+
+  /**
+   * Get parallel groups for optimized startup
+   */
+  getParallelGroups(): DependencyGroup[] {
+    return this.topologicalSort().filter(group => group.parallel);
+  }
+
+  /**
+   * Get services that can be skipped without affecting critical services
+   */
+  getNonCriticalServices(): string[] {
+    const nonCritical: string[] = [];
+    
+    for (const [name, service] of this.services.entries()) {
+      if (!service.critical) {
+        // Check if any critical service depends on this
+        const dependents = this.reverseDependencyMatrix.get(name) || new Set();
+        const hasCriticalDependents = Array.from(dependents).some(dep => 
+          this.services.get(dep)?.critical
+        );
+        
+        if (!hasCriticalDependents) {
+          nonCritical.push(name);
+        }
+      }
+    }
+
+    return nonCritical;
+  }
+
+  /**
+   * Validate the dependency graph
+   */
+  validate(): {
+    valid: boolean;
+    errors: string[];
+    warnings: string[];
+  } {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    // Check for missing dependencies
+    for (const [serviceName, service] of this.services.entries()) {
+      for (const dep of service.dependencies) {
+        if (!this.services.has(dep)) {
+          errors.push(`Service ${serviceName} depends on missing service: ${dep}`);
+        }
+      }
+
+      for (const dep of service.optionalDependencies || []) {
+        if (!this.services.has(dep)) {
+          warnings.push(`Service ${serviceName} has optional dependency on missing service: ${dep}`);
+        }
+      }
+    }
+
+    // Check for circular dependencies
+    const cycles = this.detectCircularDependencies();
+    for (const cycle of cycles) {
+      errors.push(`Circular dependency detected: ${cycle.join(' -> ')}`);
+    }
+
+    // Check for isolated services
+    for (const serviceName of this.services.keys()) {
+      const hasDependencies = (this.dependencyMatrix.get(serviceName)?.size || 0) > 0;
+      const hasDependents = (this.reverseDependencyMatrix.get(serviceName)?.size || 0) > 0;
+      
+      if (!hasDependencies && !hasDependents) {
+        warnings.push(`Service ${serviceName} has no dependencies or dependents (isolated)`);
+      }
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  }
+
+  /**
+   * Get service definition
+   */
+  getService(name: string): ServiceDefinition | undefined {
+    return this.services.get(name);
+  }
+
+  /**
+   * Get all services
+   */
+  getAllServices(): Map<string, ServiceDefinition> {
+    return new Map(this.services);
+  }
+
+  /**
+   * Get dependencies for a service
+   */
+  getDependencies(serviceName: string): {
+    required: string[];
+    optional: string[];
+  } {
+    const service = this.services.get(serviceName);
+    return {
+      required: service?.dependencies || [],
+      optional: service?.optionalDependencies || [],
+    };
+  }
+
+  /**
+   * Get services that depend on a given service
+   */
+  getDependents(serviceName: string): string[] {
+    return Array.from(this.reverseDependencyMatrix.get(serviceName) || new Set());
+  }
+
+  /**
+   * Export graph for visualization
+   */
+  exportGraph(): {
+    nodes: Array<{
+      id: string;
+      label: string;
+      critical: boolean;
+      timeout: number;
+      level?: number;
+    }>;
+    edges: Array<{
+      from: string;
+      to: string;
+      type: 'required' | 'optional';
+    }>;
+  } {
+    const nodes = Array.from(this.services.entries()).map(([name, service]) => ({
+      id: name,
+      label: name,
+      critical: service.critical,
+      timeout: service.timeout,
+    }));
+
+    const edges: Array<{
+      from: string;
+      to: string;
+      type: 'required' | 'optional';
+    }> = [];
+
+    for (const [serviceName, service] of this.services.entries()) {
+      for (const dep of service.dependencies) {
+        edges.push({
+          from: serviceName,
+          to: dep,
+          type: 'required',
+        });
+      }
+
+      for (const dep of service.optionalDependencies || []) {
+        edges.push({
+          from: serviceName,
+          to: dep,
+          type: 'optional',
+        });
+      }
+    }
+
+    return { nodes, edges };
+  }
+
+  private updateDependencyMatrix(serviceName: string, required: string[], optional: string[]): void {
+    // Update forward dependencies
+    this.dependencyMatrix.set(serviceName, new Set([...required, ...optional]));
+
+    // Update reverse dependencies
+    for (const dep of [...required, ...optional]) {
+      if (!this.reverseDependencyMatrix.has(dep)) {
+        this.reverseDependencyMatrix.set(dep, new Set());
+      }
+      this.reverseDependencyMatrix.get(dep)!.add(serviceName);
+    }
+  }
+
+  private canRunInParallel(services: string[]): boolean {
+    // Services can run in parallel if they don't have inter-dependencies
+    for (let i = 0; i < services.length; i++) {
+      for (let j = i + 1; j < services.length; j++) {
+        const service1 = services[i];
+        const service2 = services[j];
+        
+        // Check if service1 depends on service2 or vice versa
+        const deps1 = this.dependencyMatrix.get(service1) || new Set();
+        const deps2 = this.dependencyMatrix.get(service2) || new Set();
+        
+        if (deps1.has(service2) || deps2.has(service1)) {
+          return false;
+        }
+      }
+    }
+    
+    return true;
+  }
 }
+
+/**
+ * Default service definitions for the Todo application
+ */
+export const DEFAULT_SERVICE_DEFINITIONS: ServiceDefinition[] = [
+  // Core infrastructure (no dependencies)
+  {
+    name: 'prisma-service',
+    critical: true,
+    dependencies: [],
+    timeout: 30000,
+    retryPolicy: { attempts: 3, delay: 5000, backoff: 'exponential' },
+    healthChecks: { startup: 'database:connection', runtime: ['database:health'] },
+    resources: { memory: '256Mi', cpu: '100m' },
+  },
+  {
+    name: 'cache-manager',
+    critical: false,
+    dependencies: [],
+    timeout: 10000,
+    retryPolicy: { attempts: 2, delay: 2000, backoff: 'linear' },
+    healthChecks: { startup: 'cache:connection', runtime: ['cache:health'] },
+    resources: { memory: '128Mi', cpu: '50m' },
+  },
+  {
+    name: 'message-broker',
+    critical: true,
+    dependencies: [],
+    timeout: 20000,
+    retryPolicy: { attempts: 3, delay: 3000, backoff: 'exponential' },
+    healthChecks: { startup: 'broker:connection', runtime: ['broker:health'] },
+    resources: { memory: '256Mi', cpu: '100m' },
+  },
+
+  // Event system (depends on database and message broker)
+  {
+    name: 'event-store',
+    critical: true,
+    dependencies: ['prisma-service'],
+    timeout: 20000,
+    retryPolicy: { attempts: 2, delay: 3000, backoff: 'exponential' },
+    healthChecks: { startup: 'eventstore:ready', runtime: ['eventstore:health'] },
+  },
+  {
+    name: 'cqrs-coordinator',
+    critical: true,
+    dependencies: ['prisma-service', 'event-store', 'message-broker'],
+    timeout: 30000,
+    retryPolicy: { attempts: 2, delay: 5000, backoff: 'exponential' },
+  },
+  {
+    name: 'read-model-manager',
+    critical: true,
+    dependencies: ['prisma-service', 'cqrs-coordinator'],
+    optionalDependencies: ['cache-manager'],
+    timeout: 25000,
+  },
+
+  // Microservices infrastructure
+  {
+    name: 'service-registry',
+    critical: true,
+    dependencies: [],
+    timeout: 15000,
+    capabilities: ['service-discovery', 'health-monitoring'],
+  },
+  {
+    name: 'service-mesh',
+    critical: true,
+    dependencies: ['service-registry'],
+    timeout: 20000,
+    capabilities: ['traffic-management', 'security-policies'],
+  },
+  {
+    name: 'api-gateway',
+    critical: true,
+    dependencies: ['service-mesh', 'cache-manager'],
+    timeout: 30000,
+    capabilities: ['routing', 'rate-limiting', 'authentication'],
+  },
+
+  // AI services (optional)
+  {
+    name: 'vector-store',
+    critical: false,
+    dependencies: [],
+    timeout: 15000,
+    capabilities: ['vector-search', 'embeddings'],
+  },
+  {
+    name: 'embedding-service',
+    critical: false,
+    dependencies: ['vector-store'],
+    timeout: 25000,
+    capabilities: ['text-embedding', 'similarity-search'],
+  },
+  {
+    name: 'nlp-service',
+    critical: false,
+    dependencies: [],
+    timeout: 30000,
+    capabilities: ['text-processing', 'command-parsing'],
+  },
+  {
+    name: 'rag-service',
+    critical: false,
+    dependencies: ['embedding-service', 'vector-store'],
+    optionalDependencies: ['nlp-service'],
+    timeout: 35000,
+    capabilities: ['knowledge-retrieval', 'context-generation'],
+  },
+
+  // Monitoring and management
+  {
+    name: 'service-dashboard',
+    critical: false,
+    dependencies: ['service-registry'],
+    optionalDependencies: ['cache-manager'],
+    timeout: 15000,
+    capabilities: ['monitoring', 'alerting'],
+  },
+  {
+    name: 'chaos-engineering',
+    critical: false,
+    dependencies: ['service-registry'],
+    timeout: 10000,
+    capabilities: ['fault-injection', 'resilience-testing'],
+  },
+];

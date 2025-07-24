@@ -1,9 +1,8 @@
-import { AsyncSingletonService } from '@/infrastructure/core/SingletonService';
-import { KafkaEventStream, StreamEvent, createEventConsumer } from '@/infrastructure/streaming/KafkaEventStream';
 import { RedisClusterManager } from '@/infrastructure/cache/RedisClusterManager';
-import { logger } from '@/logger';
 import { ErrorHandler } from '@/infrastructure/core/ErrorHandler';
-import { nanoid } from 'nanoid';
+import { AsyncSingletonService } from '@/infrastructure/core/SingletonService';
+import { KafkaEventStream, type StreamEvent, createEventConsumer } from '@/infrastructure/streaming/KafkaEventStream';
+import { logger } from '@/logger';
 
 export interface ProjectionDefinition {
   name: string;
@@ -56,7 +55,7 @@ class RedisReadModelStore implements ReadModelStore {
   constructor(
     private redis: RedisClusterManager,
     private projectionName: string
-  ) {}
+  ) { }
 
   private getKey(key: string): string {
     return `projection:${this.projectionName}:${key}`;
@@ -87,7 +86,7 @@ class RedisReadModelStore implements ReadModelStore {
       this.getKey(key),
       JSON.stringify(value)
     ]);
-    
+
     await this.redis.mset(redisEntries, ttl);
   }
 
@@ -131,13 +130,13 @@ export class EventProjectionManager extends AsyncSingletonService<EventProjectio
   private async initialize(): Promise<void> {
     try {
       logger.info('Initializing Event Projection Manager...');
-      
+
       this.eventStream = await KafkaEventStream.getInstance();
       this.redis = await RedisClusterManager.getInstance();
-      
+
       // Load existing checkpoints
       await this.loadCheckpoints();
-      
+
       logger.info('Event Projection Manager initialized');
     } catch (error) {
       logger.error('Failed to initialize Event Projection Manager', error);
@@ -146,7 +145,7 @@ export class EventProjectionManager extends AsyncSingletonService<EventProjectio
   }
 
   async registerProjection(projection: ProjectionDefinition): Promise<void> {
-    logger.info('Registering projection', { 
+    logger.info('Registering projection', {
       name: projection.name,
       version: projection.version,
       topics: projection.topics,
@@ -164,7 +163,7 @@ export class EventProjectionManager extends AsyncSingletonService<EventProjectio
     }
 
     this.projections.set(projection.name, projection);
-    
+
     // Create read model store
     const readModelStore = new RedisReadModelStore(this.redis!, projection.name);
     this.readModelStores.set(projection.name, readModelStore);
@@ -181,7 +180,7 @@ export class EventProjectionManager extends AsyncSingletonService<EventProjectio
         timestamp: new Date(),
         eventCount: 0,
       };
-      
+
       this.checkpoints.set(projection.name, checkpoint);
       await this.saveCheckpoint(checkpoint);
     }
@@ -273,7 +272,7 @@ export class EventProjectionManager extends AsyncSingletonService<EventProjectio
 
     for (const [name, projection] of this.projections) {
       const checkpoint = this.checkpoints.get(name);
-      
+
       stats.push({
         name,
         version: projection.version,
@@ -305,20 +304,20 @@ export class EventProjectionManager extends AsyncSingletonService<EventProjectio
       case 'get':
         if (!query.key) throw new Error('Key required for get operation');
         return await readModelStore.get<T>(query.key);
-        
+
       case 'mget':
         if (!query.keys) throw new Error('Keys required for mget operation');
         return await readModelStore.mget<T>(query.keys);
-        
+
       case 'scan':
         if (!query.pattern) throw new Error('Pattern required for scan operation');
         const keys = await readModelStore.scan(query.pattern);
         return keys as any;
-        
+
       case 'exists':
         if (!query.key) throw new Error('Key required for exists operation');
         return await readModelStore.exists(query.key) as any;
-        
+
       default:
         throw new Error(`Unknown query operation: ${query.operation}`);
     }
@@ -329,7 +328,7 @@ export class EventProjectionManager extends AsyncSingletonService<EventProjectio
     projection: ProjectionDefinition
   ): Promise<void> {
     const groupId = `projection-${projectionName}-${projection.version}`;
-    
+
     await createEventConsumer(
       groupId,
       projection.topics,
@@ -338,7 +337,7 @@ export class EventProjectionManager extends AsyncSingletonService<EventProjectio
       }
     );
 
-    logger.info('Projection consumer started', { 
+    logger.info('Projection consumer started', {
       projectionName,
       groupId,
       topics: projection.topics,
@@ -408,7 +407,7 @@ export class EventProjectionManager extends AsyncSingletonService<EventProjectio
 
     try {
       const checkpointKeys = await this.redis.scan('checkpoint:*');
-      
+
       for (const key of checkpointKeys) {
         const checkpointData = await this.redis.get(key);
         if (checkpointData) {
@@ -429,7 +428,7 @@ export class EventProjectionManager extends AsyncSingletonService<EventProjectio
     try {
       const key = `checkpoint:${checkpoint.projectionName}`;
       await this.redis.set(key, JSON.stringify(checkpoint));
-      
+
       logger.debug('Checkpoint saved', {
         projectionName: checkpoint.projectionName,
         eventCount: checkpoint.eventCount,
@@ -507,7 +506,7 @@ export const ProjectionUtils = {
     entityData?: T
   ): Promise<void> {
     const key = `index:${indexName}:${indexKey}`;
-    
+
     if (entityData) {
       await readModel.set(key, { entityId, ...entityData });
     } else {

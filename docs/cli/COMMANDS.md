@@ -10,6 +10,12 @@ Complete reference for all available CLI commands with examples and flags.
 - [Check Commands](#check-commands)
 - [Database Commands](#database-commands)
 - [Services Commands](#services-commands)
+- [Federation Commands](#federation-commands)
+- [Refactoring Commands](#refactoring-commands)
+- [Generation Commands](#generation-commands)
+- [Infrastructure Commands](#infrastructure-commands)
+- [Monitoring Commands](#monitoring-commands)
+- [Hooks Commands](#hooks-commands)
 - [Status Commands](#status-commands)
 - [Utility Commands](#utility-commands)
 
@@ -226,6 +232,360 @@ Docker services management commands.
 ./bin/run.js services --restart   # Restart services
 ```
 
+## Federation Commands
+
+### `./bin/run.js federation:menu`
+Interactive GraphQL federation management menu.
+
+**Options:**
+- Start federation development environment
+- Test federation setup
+- Docker federation management
+- Subgraph testing
+- Gateway configuration
+
+**Example:**
+```bash
+./bin/run.js federation:menu
+```
+
+### `./bin/run.js federation:dev`
+Start federation development environment with all subgraphs.
+
+**Description:** Automatically starts User, Todo, and AI subgraphs along with the development gateway.
+
+**Example:**
+```bash
+./bin/run.js federation:dev
+```
+
+### `./bin/run.js federation:docker`
+Start federation using Docker containers.
+
+**Flags:**
+- `--build, -b`: Build containers before starting
+- `--dev, -d`: Start in development mode
+- `--logs, -l`: Show container logs
+
+**Examples:**
+```bash
+./bin/run.js federation:docker          # Start with docker compose
+./bin/run.js federation:docker --build  # Build and start
+./bin/run.js federation:docker --dev    # Development mode
+```
+
+### `./bin/run.js federation:test`
+Test federation setup and run health checks.
+
+**Description:** Validates that all subgraphs are running and gateway can compose schemas.
+
+**Example:**
+```bash
+./bin/run.js federation:test
+```
+
+### `./bin/run.js subgraph`
+Manage individual subgraphs.
+
+**Flags:**
+- `--user, -u`: Start User subgraph
+- `--todo, -t`: Start Todo subgraph
+- `--ai, -a`: Start AI subgraph
+- `--all`: Start all subgraphs
+
+**Examples:**
+```bash
+./bin/run.js subgraph --user    # Start User subgraph
+./bin/run.js subgraph --all     # Start all subgraphs
+```
+
+## Refactoring Commands
+
+### `./bin/run.js refactor:menu`
+Interactive refactoring and migration menu.
+
+**Options:**
+- Analyze refactoring opportunities
+- Run automated migrations
+- Performance benchmarking
+- Migration status and rollback
+
+**Example:**
+```bash
+./bin/run.js refactor:menu
+```
+
+### `./bin/run.js refactor:analyze`
+Analyze codebase for refactoring opportunities.
+
+**Description:** Scans for singleton patterns, repositories, aggregates, and GraphQL auth patterns that can be migrated to base classes.
+
+**Examples:**
+```bash
+./bin/run.js refactor:analyze               # Analyze entire codebase
+./bin/run.js refactor:analyze --path src/   # Analyze specific path
+```
+
+### `./bin/run.js refactor:migrate`
+Automated migration to base classes.
+
+**Flags:**
+- `--dry-run, -d`: Preview changes without modifying files
+- `--type, -t`: Migration type (singleton, repository, aggregate, all)
+- `--path, -p`: Specific path to migrate
+- `--backup, -b`: Create backup files (default: true)
+
+**Examples:**
+```bash
+./bin/run.js refactor:migrate --dry-run     # Preview changes
+./bin/run.js refactor:migrate --type singleton  # Migrate singletons only
+./bin/run.js refactor:migrate --path src/infrastructure  # Specific path
+```
+
+### `./bin/run.js refactor:benchmark`
+Run performance benchmarks for refactored code.
+
+**Description:** Compares performance before and after refactoring to ensure no significant regressions.
+
+**Example:**
+```bash
+./bin/run.js refactor:benchmark
+```
+
+### `./bin/run.js refactor:compare`
+Generate performance comparison reports.
+
+**Description:** Creates HTML and Markdown reports comparing old vs new patterns.
+
+**Example:**
+```bash
+./bin/run.js refactor:compare
+```
+
+## Generation Commands
+
+### `./bin/run.js generate:menu`
+Interactive code generation menu.
+
+**Options:**
+- Generate singleton services
+- Generate repositories
+- Generate domain aggregates
+- Generate GraphQL middleware
+- Generate with tests
+
+**Example:**
+```bash
+./bin/run.js generate:menu
+```
+
+### `./bin/run.js generate`
+Generate code from templates.
+
+**Arguments:**
+- `<type>`: Template type (singleton, async-singleton, repository, aggregate, middleware)
+- `<name>`: Name for the generated component
+
+**Flags:**
+- `--path, -p`: Custom output path
+- `--with-tests, -t`: Generate test file
+- `--async, -a`: Generate async version (for singletons)
+
+**Examples:**
+```bash
+./bin/run.js generate singleton EmailService          # Generate singleton
+./bin/run.js generate repository Product --with-tests # Repository with tests
+./bin/run.js generate aggregate Order --path src/domain/
+./bin/run.js generate middleware requiresSubscription
+```
+
+## Infrastructure Commands
+
+### `./bin/run.js pulumi:menu`
+Interactive infrastructure deployment menu.
+
+**Options:**
+- Deploy infrastructure
+- Destroy infrastructure
+- Preview changes
+- Manage configuration
+- View deployment status
+
+**Example:**
+```bash
+./bin/run.js pulumi:menu
+```
+
+### `./bin/run.js pulumi:deploy`
+Deploy infrastructure using Pulumi.
+
+**Flags:**
+- `--stack, -s`: Target stack (dev, staging, prod)
+- `--preview, -p`: Preview changes only
+- `--force, -f`: Force deployment without confirmation
+- `--verbose, -v`: Enable verbose output
+
+**Examples:**
+```bash
+./bin/run.js pulumi:deploy --stack dev      # Deploy to development
+./bin/run.js pulumi:deploy --preview        # Preview changes
+./bin/run.js pulumi:deploy --stack prod --force  # Force production deploy
+```
+
+### `./bin/run.js pulumi:destroy`
+Destroy infrastructure.
+
+**Flags:**
+- `--stack, -s`: Target stack to destroy
+- `--force, -f`: Skip confirmation
+- `--backup, -b`: Create state backup before destroying
+
+**Examples:**
+```bash
+./bin/run.js pulumi:destroy --stack dev     # Destroy development
+./bin/run.js pulumi:destroy --force --backup  # Force with backup
+```
+
+### `./bin/run.js pulumi:status`
+Show infrastructure deployment status.
+
+**Flags:**
+- `--stack, -s`: Target stack
+- `--json, -j`: Output as JSON
+- `--resources, -r`: Show resource details
+
+**Examples:**
+```bash
+./bin/run.js pulumi:status                  # Current stack status
+./bin/run.js pulumi:status --stack prod    # Production status
+./bin/run.js pulumi:status --json          # JSON output
+```
+
+### `./bin/run.js pulumi:config`
+Manage infrastructure configuration.
+
+**Description:** Interactive configuration management for Pulumi stacks.
+
+**Example:**
+```bash
+./bin/run.js pulumi:config
+```
+
+## Monitoring Commands
+
+### `./bin/run.js monitoring:menu`
+Interactive monitoring and health check menu.
+
+**Options:**
+- Run health checks
+- Start monitoring dashboard
+- View service logs
+- Check system diagnostics
+
+**Example:**
+```bash
+./bin/run.js monitoring:menu
+```
+
+### `./bin/run.js health:check`
+Run comprehensive health checks.
+
+**Description:** Checks health of all federation services, databases, and external dependencies.
+
+**Flags:**
+- `--services, -s`: Check services only
+- `--databases, -d`: Check databases only
+- `--verbose, -v`: Detailed output
+- `--json, -j`: JSON output
+
+**Examples:**
+```bash
+./bin/run.js health:check                   # Full health check
+./bin/run.js health:check --services       # Services only
+./bin/run.js health:check --json           # JSON output
+```
+
+### `./bin/run.js monitoring:start`
+Start monitoring and observability services.
+
+**Description:** Starts Prometheus, Grafana, and other monitoring services.
+
+**Example:**
+```bash
+./bin/run.js monitoring:start
+```
+
+### `./bin/run.js diagnostics`
+Run system diagnostics.
+
+**Flags:**
+- `--performance, -p`: Performance diagnostics
+- `--network, -n`: Network connectivity checks
+- `--storage, -s`: Storage and disk checks
+
+**Examples:**
+```bash
+./bin/run.js diagnostics                    # All diagnostics
+./bin/run.js diagnostics --performance     # Performance only
+```
+
+## Hooks Commands
+
+### `./bin/run.js hooks:menu`
+Interactive Git hooks management menu.
+
+**Options:**
+- Setup Git hooks
+- Configure pattern compliance
+- Test hook functionality
+- Remove hooks
+
+**Example:**
+```bash
+./bin/run.js hooks:menu
+```
+
+### `./bin/run.js hooks:setup`
+Setup Git hooks for pattern compliance.
+
+**Description:** Installs pre-commit and commit-msg hooks for code quality and conventional commits.
+
+**Flags:**
+- `--force, -f`: Overwrite existing hooks
+- `--compliance, -c`: Enable pattern compliance checks
+- `--conventional, -v`: Enable conventional commit format
+
+**Examples:**
+```bash
+./bin/run.js hooks:setup                    # Setup all hooks
+./bin/run.js hooks:setup --force           # Overwrite existing
+./bin/run.js hooks:setup --compliance      # Compliance only
+```
+
+### `./bin/run.js hooks:test`
+Test Git hooks functionality.
+
+**Description:** Validates that installed hooks work correctly.
+
+**Example:**
+```bash
+./bin/run.js hooks:test
+```
+
+### `./bin/run.js hooks:remove`
+Remove installed Git hooks.
+
+**Flags:**
+- `--all, -a`: Remove all hooks
+- `--pre-commit`: Remove pre-commit hook only
+- `--commit-msg`: Remove commit-msg hook only
+
+**Examples:**
+```bash
+./bin/run.js hooks:remove --all            # Remove all hooks
+./bin/run.js hooks:remove --pre-commit     # Remove pre-commit only
+```
+
 ## Status Commands
 
 ### `./bin/run.js status`
@@ -352,6 +712,87 @@ Commands use:
 
 # Get JSON status for scripts
 ./bin/run.js status --json
+```
+
+### Federation Development
+```bash
+# Start federation environment
+./bin/run.js federation:dev
+
+# Test federation setup
+./bin/run.js federation:test
+
+# Docker federation with build
+./bin/run.js federation:docker --build
+```
+
+### Infrastructure Management
+```bash
+# Deploy to development
+./bin/run.js pulumi:deploy --stack dev
+
+# Preview production changes
+./bin/run.js pulumi:deploy --stack prod --preview
+
+# Check deployment status
+./bin/run.js pulumi:status --stack prod --json
+```
+
+### Code Refactoring
+```bash
+# Analyze refactoring opportunities
+./bin/run.js refactor:analyze
+
+# Preview migration changes
+./bin/run.js refactor:migrate --dry-run
+
+# Migrate singleton services only
+./bin/run.js refactor:migrate --type singleton
+
+# Generate performance comparison
+./bin/run.js refactor:compare
+```
+
+### Code Generation
+```bash
+# Generate singleton service
+./bin/run.js generate singleton EmailService
+
+# Generate repository with tests
+./bin/run.js generate repository Product --with-tests
+
+# Generate domain aggregate with custom path
+./bin/run.js generate aggregate Order --path src/domain/orders/
+
+# Generate GraphQL middleware
+./bin/run.js generate middleware requiresSubscription
+```
+
+### Health and Monitoring
+```bash
+# Run comprehensive health checks
+./bin/run.js health:check
+
+# Check services only
+./bin/run.js health:check --services --json
+
+# Start monitoring dashboard
+./bin/run.js monitoring:start
+
+# Run system diagnostics
+./bin/run.js diagnostics --performance
+```
+
+### Git Hooks Management
+```bash
+# Setup all Git hooks
+./bin/run.js hooks:setup
+
+# Setup with pattern compliance
+./bin/run.js hooks:setup --compliance
+
+# Test hook functionality
+./bin/run.js hooks:test
 ```
 
 ## Advanced Usage

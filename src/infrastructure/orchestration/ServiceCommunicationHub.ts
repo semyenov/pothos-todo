@@ -1,605 +1,80 @@
-import { z } from 'zod';
-import { BaseService } from '../core/BaseService.js';
-import { ServiceConfig, CircuitBreaker, Metric } from '../core/decorators/ServiceDecorators.js';
-import { ServiceRegistry } from '../microservices/ServiceRegistry.js';
+import { EnhancedServiceRegistry } from './ServiceRegistry.enhanced.js';
+import { TypedEventEmitter } from './TypedEventEmitter.js';
 import { logger } from '@/lib/unjs-utils.js';
-import { TypedEventEmitter } from '../core/TypedEventEmitter.js';
-import { v4 as uuidv4 } from 'uuid';
+import { BaseService, BaseAsyncService } from './BaseService.js';
 
-/**
- * Communication hub configuration schema
- */
-const CommunicationHubConfigSchema = z.object({
-  defaultTimeout: z.number().default(5000),
-  retryPolicy: z.enum(['exponential', 'linear', 'fixed']).default('exponential'),
-  circuitBreakerThreshold: z.number().default(5),
-  circuitBreakerTimeout: z.number().default(60000),
-  maxRetries: z.number().default(3),
-  enableTracing: z.boolean().default(true),
-  enableMetrics: z.boolean().default(true),
-});
-
-export type CommunicationHubConfig = z.infer<typeof CommunicationHubConfigSchema>;
-
-/**
- * Call options for service communication
- */
-export interface CallOptions {
-  timeout?: number;
-  retries?: number;
-  circuitBreaker?: boolean;
-  trace?: boolean;
-  headers?: Record<string, string>;
-}
-
-/**
- * Request options with additional features
- */
-export interface RequestOptions extends CallOptions {
-  responseType?: 'json' | 'text' | 'stream';
-  validateResponse?: z.ZodSchema<any>;
-}
-
-/**
- * Service method descriptor
- */
-export interface ServiceMethod {
-  service: string;
-  method: string;
-  requestSchema?: z.ZodSchema<any>;
-  responseSchema?: z.ZodSchema<any>;
-  timeout?: number;
-}
-
-/**
- * Subscription handle
- */
-export interface Subscription {
+export interface ServiceMessage {
   id: string;
-  unsubscribe: () => void;
-}
-
-/**
- * Message envelope for pub/sub
- */
-export interface MessageEnvelope<T = any> {
-  id: string;
-  source: string;
-  target?: string;
-  event: string;
-  payload: T;
+  from: string;
+  to: string;
+  type: 'request' | 'response' | 'event' | 'broadcast';
+  method?: string;
+  payload: any;
   timestamp: Date;
   correlationId?: string;
-  headers?: Record<string, string>;
+  replyTo?: string;
+  timeout?: number;
+  priority: 'low' | 'normal' | 'high' | 'critical';
 }
 
-/**
- * Communication hub event map
- */
+export interface CircuitBreakerState {
+  state: 'closed' | 'open' | 'half-open';
+  failureCount: number;
+  lastFailure?: Date;
+  lastSuccess?: Date;
+  nextAttempt?: Date;
+}
+
+export interface LoadBalancerConfig {
+  strategy: 'round-robin' | 'least-connections' | 'random' | 'weighted';
+  weights?: Map<string, number>;
+  healthCheck: boolean;
+}
+
 interface CommunicationHubEventMap {
-  'hub:call-start': { service: string; method: string; correlationId: string };
-  'hub:call-success': { service: string; method: string; duration: number; correlationId: string };
-  'hub:call-failure': { service: string; method: string; error: Error; correlationId: string };
-  'hub:message-published': { source: string; event: string; targets: number };
-  'hub:message-received': { source: string; event: string; subscriber: string };
-  'hub:circuit-opened': { service: string; failures: number };
-  'hub:circuit-closed': { service: string };
+  'message:sent': {
+    message: ServiceMessage;
+    target: string;
+  };
+  'message:received': {
+    message: ServiceMessage;
+    source: string;
+  };
+  'message:failed': {
+    message: ServiceMessage;
+    error: Error;
+  };
+  'circuit-breaker:opened': {
+    service: string;
+    failureCount: number;
+  };
+  'circuit-breaker:closed': {
+    service: string;
+  };
+  'circuit-breaker:half-opened': {
+    service: string;
+  };
+  'load-balancer:target-selected': {
+    capability: string;
+    selected: string;
+    strategy: string;
+  };
+  'rpc:call': {
+    from: string;
+    to: string;
+    method: string;
+    duration?: number;
+  };
+  'rpc:response': {
+    from: string;
+    to: string;
+    method: string;
+    duration: number;
+    success: boolean;
+  };
 }
 
 /**
- * Service proxy for type-safe calls
- */
-export class ServiceProxy<T extends Record<string, any>> {
-  constructor(
-    private hub: ServiceCommunicationHub,
-    private serviceName: string,
-    private methods: Map<keyof T, ServiceMethod>
-  ) { }
-
-  /**
-   * Create a proxy method
-   */
-  createMethod<TRequest, TResponse>(
-    methodName: string,
-    options?: Partial<ServiceMethod>
-  ): (request: TRequest, callOptions?: CallOptions) => Promise<TResponse> {
-    return async (request: TRequest, callOptions?: CallOptions) => {
-      return this.hub.call<TRequest, TResponse>(
-        this.serviceName,
-        methodName,
-        request,
-        callOptions
-      );
-    };
-  }
-
-  /**
-   * Get typed proxy
-   */
-  getProxy(): T {
-    const proxy: any = {};
-
-    for (const [methodName, method] of this.methods.entries()) {
-      proxy[methodName] = this.createMethod(methodName as string, method);
-    }
-
-    return proxy as T;
-  }
-}
-
-/**
- * Service communication hub for type-safe inter-service communication
- * 
- * Features:
- * - Type-safe RPC calls with schema validation
- * - Pub/sub messaging with event routing
- * - Request/response patterns with timeout
- * - Circuit breaking per service
- * - Distributed tracing support
- * - Automatic retries with backoff
- * - Service discovery integration
- * - Message correlation and tracking
- */
-@ServiceConfig({
-  schema: CommunicationHubConfigSchema,
-  prefix: 'communication',
-  hot: true,
-})
-export class ServiceCommunicationHub extends BaseService<CommunicationHubConfig, CommunicationHubEventMap> {
-  private registry: ServiceRegistry;
-  private subscriptions: Map<string, Set<(message: MessageEnvelope) => void>> = new Map();
-  private serviceProxies: Map<string, ServiceProxy<any>> = new Map();
-  private correlationMap: Map<string, { timestamp: number; service: string; method: string }> = new Map();
-  private eventBus: TypedEventEmitter<Record<string, any>>;
-
-  constructor() {
-    super();
-    this.registry = ServiceRegistry.getInstance();
-    this.eventBus = new TypedEventEmitter();
-
-    // Clean up old correlations periodically
-    setInterval(() => this.cleanupCorrelations(), 60000);
-  }
-
-  /**
-   * Get singleton instance
-   */
-  public static getInstance(): ServiceCommunicationHub {
-    return super.getInstance();
-  }
-
-  protected override getServiceName(): string {
-    return 'communication-hub';
-  }
-
-  protected override getServiceVersion(): string {
-    return '1.0.0';
-  }
-
-  protected override getServiceDescription(): string {
-    return 'Central hub for type-safe inter-service communication';
-  }
-
-  /**
-   * Call a service method with type safety
-   */
-  @Metric({ name: 'hub.call', recordDuration: true })
-  @CircuitBreaker({ threshold: 5, timeout: 60000 })
-  async call<TRequest, TResponse>(
-    targetService: string,
-    method: string,
-    request: TRequest,
-    options?: CallOptions
-  ): Promise<TResponse> {
-    const correlationId = uuidv4();
-    const startTime = Date.now();
-
-    this.emit('hub:call-start', {
-      service: targetService,
-      method,
-      correlationId,
-    });
-
-    // Store correlation for tracking
-    this.correlationMap.set(correlationId, {
-      timestamp: startTime,
-      service: targetService,
-      method,
-    });
-
-    try {
-      // Get service instance from registry
-      const instance = this.registry.getServiceInstance(targetService);
-      if (!instance) {
-        throw new Error(`No healthy instance found for service: ${targetService}`);
-      }
-
-      // Construct URL
-      const service = this.registry.getService(targetService);
-      if (!service) {
-        throw new Error(`Service definition not found: ${targetService}`);
-      }
-
-      const url = `${service.network.protocol}://${instance.host}:${instance.port}/rpc/${method}`;
-
-      // Prepare headers
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'X-Correlation-ID': correlationId,
-        'X-Source-Service': this.getServiceName(),
-        ...options?.headers,
-      };
-
-      if (options?.trace || this.config.enableTracing) {
-        headers['X-Trace-ID'] = correlationId;
-      }
-
-      // Make the call
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(request),
-        signal: AbortSignal.timeout(options?.timeout || this.config.defaultTimeout),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Service call failed: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      const duration = Date.now() - startTime;
-
-      this.emit('hub:call-success', {
-        service: targetService,
-        method,
-        duration,
-        correlationId,
-      });
-
-      // Update metrics
-      this.recordMetric('hub.call.success', 1, {
-        service: targetService,
-        method,
-      });
-
-      return data as TResponse;
-
-    } catch (error) {
-      this.emit('hub:call-failure', {
-        service: targetService,
-        method,
-        error: error as Error,
-        correlationId,
-      });
-
-      this.recordMetric('hub.call.failure', 1, {
-        service: targetService,
-        method,
-        error: (error as Error).name,
-      });
-
-      throw error;
-    } finally {
-      // Clean up correlation
-      setTimeout(() => {
-        this.correlationMap.delete(correlationId);
-      }, 60000);
-    }
-  }
-
-  /**
-   * Subscribe to events from services
-   */
-  subscribe<TEvent>(
-    servicePattern: string,
-    eventType: string,
-    handler: (event: TEvent) => void | Promise<void>
-  ): Subscription {
-    const subscriptionKey = `${servicePattern}:${eventType}`;
-
-    if (!this.subscriptions.has(subscriptionKey)) {
-      this.subscriptions.set(subscriptionKey, new Set());
-    }
-
-    const wrappedHandler = async (message: MessageEnvelope) => {
-      if (this.matchesPattern(message.source, servicePattern) && message.event === eventType) {
-        this.emit('hub:message-received', {
-          source: message.source,
-          event: message.event,
-          subscriber: this.getServiceName(),
-        });
-
-        try {
-          await handler(message.payload as TEvent);
-        } catch (error) {
-          logger.error('Subscription handler error', {
-            source: message.source,
-            event: message.event,
-            error,
-          });
-        }
-      }
-    };
-
-    this.subscriptions.get(subscriptionKey)!.add(wrappedHandler);
-
-    // Subscribe to internal event bus
-    this.eventBus.on(subscriptionKey, wrappedHandler);
-
-    const subscription: Subscription = {
-      id: uuidv4(),
-      unsubscribe: () => {
-        const handlers = this.subscriptions.get(subscriptionKey);
-        if (handlers) {
-          handlers.delete(wrappedHandler);
-          if (handlers.size === 0) {
-            this.subscriptions.delete(subscriptionKey);
-          }
-        }
-        this.eventBus.off(subscriptionKey, wrappedHandler);
-      },
-    };
-
-    logger.info('Subscription created', {
-      pattern: servicePattern,
-      event: eventType,
-      subscriber: this.getServiceName(),
-    });
-
-    return subscription;
-  }
-
-  /**
-   * Publish an event to subscribers
-   */
-  publish<TEvent>(
-    eventType: string,
-    payload: TEvent,
-    options?: {
-      target?: string;
-      correlationId?: string;
-      headers?: Record<string, string>;
-    }
-  ): void {
-    const message: MessageEnvelope<TEvent> = {
-      id: uuidv4(),
-      source: this.getServiceName(),
-      target: options?.target,
-      event: eventType,
-      payload,
-      timestamp: new Date(),
-      correlationId: options?.correlationId,
-      headers: options?.headers,
-    };
-
-    // Find matching subscriptions
-    let targetCount = 0;
-
-    for (const [pattern, handlers] of this.subscriptions.entries()) {
-      const [servicePattern, eventPattern] = pattern.split(':');
-
-      if (eventPattern === eventType) {
-        if (!options?.target || this.matchesPattern(options.target, servicePattern)) {
-          targetCount += handlers.size;
-
-          // Emit on event bus
-          this.eventBus.emit(pattern, message);
-        }
-      }
-    }
-
-    this.emit('hub:message-published', {
-      source: this.getServiceName(),
-      event: eventType,
-      targets: targetCount,
-    });
-
-    this.recordMetric('hub.message.published', 1, {
-      event: eventType,
-      targets: targetCount.toString(),
-    });
-  }
-
-  /**
-   * Request/response pattern with timeout
-   */
-  async request<TRequest, TResponse>(
-    service: string,
-    payload: TRequest,
-    options: RequestOptions
-  ): Promise<TResponse> {
-    const correlationId = uuidv4();
-    const responseEvent = `response:${correlationId}`;
-
-    return new Promise<TResponse>((resolve, reject) => {
-      // Set up timeout
-      const timeout = setTimeout(() => {
-        this.eventBus.off(responseEvent, responseHandler);
-        reject(new Error(`Request timeout after ${options.timeout || this.config.defaultTimeout}ms`));
-      }, options.timeout || this.config.defaultTimeout);
-
-      // Response handler
-      const responseHandler = (message: MessageEnvelope<TResponse>) => {
-        clearTimeout(timeout);
-
-        if (message.correlationId === correlationId) {
-          if (options.validateResponse) {
-            try {
-              const validated = options.validateResponse.parse(message.payload);
-              resolve(validated);
-            } catch (error) {
-              reject(new Error(`Response validation failed: ${error}`));
-            }
-          } else {
-            resolve(message.payload);
-          }
-        }
-      };
-
-      // Subscribe to response
-      this.eventBus.once(responseEvent, responseHandler);
-
-      // Send request
-      this.publish(`request:${service}`, payload, {
-        correlationId,
-        headers: {
-          'Reply-To': responseEvent,
-          ...options.headers,
-        },
-      });
-    });
-  }
-
-  /**
-   * Create a typed service proxy
-   */
-  createServiceProxy<T extends Record<string, any>>(
-    serviceName: string,
-    methods: Record<keyof T, Partial<ServiceMethod>>
-  ): ServiceProxy<T> {
-    const methodMap = new Map<keyof T, ServiceMethod>();
-
-    for (const [methodName, config] of Object.entries(methods) as Array<[keyof T, Partial<ServiceMethod>]>) {
-      methodMap.set(methodName, {
-        service: serviceName,
-        method: methodName as string,
-        ...config,
-      });
-    }
-
-    const proxy = new ServiceProxy<T>(this, serviceName, methodMap);
-    this.serviceProxies.set(serviceName, proxy);
-
-    return proxy;
-  }
-
-  /**
-   * Get or create service proxy
-   */
-  getServiceProxy<T extends Record<string, any>>(serviceName: string): ServiceProxy<T> | undefined {
-    return this.serviceProxies.get(serviceName);
-  }
-
-  /**
-   * Broadcast to all services matching a pattern
-   */
-  broadcast<TEvent>(
-    servicePattern: string,
-    eventType: string,
-    payload: TEvent
-  ): void {
-    const services = this.registry.discoverServices({
-      name: servicePattern === '*' ? undefined : servicePattern,
-      healthyOnly: true,
-    });
-
-    for (const service of services) {
-      this.publish(eventType, payload, {
-        target: service.name,
-      });
-    }
-
-    logger.info('Broadcast sent', {
-      pattern: servicePattern,
-      event: eventType,
-      targets: services.length,
-    });
-  }
-
-  /**
-   * Check if service name matches pattern
-   */
-  private matchesPattern(serviceName: string, pattern: string): boolean {
-    if (pattern === '*') return true;
-    if (pattern === serviceName) return true;
-
-    // Support wildcard patterns like "user-*"
-    if (pattern.includes('*')) {
-      const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
-      return regex.test(serviceName);
-    }
-
-    return false;
-  }
-
-  /**
-   * Clean up old correlations
-   */
-  private cleanupCorrelations(): void {
-    const now = Date.now();
-    const timeout = 5 * 60 * 1000; // 5 minutes
-
-    for (const [id, data] of this.correlationMap.entries()) {
-      if (now - data.timestamp > timeout) {
-        this.correlationMap.delete(id);
-      }
-    }
-  }
-
-  /**
-   * Get communication statistics
-   */
-  getStatistics(): {
-    activeSubscriptions: number;
-    serviceProxies: number;
-    pendingCorrelations: number;
-    subscriptionsByPattern: Record<string, number>;
-  } {
-    const subscriptionsByPattern: Record<string, number> = {};
-
-    for (const [pattern, handlers] of this.subscriptions.entries()) {
-      subscriptionsByPattern[pattern] = handlers.size;
-    }
-
-    return {
-      activeSubscriptions: Array.from(this.subscriptions.values()).reduce((sum, set) => sum + set.size, 0),
-      serviceProxies: this.serviceProxies.size,
-      pendingCorrelations: this.correlationMap.size,
-      subscriptionsByPattern,
-    };
-  }
-
-  /**
-   * Batch call multiple services
-   */
-  async batchCall(
-    calls: Array<{
-      service: string;
-      method: string;
-      request: any;
-      options?: CallOptions;
-    }>
-  ): Promise<Array<{ success: boolean; data?: any; error?: Error }>> {
-    const promises = calls.map(call =>
-      this.call(call.service, call.method, call.request, call.options)
-        .then(data => ({ success: true as const, data }))
-        .catch(error => ({ success: false as const, error }))
-    );
-
-    return Promise.all(promises);
-  }
-
-  /**
-   * Create a service mesh interceptor
-   */
-  createInterceptor(
-    pattern: string,
-    interceptor: (message: MessageEnvelope) => MessageEnvelope | null
-  ): () => void {
-    const handler = (message: MessageEnvelope) => {
-      const modified = interceptor(message);
-      if (modified) {
-        // Re-emit the modified message
-        this.eventBus.emit(`${message.source}:${message.event}`, modified);
-      }
-    };
-
-    // Subscribe to all events matching the pattern
-    this.eventBus.on('*', handler);
-
-    // Return unsubscribe function
-    return () => {
-      this.eventBus.off('*', handler);
-    };
-  }
-}
+ * Service Communication Hub for inter-service communication
+ * Provides type-safe RPC calls, event messaging, circuit breaking, and load balancing
+ */\nexport class ServiceCommunicationHub extends TypedEventEmitter<CommunicationHubEventMap> {\n  private static instance: ServiceCommunicationHub;\n  \n  private registry: EnhancedServiceRegistry;\n  private messageQueues: Map<string, ServiceMessage[]> = new Map();\n  private pendingRequests: Map<string, {\n    resolve: (value: any) => void;\n    reject: (error: Error) => void;\n    timeout: NodeJS.Timeout;\n  }> = new Map();\n  \n  private circuitBreakers: Map<string, CircuitBreakerState> = new Map();\n  private loadBalancers: Map<string, {\n    config: LoadBalancerConfig;\n    connections: Map<string, number>; // connection count per service\n    lastUsed: number; // for round-robin\n  }> = new Map();\n  \n  private constructor() {\n    super();\n    this.registry = EnhancedServiceRegistry.getInstance();\n    this.setupRegistryListeners();\n  }\n\n  static getInstance(): ServiceCommunicationHub {\n    if (!ServiceCommunicationHub.instance) {\n      ServiceCommunicationHub.instance = new ServiceCommunicationHub();\n    }\n    return ServiceCommunicationHub.instance;\n  }\n\n  /**\n   * Make a type-safe RPC call to a service\n   */\n  async call<TRequest, TResponse>(\n    targetService: string,\n    method: string,\n    request: TRequest,\n    options?: {\n      timeout?: number;\n      priority?: ServiceMessage['priority'];\n      correlationId?: string;\n      retries?: number;\n    }\n  ): Promise<TResponse> {\n    const {\n      timeout = 30000,\n      priority = 'normal',\n      correlationId,\n      retries = 0,\n    } = options || {};\n\n    const fromService = this.getCurrentServiceName();\n    const callStartTime = Date.now();\n\n    this.emit('rpc:call', {\n      from: fromService,\n      to: targetService,\n      method,\n    });\n\n    // Check circuit breaker\n    if (!this.isCircuitClosed(targetService)) {\n      const error = new Error(`Circuit breaker is open for service: ${targetService}`);\n      this.emit('rpc:response', {\n        from: fromService,\n        to: targetService,\n        method,\n        duration: Date.now() - callStartTime,\n        success: false,\n      });\n      throw error;\n    }\n\n    const messageId = this.generateMessageId();\n    const message: ServiceMessage = {\n      id: messageId,\n      from: fromService,\n      to: targetService,\n      type: 'request',\n      method,\n      payload: request,\n      timestamp: new Date(),\n      correlationId: correlationId || messageId,\n      timeout,\n      priority,\n    };\n\n    try {\n      const response = await this.sendMessage<TResponse>(message);\n      \n      // Record success for circuit breaker\n      this.recordSuccess(targetService);\n      \n      const duration = Date.now() - callStartTime;\n      this.emit('rpc:response', {\n        from: fromService,\n        to: targetService,\n        method,\n        duration,\n        success: true,\n      });\n\n      return response;\n\n    } catch (error) {\n      // Record failure for circuit breaker\n      this.recordFailure(targetService);\n      \n      const duration = Date.now() - callStartTime;\n      this.emit('rpc:response', {\n        from: fromService,\n        to: targetService,\n        method,\n        duration,\n        success: false,\n      });\n\n      // Retry if configured\n      if (retries > 0) {\n        logger.warn(`RPC call failed, retrying (${retries} attempts left)`, {\n          from: fromService,\n          to: targetService,\n          method,\n          error: (error as Error).message,\n        });\n        \n        await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries))); // Exponential backoff\n        \n        return this.call(targetService, method, request, {\n          ...options,\n          retries: retries - 1,\n        });\n      }\n      \n      throw error;\n    }\n  }\n\n  /**\n   * Call a service by capability (with load balancing)\n   */\n  async callByCapability<TRequest, TResponse>(\n    capability: string,\n    method: string,\n    request: TRequest,\n    options?: {\n      timeout?: number;\n      priority?: ServiceMessage['priority'];\n      correlationId?: string;\n      loadBalancerConfig?: LoadBalancerConfig;\n    }\n  ): Promise<TResponse> {\n    const targetService = this.selectServiceByCapability(capability, options?.loadBalancerConfig);\n    \n    if (!targetService) {\n      throw new Error(`No available service found for capability: ${capability}`);\n    }\n\n    return this.call<TRequest, TResponse>(targetService, method, request, options);\n  }\n\n  /**\n   * Send an event to a specific service\n   */\n  async sendEvent(\n    targetService: string,\n    eventType: string,\n    payload: any,\n    options?: {\n      priority?: ServiceMessage['priority'];\n      correlationId?: string;\n    }\n  ): Promise<void> {\n    const { priority = 'normal', correlationId } = options || {};\n    const fromService = this.getCurrentServiceName();\n\n    const message: ServiceMessage = {\n      id: this.generateMessageId(),\n      from: fromService,\n      to: targetService,\n      type: 'event',\n      method: eventType,\n      payload,\n      timestamp: new Date(),\n      correlationId,\n      priority,\n    };\n\n    await this.deliverMessage(message);\n  }\n\n  /**\n   * Broadcast an event to all services with a specific capability\n   */\n  async broadcastEvent(\n    capability: string,\n    eventType: string,\n    payload: any,\n    options?: {\n      priority?: ServiceMessage['priority'];\n      correlationId?: string;\n    }\n  ): Promise<void> {\n    const services = this.registry.getServicesByCapability(capability);\n    \n    await Promise.all(\n      services.map(serviceName => \n        this.sendEvent(serviceName, eventType, payload, options)\n      )\n    );\n  }\n\n  /**\n   * Subscribe to events from other services\n   */\n  subscribeToEvents(\n    serviceName: string,\n    eventTypes: string[],\n    handler: (eventType: string, payload: any, message: ServiceMessage) => Promise<void>\n  ): () => void {\n    const unsubscribeFunctions: Array<() => void> = [];\n\n    for (const eventType of eventTypes) {\n      const listener = async (data: { message: ServiceMessage }) => {\n        const { message } = data;\n        \n        if (\n          message.to === serviceName &&\n          message.type === 'event' &&\n          message.method === eventType\n        ) {\n          try {\n            await handler(eventType, message.payload, message);\n          } catch (error) {\n            logger.error(`Event handler failed for ${eventType}`, {\n              service: serviceName,\n              error,\n            });\n          }\n        }\n      };\n\n      this.on('message:received', listener);\n      unsubscribeFunctions.push(() => this.off('message:received', listener));\n    }\n\n    // Return cleanup function\n    return () => {\n      unsubscribeFunctions.forEach(unsub => unsub());\n    };\n  }\n\n  /**\n   * Configure circuit breaker for a service\n   */\n  configureCircuitBreaker(\n    serviceName: string,\n    config: {\n      failureThreshold: number;\n      timeout: number;\n      halfOpenRetryTimeout: number;\n    }\n  ): void {\n    this.circuitBreakers.set(serviceName, {\n      state: 'closed',\n      failureCount: 0,\n      ...config,\n    } as any);\n  }\n\n  /**\n   * Configure load balancer for a capability\n   */\n  configureLoadBalancer(\n    capability: string,\n    config: LoadBalancerConfig\n  ): void {\n    this.loadBalancers.set(capability, {\n      config,\n      connections: new Map(),\n      lastUsed: 0,\n    });\n  }\n\n  /**\n   * Get circuit breaker status\n   */\n  getCircuitBreakerStatus(serviceName: string): CircuitBreakerState | null {\n    return this.circuitBreakers.get(serviceName) || null;\n  }\n\n  /**\n   * Get communication statistics\n   */\n  getStatistics(): {\n    totalMessages: number;\n    messagesByType: Record<string, number>;\n    circuitBreakers: Map<string, CircuitBreakerState>;\n    activeConnections: number;\n    averageResponseTime: number;\n  } {\n    // This would be implemented with proper metrics collection\n    return {\n      totalMessages: 0,\n      messagesByType: {},\n      circuitBreakers: new Map(this.circuitBreakers),\n      activeConnections: this.pendingRequests.size,\n      averageResponseTime: 0,\n    };\n  }\n\n  private async sendMessage<TResponse>(message: ServiceMessage): Promise<TResponse> {\n    return new Promise((resolve, reject) => {\n      const timeoutHandle = setTimeout(() => {\n        this.pendingRequests.delete(message.id);\n        reject(new Error(`RPC call timeout: ${message.to}.${message.method}`));\n      }, message.timeout || 30000);\n\n      this.pendingRequests.set(message.id, {\n        resolve,\n        reject,\n        timeout: timeoutHandle,\n      });\n\n      this.deliverMessage(message).catch(error => {\n        this.pendingRequests.delete(message.id);\n        clearTimeout(timeoutHandle);\n        reject(error);\n      });\n    });\n  }\n\n  private async deliverMessage(message: ServiceMessage): Promise<void> {\n    const targetService = this.registry.get(message.to);\n    \n    if (!targetService) {\n      throw new Error(`Target service not found: ${message.to}`);\n    }\n\n    try {\n      this.emit('message:sent', {\n        message,\n        target: message.to,\n      });\n\n      // Add to target service's message queue\n      if (!this.messageQueues.has(message.to)) {\n        this.messageQueues.set(message.to, []);\n      }\n      \n      this.messageQueues.get(message.to)!.push(message);\n      \n      // Process message queue for target service\n      await this.processMessageQueue(message.to);\n\n    } catch (error) {\n      this.emit('message:failed', {\n        message,\n        error: error as Error,\n      });\n      throw error;\n    }\n  }\n\n  private async processMessageQueue(serviceName: string): Promise<void> {\n    const queue = this.messageQueues.get(serviceName) || [];\n    \n    // Sort by priority and timestamp\n    queue.sort((a, b) => {\n      const priorityOrder = { critical: 0, high: 1, normal: 2, low: 3 };\n      const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];\n      \n      if (priorityDiff !== 0) {\n        return priorityDiff;\n      }\n      \n      return a.timestamp.getTime() - b.timestamp.getTime();\n    });\n\n    const service = this.registry.get(serviceName);\n    if (!service) {\n      return;\n    }\n\n    // Process messages one by one\n    while (queue.length > 0) {\n      const message = queue.shift()!;\n      \n      try {\n        await this.processMessage(service, message);\n      } catch (error) {\n        logger.error(`Failed to process message for ${serviceName}`, {\n          message: message.id,\n          error,\n        });\n        \n        // Handle request message failures\n        if (message.type === 'request') {\n          const pending = this.pendingRequests.get(message.id);\n          if (pending) {\n            pending.reject(error as Error);\n            clearTimeout(pending.timeout);\n            this.pendingRequests.delete(message.id);\n          }\n        }\n      }\n    }\n  }\n\n  private async processMessage(\n    service: BaseService<any, any> | BaseAsyncService<any, any>,\n    message: ServiceMessage\n  ): Promise<void> {\n    this.emit('message:received', {\n      message,\n      source: message.from,\n    });\n\n    switch (message.type) {\n      case 'request':\n        await this.handleRpcRequest(service, message);\n        break;\n        \n      case 'response':\n        this.handleRpcResponse(message);\n        break;\n        \n      case 'event':\n        await this.handleEvent(service, message);\n        break;\n        \n      case 'broadcast':\n        await this.handleBroadcast(service, message);\n        break;\n    }\n  }\n\n  private async handleRpcRequest(\n    service: BaseService<any, any> | BaseAsyncService<any, any>,\n    message: ServiceMessage\n  ): Promise<void> {\n    try {\n      // Call the method on the target service\n      const method = (service as any)[message.method!];\n      \n      if (typeof method !== 'function') {\n        throw new Error(`Method ${message.method} not found on service ${service.metadata.name}`);\n      }\n\n      const result = await method.call(service, message.payload);\n      \n      // Send response back\n      const response: ServiceMessage = {\n        id: this.generateMessageId(),\n        from: message.to,\n        to: message.from,\n        type: 'response',\n        payload: result,\n        timestamp: new Date(),\n        correlationId: message.correlationId,\n        priority: message.priority,\n      };\n\n      await this.deliverMessage(response);\n\n    } catch (error) {\n      // Send error response\n      const errorResponse: ServiceMessage = {\n        id: this.generateMessageId(),\n        from: message.to,\n        to: message.from,\n        type: 'response',\n        payload: {\n          error: {\n            message: (error as Error).message,\n            stack: (error as Error).stack,\n          },\n        },\n        timestamp: new Date(),\n        correlationId: message.correlationId,\n        priority: message.priority,\n      };\n\n      await this.deliverMessage(errorResponse);\n    }\n  }\n\n  private handleRpcResponse(message: ServiceMessage): void {\n    const pending = this.pendingRequests.get(message.correlationId!);\n    \n    if (pending) {\n      clearTimeout(pending.timeout);\n      this.pendingRequests.delete(message.correlationId!);\n      \n      if (message.payload?.error) {\n        pending.reject(new Error(message.payload.error.message));\n      } else {\n        pending.resolve(message.payload);\n      }\n    }\n  }\n\n  private async handleEvent(\n    service: BaseService<any, any> | BaseAsyncService<any, any>,\n    message: ServiceMessage\n  ): Promise<void> {\n    // Emit the event on the service's event emitter\n    service.emit(message.method as any, message.payload);\n  }\n\n  private async handleBroadcast(\n    service: BaseService<any, any> | BaseAsyncService<any, any>,\n    message: ServiceMessage\n  ): Promise<void> {\n    // Handle broadcast messages (similar to events but for all services)\n    service.emit(message.method as any, message.payload);\n  }\n\n  private selectServiceByCapability(\n    capability: string,\n    config?: LoadBalancerConfig\n  ): string | null {\n    const services = this.registry.getServicesByCapability(capability)\n      .filter(serviceName => {\n        const availability = this.registry.getAvailability(serviceName);\n        return availability?.available && this.isCircuitClosed(serviceName);\n      });\n\n    if (services.length === 0) {\n      return null;\n    }\n\n    const strategy = config?.strategy || 'round-robin';\n    let selected: string;\n\n    switch (strategy) {\n      case 'round-robin':\n        selected = this.selectRoundRobin(capability, services);\n        break;\n        \n      case 'least-connections':\n        selected = this.selectLeastConnections(capability, services);\n        break;\n        \n      case 'random':\n        selected = services[Math.floor(Math.random() * services.length)];\n        break;\n        \n      case 'weighted':\n        selected = this.selectWeighted(capability, services, config?.weights);\n        break;\n        \n      default:\n        selected = services[0];\n    }\n\n    this.emit('load-balancer:target-selected', {\n      capability,\n      selected,\n      strategy,\n    });\n\n    return selected;\n  }\n\n  private selectRoundRobin(capability: string, services: string[]): string {\n    const lb = this.loadBalancers.get(capability) || {\n      config: { strategy: 'round-robin', healthCheck: true },\n      connections: new Map(),\n      lastUsed: 0,\n    };\n\n    const index = lb.lastUsed % services.length;\n    lb.lastUsed = index + 1;\n    \n    this.loadBalancers.set(capability, lb);\n    return services[index];\n  }\n\n  private selectLeastConnections(capability: string, services: string[]): string {\n    const lb = this.loadBalancers.get(capability) || {\n      config: { strategy: 'least-connections', healthCheck: true },\n      connections: new Map(),\n      lastUsed: 0,\n    };\n\n    let selected = services[0];\n    let minConnections = lb.connections.get(selected) || 0;\n\n    for (const service of services.slice(1)) {\n      const connections = lb.connections.get(service) || 0;\n      if (connections < minConnections) {\n        selected = service;\n        minConnections = connections;\n      }\n    }\n\n    // Increment connection count\n    lb.connections.set(selected, minConnections + 1);\n    this.loadBalancers.set(capability, lb);\n\n    return selected;\n  }\n\n  private selectWeighted(\n    capability: string,\n    services: string[],\n    weights?: Map<string, number>\n  ): string {\n    if (!weights || weights.size === 0) {\n      return services[0];\n    }\n\n    const totalWeight = Array.from(weights.values()).reduce((sum, weight) => sum + weight, 0);\n    const random = Math.random() * totalWeight;\n    \n    let currentWeight = 0;\n    for (const service of services) {\n      const weight = weights.get(service) || 1;\n      currentWeight += weight;\n      \n      if (random <= currentWeight) {\n        return service;\n      }\n    }\n\n    return services[0];\n  }\n\n  private isCircuitClosed(serviceName: string): boolean {\n    const breaker = this.circuitBreakers.get(serviceName);\n    \n    if (!breaker) {\n      return true; // No circuit breaker configured\n    }\n\n    const now = Date.now();\n    \n    switch (breaker.state) {\n      case 'closed':\n        return true;\n        \n      case 'open':\n        if (breaker.nextAttempt && now >= breaker.nextAttempt.getTime()) {\n          breaker.state = 'half-open';\n          this.emit('circuit-breaker:half-opened', { service: serviceName });\n          return true;\n        }\n        return false;\n        \n      case 'half-open':\n        return true;\n        \n      default:\n        return true;\n    }\n  }\n\n  private recordSuccess(serviceName: string): void {\n    const breaker = this.circuitBreakers.get(serviceName);\n    \n    if (breaker) {\n      breaker.lastSuccess = new Date();\n      breaker.failureCount = 0;\n      \n      if (breaker.state !== 'closed') {\n        breaker.state = 'closed';\n        this.emit('circuit-breaker:closed', { service: serviceName });\n      }\n    }\n  }\n\n  private recordFailure(serviceName: string): void {\n    const breaker = this.circuitBreakers.get(serviceName);\n    \n    if (breaker) {\n      breaker.failureCount++;\n      breaker.lastFailure = new Date();\n      \n      // Default thresholds if not configured\n      const failureThreshold = (breaker as any).failureThreshold || 5;\n      const timeout = (breaker as any).timeout || 60000;\n      \n      if (breaker.failureCount >= failureThreshold && breaker.state === 'closed') {\n        breaker.state = 'open';\n        breaker.nextAttempt = new Date(Date.now() + timeout);\n        \n        this.emit('circuit-breaker:opened', {\n          service: serviceName,\n          failureCount: breaker.failureCount,\n        });\n      }\n    }\n  }\n\n  private getCurrentServiceName(): string {\n    // This would typically be injected or determined from context\n    // For now, return a placeholder\n    return 'communication-hub';\n  }\n\n  private generateMessageId(): string {\n    return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;\n  }\n\n  private setupRegistryListeners(): void {\n    this.registry.on('service:deregistered', ({ name }) => {\n      // Clean up resources for deregistered service\n      this.messageQueues.delete(name);\n      this.circuitBreakers.delete(name);\n      \n      // Update load balancer connections\n      for (const [capability, lb] of this.loadBalancers.entries()) {\n        lb.connections.delete(name);\n      }\n    });\n  }\n}"

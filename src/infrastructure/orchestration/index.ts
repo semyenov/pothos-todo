@@ -1,26 +1,48 @@
 /**
- * Service orchestration components for advanced startup management
+ * Service Orchestration & Mesh Integration
  * 
- * This module provides:
+ * This module provides comprehensive service orchestration and mesh capabilities:
  * - ServiceDependencyGraph: Dependency resolution with topological sort
  * - StartupOrchestrator: Progressive service initialization with health checks
  * - ServiceCommunicationHub: Type-safe inter-service communication
- * - Service definitions with comprehensive metadata
+ * - ServiceMeshIntegration: Advanced traffic management and security
+ * - MeshGateway: API gateway with rate limiting and auth
+ * - ServiceDiscovery: Dynamic service registration and health monitoring
+ * - TrafficSplitter: Canary deployments and traffic splitting
  * 
- * @example
+ * @example Basic Orchestration
  * ```typescript
  * import { StartupOrchestrator, getAllServiceDefinitions } from '@/infrastructure/orchestration';
  * 
  * const orchestrator = StartupOrchestrator.getInstance();
  * const services = getAllServiceDefinitions();
  * 
- * // Register services
  * for (const service of services) {
  *   orchestrator.registerService(service, factory);
  * }
  * 
- * // Start system
  * const result = await orchestrator.orchestrateStartup();
+ * ```
+ * 
+ * @example Service Mesh
+ * ```typescript
+ * import { initializeServiceMesh } from '@/infrastructure/orchestration';
+ * 
+ * const { mesh, gateway, discovery, splitter } = await initializeServiceMesh();
+ * 
+ * // Register service in mesh
+ * await mesh.registerService({
+ *   name: 'user-service',
+ *   endpoints: [{ protocol: 'http', port: 8080, secure: true }]
+ * });
+ * 
+ * // Apply security policy
+ * await mesh.applySecurityPolicy({
+ *   id: 'strict-mtls',
+ *   name: 'Strict mTLS Policy',
+ *   namespace: 'production',
+ *   mtls: { mode: 'STRICT' }
+ * });
  * ```
  */
 
@@ -76,22 +98,115 @@ export {
 } from './ServiceDefinitions.js';
 
 // Enhanced SystemIntegration
-export { SystemIntegration } from '../SystemIntegration.enhanced.js';
+export { EnhancedSystemIntegration } from './SystemIntegration.enhanced.js';
+
+// Service Mesh Integration
+export {
+  ServiceMeshIntegration,
+  type ServiceMeshNode,
+  type TrafficRule,
+  type SecurityPolicy,
+  type ServiceMeshMetrics,
+} from './ServiceMeshIntegration.js';
+
+export {
+  MeshGateway,
+} from './MeshGateway.js';
+
+export {
+  ServiceDiscovery,
+} from './ServiceDiscovery.js';
+
+export {
+  TrafficSplitter,
+} from './TrafficSplitter.js';
+
+// Resilience Components
+export {
+  LoadBalancer,
+  type LoadBalancerConfig,
+  type LoadBalancerStats,
+} from './LoadBalancer.js';
+
+export {
+  CircuitBreakerManager,
+  type CircuitBreakerConfig,
+  type CircuitBreakerState,
+  type CircuitBreakerStats,
+} from './CircuitBreaker.js';
+
+export {
+  RetryPolicy,
+  type RetryConfig,
+  type RetryResult,
+} from './RetryPolicy.js';
+
+export {
+  ServiceProxy,
+  type ProxyConfig,
+  type ProxyCall,
+} from './ServiceProxy.js';
+
+/**
+ * Initialize complete service mesh and orchestration system
+ */
+export async function initializeServiceMesh(): Promise<{
+  mesh: ServiceMeshIntegration;
+  gateway: MeshGateway;
+  discovery: ServiceDiscovery;
+  splitter: TrafficSplitter;
+  integration: EnhancedSystemIntegration;
+  resilience: {
+    loadBalancer: LoadBalancer;
+    circuitBreaker: CircuitBreakerManager;
+    retryPolicy: RetryPolicy;
+    serviceProxy: ServiceProxy;
+  };
+}> {
+  const mesh = ServiceMeshIntegration.getInstance();
+  const gateway = MeshGateway.getInstance();
+  const discovery = ServiceDiscovery.getInstance();
+  const splitter = TrafficSplitter.getInstance();
+  const integration = EnhancedSystemIntegration.getInstance();
+  
+  // Resilience components
+  const loadBalancer = new LoadBalancer();
+  const circuitBreaker = CircuitBreakerManager.getInstance();
+  const retryPolicy = RetryPolicy.getInstance();
+  const serviceProxy = ServiceProxy.getInstance();
+
+  // Initialize in correct order
+  await mesh.initialize();
+  discovery.startHealthChecks();
+  
+  return { 
+    mesh, 
+    gateway, 
+    discovery, 
+    splitter, 
+    integration,
+    resilience: {
+      loadBalancer,
+      circuitBreaker,
+      retryPolicy,
+      serviceProxy,
+    }
+  };
+}
 
 /**
  * Quick start function for system initialization
  */
 export async function initializeSystem(config?: any): Promise<any> {
-  const { SystemIntegration } = await import('../SystemIntegration.enhanced.js');
-  const system = SystemIntegration.getInstance();
+  const integration = EnhancedSystemIntegration.getInstance();
   
   if (config) {
-    // Update configuration if provided
-    await system.initialize(config);
+    await integration.initialize(config);
+  } else {
+    await integration.initialize({ strategy: 'orchestrated' });
   }
   
-  await system.start();
-  return system;
+  return integration;
 }
 
 /**

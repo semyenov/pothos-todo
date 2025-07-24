@@ -1,7 +1,7 @@
 import { BaseService, BaseAsyncService } from './BaseService.js';
 import { ServiceRegistry } from './ServiceRegistry.js';
 import { logger } from '@/lib/unjs-utils.js';
-import { EventEmitter } from 'events';
+import { TypedEventEmitter } from './TypedEventEmitter.js';
 
 interface ServiceGroup {
   name: string;
@@ -17,11 +17,33 @@ interface OrchestratorConfig {
   shutdownTimeout: number;
 }
 
+interface OrchestratorEventMap {
+  'group:started': { group: string };
+  'group:stopped': { group: string };
+  'orchestrator:started': { duration: number };
+  'orchestrator:stopped': Record<string, never>;
+  'service:started': {
+    service: string;
+    group: string;
+  };
+  'service:stopped': {
+    service: string;
+    group: string;
+  };
+  'service:failed': {
+    service: string;
+    group: string;
+    error: Error;
+  };
+  'health:degraded': { unhealthyServices: string[] };
+  'health:critical': { services: string[] };
+}
+
 /**
  * Service Orchestrator for complex startup/shutdown sequences
  * Manages service groups with dependencies and parallel execution
  */
-export class ServiceOrchestrator extends EventEmitter {
+export class ServiceOrchestrator extends TypedEventEmitter<OrchestratorEventMap> {
   private config: OrchestratorConfig;
   private healthCheckInterval?: NodeJS.Timeout;
   private isStarting = false;

@@ -218,6 +218,24 @@
       },
       "services": {
         "description": "Docker services management"
+      },
+      "federation": {
+        "description": "GraphQL federation management commands"
+      },
+      "refactor": {
+        "description": "Code refactoring and migration commands"
+      },
+      "generate": {
+        "description": "Code generation commands"
+      },
+      "pulumi": {
+        "description": "Infrastructure deployment commands"
+      },
+      "monitoring": {
+        "description": "Health monitoring and diagnostics commands"
+      },
+      "hooks": {
+        "description": "Git hooks management commands"
       }
     }
   }
