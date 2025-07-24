@@ -90,7 +90,7 @@ export const defaultSupergraphConfig: SupergraphConfig = {
 
 // Federation 2.0 enhanced schema builder
 export class Federation2SchemaBuilder {
-  constructor(private config: SupergraphConfig) {}
+  constructor(private config: SupergraphConfig) { }
 
   // Build enhanced subgraph schema with Federation 2.0 features
   buildEnhancedSubgraphSchema(
@@ -402,13 +402,13 @@ export class Federation2SchemaBuilder {
     const yamlContent = `federation_version: ${roverConfig.federation_version}
 subgraphs:
 ${Object.entries(roverConfig.subgraphs)
-  .map(
-    ([name, config]) => `  ${name}:
+        .map(
+          ([name, config]) => `  ${name}:
     routing_url: ${(config as any).routing_url}
     schema:
       file: ${(config as any).schema.file}`
-  )
-  .join("\n")}
+        )
+        .join("\n")}
 `;
 
     await writeFile(this.config.rover.configPath, yamlContent);

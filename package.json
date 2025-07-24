@@ -101,6 +101,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@apollo/composition": "^2.11.2",
     "@envelop/core": "^5.3.0",
     "@envelop/opentelemetry": "^8.0.0",
     "@envelop/rate-limiter": "^8.0.0",

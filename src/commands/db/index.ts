@@ -4,7 +4,7 @@ import chalk from 'chalk';
 
 export default class Db extends Command {
   static override description = 'Database management commands';
-  
+
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
     '<%= config.bin %> <%= command.id %> --up',
@@ -45,16 +45,16 @@ export default class Db extends Command {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(Db);
-    
+
     // Check if Docker is running for commands that need it
     const dockerCommands = ['up', 'down', 'migrate', 'seed', 'studio', 'reset'];
     const needsDocker = Object.keys(flags).some(flag => dockerCommands.includes(flag) && flags[flag]);
-    
+
     if (needsDocker && !await isDockerRunning()) {
       this.log(chalk.red('❌ Docker is not running. Please start Docker first.'));
       process.exit(1);
     }
-    
+
     if (flags.up) {
       await this.startDatabase();
     } else if (flags.down) {
@@ -77,7 +77,7 @@ export default class Db extends Command {
 
   private async startDatabase(): Promise<void> {
     this.log(chalk.green('🚀 Starting database containers...'));
-    
+
     const result = await executeCommand('docker', ['compose', 'up', '-d'], {
       spinnerText: 'Starting database containers...',
     });
@@ -95,7 +95,7 @@ export default class Db extends Command {
 
   private async stopDatabase(): Promise<void> {
     this.log(chalk.red('🛑 Stopping database containers...'));
-    
+
     const result = await executeCommand('docker', ['compose', 'down'], {
       spinnerText: 'Stopping database containers...',
     });
@@ -114,14 +114,14 @@ export default class Db extends Command {
   private async showDatabaseStatus(): Promise<void> {
     this.log(chalk.blue('📊 Database Status:'));
     this.log(chalk.gray('─'.repeat(50)));
-    
+
     const dockerRunning = await isDockerRunning();
-    const dockerStatus = dockerRunning ? 
-      chalk.green('✅ Running') : 
+    const dockerStatus = dockerRunning ?
+      chalk.green('✅ Running') :
       chalk.red('❌ Not running');
-    
+
     this.log(`Docker: ${dockerStatus}`);
-    
+
     if (dockerRunning) {
       const result = await executeCommand('docker', ['compose', 'ps'], {
         spinnerText: 'Checking container status...',
@@ -141,8 +141,8 @@ export default class Db extends Command {
 
   private async runMigrations(): Promise<void> {
     this.log(chalk.green('⬆️ Running migrations...'));
-    
-    const result = await executeCommand('bunx', ['drizzle-kit', 'migrate'], {
+
+    const result = await executeCommand('bunx', ['prisma', 'migrate', 'deploy'], {
       spinnerText: 'Applying migrations...',
     });
 
@@ -159,7 +159,7 @@ export default class Db extends Command {
 
   private async seedDatabase(): Promise<void> {
     this.log(chalk.cyan('🌱 Seeding database...'));
-    
+
     const result = await executeCommand('bun', ['run', 'db:seed'], {
       spinnerText: 'Seeding database with test data...',
     });
@@ -176,18 +176,18 @@ export default class Db extends Command {
   }
 
   private async openDatabaseStudio(): Promise<void> {
-    this.log(chalk.magenta('🎯 Opening database studio...'));
+    this.log(chalk.magenta('🎯 Opening Prisma Studio...'));
     this.log(chalk.gray('This will open a web interface for database management.'));
-    
-    const result = await executeCommand('bunx', ['drizzle-kit', 'studio'], {
-      spinnerText: 'Starting database studio...',
+
+    const result = await executeCommand('bunx', ['prisma', 'studio'], {
+      spinnerText: 'Starting Prisma Studio...',
     });
 
     if (result.success) {
-      this.log(chalk.green('✅ Database studio opened!'));
+      this.log(chalk.green('✅ Prisma Studio opened!'));
       this.log(chalk.blue('Check your browser for the database management interface.'));
     } else {
-      this.log(chalk.red('❌ Failed to open database studio'));
+      this.log(chalk.red('❌ Failed to open Prisma Studio'));
       if (result.stderr) {
         this.log(chalk.red(result.stderr));
       }
@@ -197,7 +197,7 @@ export default class Db extends Command {
 
   private async resetDatabase(): Promise<void> {
     this.log(chalk.gray('🧹 Resetting database...'));
-    
+
     const result = await executeCommand('bun', ['run', 'db:reset'], {
       spinnerText: 'Resetting database to clean state...',
     });

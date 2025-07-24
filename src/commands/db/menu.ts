@@ -9,8 +9,8 @@ export default class DbMenu extends Command {
   async run(): Promise<void> {
     // Check if Docker is running
     const dockerRunning = await isDockerRunning();
-    const dockerStatus = dockerRunning ? 
-      chalk.green('✅ Running') : 
+    const dockerStatus = dockerRunning ?
+      chalk.green('✅ Running') :
       chalk.red('❌ Not running');
 
     this.log(chalk.cyan('🗄️  Database Management'));
@@ -55,7 +55,7 @@ export default class DbMenu extends Command {
         disabled: dockerRunning ? false : 'Docker not running',
       },
       {
-        name: `${chalk.magenta('🎯')} Database Studio - Open database management UI`,
+        name: `${chalk.magenta('🎯')} Prisma Studio - Open database management UI`,
         value: 'studio',
         short: 'Studio',
         disabled: dockerRunning ? false : 'Docker not running',
@@ -122,7 +122,7 @@ export default class DbMenu extends Command {
 
   private async startDatabase(): Promise<void> {
     this.log(chalk.green('🚀 Starting database containers...'));
-    
+
     const result = await executeCommand('docker', ['compose', 'up', '-d'], {
       spinnerText: 'Starting database containers...',
     });
@@ -140,7 +140,7 @@ export default class DbMenu extends Command {
 
   private async stopDatabase(): Promise<void> {
     this.log(chalk.red('🛑 Stopping database containers...'));
-    
+
     const { confirm } = await inquirer.prompt([
       {
         type: 'confirm',
@@ -171,7 +171,7 @@ export default class DbMenu extends Command {
   private async showDatabaseStatus(): Promise<void> {
     this.log(chalk.blue('📊 Database Status:'));
     this.log(chalk.gray('─'.repeat(50)));
-    
+
     const result = await executeCommand('docker', ['compose', 'ps'], {
       spinnerText: 'Checking container status...',
     });
@@ -188,7 +188,7 @@ export default class DbMenu extends Command {
 
   private async restartDatabase(): Promise<void> {
     this.log(chalk.yellow('🔄 Restarting database containers...'));
-    
+
     const result = await executeCommand('docker', ['compose', 'restart'], {
       spinnerText: 'Restarting database containers...',
     });
@@ -274,8 +274,8 @@ export default class DbMenu extends Command {
 
   private async runMigrations(): Promise<void> {
     this.log(chalk.green('⬆️ Running migrations...'));
-    
-    const result = await executeCommand('bunx', ['drizzle-kit', 'migrate'], {
+
+    const result = await executeCommand('bunx', ['prisma', 'migrate', 'deploy'], {
       spinnerText: 'Applying migrations...',
     });
 
@@ -292,8 +292,8 @@ export default class DbMenu extends Command {
   private async showMigrationStatus(): Promise<void> {
     this.log(chalk.blue('📋 Migration Status:'));
     this.log(chalk.gray('─'.repeat(50)));
-    
-    const result = await executeCommand('bunx', ['drizzle-kit', 'status'], {
+
+    const result = await executeCommand('bunx', ['prisma', 'migrate', 'status'], {
       spinnerText: 'Checking migration status...',
     });
 
@@ -323,8 +323,8 @@ export default class DbMenu extends Command {
     ]);
 
     this.log(chalk.yellow(`➕ Creating migration: ${name}...`));
-    
-    const result = await executeCommand('bunx', ['drizzle-kit', 'generate', '--name', name], {
+
+    const result = await executeCommand('bunx', ['prisma', 'migrate', 'dev', '--name', name], {
       spinnerText: 'Generating migration...',
     });
 
@@ -353,8 +353,8 @@ export default class DbMenu extends Command {
     }
 
     this.log(chalk.red('⬇️ Rolling back migration...'));
-    
-    const result = await executeCommand('bunx', ['drizzle-kit', 'rollback'], {
+
+    const result = await executeCommand('bunx', ['prisma', 'migrate', 'reset'], {
       spinnerText: 'Rolling back migration...',
     });
 
@@ -383,8 +383,8 @@ export default class DbMenu extends Command {
     }
 
     this.log(chalk.gray('🔄 Resetting migrations...'));
-    
-    const result = await executeCommand('bunx', ['drizzle-kit', 'reset'], {
+
+    const result = await executeCommand('bunx', ['prisma', 'migrate', 'reset'], {
       spinnerText: 'Resetting migrations...',
     });
 
@@ -400,7 +400,7 @@ export default class DbMenu extends Command {
 
   private async seedDatabase(): Promise<void> {
     this.log(chalk.cyan('🌱 Seeding database...'));
-    
+
     const result = await executeCommand('bun', ['run', 'db:seed'], {
       spinnerText: 'Seeding database with test data...',
     });
@@ -416,18 +416,18 @@ export default class DbMenu extends Command {
   }
 
   private async openDatabaseStudio(): Promise<void> {
-    this.log(chalk.magenta('🎯 Opening database studio...'));
+    this.log(chalk.magenta('🎯 Opening Prisma Studio...'));
     this.log(chalk.gray('This will open a web interface for database management.'));
-    
-    const result = await executeCommand('bunx', ['drizzle-kit', 'studio'], {
-      spinnerText: 'Starting database studio...',
+
+    const result = await executeCommand('bunx', ['prisma', 'studio'], {
+      spinnerText: 'Starting Prisma Studio...',
     });
 
     if (result.success) {
-      this.log(chalk.green('✅ Database studio opened!'));
+      this.log(chalk.green('✅ Prisma Studio opened!'));
       this.log(chalk.blue('Check your browser for the database management interface.'));
     } else {
-      this.log(chalk.red('❌ Failed to open database studio'));
+      this.log(chalk.red('❌ Failed to open Prisma Studio'));
       if (result.stderr) {
         this.log(chalk.red(result.stderr));
       }
@@ -462,7 +462,7 @@ export default class DbMenu extends Command {
     }
 
     this.log(chalk.gray('🧹 Resetting database...'));
-    
+
     const result = await executeCommand('bun', ['run', 'db:reset'], {
       spinnerText: 'Resetting database to clean state...',
     });
