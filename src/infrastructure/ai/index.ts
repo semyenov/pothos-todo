@@ -10,3 +10,7 @@ export { MLPredictionService } from './MLPredictionService.js';
 export { NLPService } from './NLPService.js';
 export { RAGService } from './RAGService.js';
 export { VectorStore } from './VectorStore.js';
+
+// Enhanced AI Services  
+export { AIInsightService as EnhancedAIInsightService } from './AIInsightService.enhanced.js';
+export { AIPipelineService as EnhancedAIPipelineService } from './AIPipelineService.enhanced.js';

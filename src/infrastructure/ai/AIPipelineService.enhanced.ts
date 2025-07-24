@@ -1,21 +1,21 @@
+import { logger } from '@/lib/unjs-utils.js';
 import { z } from 'zod';
 import { BaseAsyncService } from '../core/BaseAsyncService.js';
 import type { AIPipelineEventMap } from '../core/ServiceEventMaps.ai.js';
-import { 
-  ServiceConfig, 
-  Metric, 
-  HealthCheck 
-} from '../core/decorators/ServiceDecorators.js';
-import { 
-  AIWorkflow,
-  AIPerformance 
+import {
+  AIPerformance,
+  AIWorkflow
 } from '../core/decorators/AIServiceDecorators.js';
+import {
+  HealthCheck,
+  Metric,
+  ServiceConfig
+} from '../core/decorators/ServiceDecorators.js';
+import { AIInsightService } from './AIInsightService.enhanced.js';
 import { EmbeddingService } from './EmbeddingService.new.js';
+import { MLPredictionService } from './MLPredictionService.new.js';
 import { NLPService } from './NLPService.new.js';
 import { RAGService } from './RAGService.new.js';
-import { MLPredictionService } from './MLPredictionService.new.js';
-import { AIInsightService } from './AIInsightService.new.js';
-import { logger } from '@/lib/unjs-utils.js';
 
 /**
  * AI Pipeline service configuration schema
@@ -61,7 +61,7 @@ export interface PipelineContext {
 
 /**
  * Enhanced AI Pipeline Service using the new base service architecture
- * 
+ *
  * Orchestrates complex AI workflows by coordinating multiple AI services
  * in a configurable pipeline architecture.
  */
@@ -168,7 +168,7 @@ export class AIPipelineService extends BaseAsyncService<AIPipelineConfig, AIPipe
 
       for (let i = 0; i < stages.length; i++) {
         const stageName = stages[i];
-        
+
         this.emit('pipeline:stage-started', {
           pipelineId,
           stage: stageName,
