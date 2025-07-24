@@ -159,7 +159,7 @@ const ServiceDefinitionSchema = z.object({
   prefix: 'service_registry',
   hot: true,
 })
-export class ServiceRegistry extends BaseAsyncService<ServiceRegistryConfig, ServiceRegistryEventMap> {
+export class EnhancedServiceRegistry extends BaseAsyncService<ServiceRegistryConfig, ServiceRegistryEventMap> {
   private services: Map<string, ServiceDefinition> = new Map();
   private instances: Map<string, ServiceInstance[]> = new Map();
   private loadBalancers: Map<string, LoadBalancingStrategy> = new Map();
@@ -179,7 +179,7 @@ export class ServiceRegistry extends BaseAsyncService<ServiceRegistryConfig, Ser
   /**
    * Get the singleton instance
    */
-  static async getInstance(): Promise<ServiceRegistry> {
+  static async getInstance(): Promise<EnhancedServiceRegistry> {
     return super.getInstance();
   }
 

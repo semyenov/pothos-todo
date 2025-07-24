@@ -11,8 +11,7 @@ const buildConfig = {
   dts: false, // Temporarily disabled due to type generation issues
   treeshake: process.env.BUILD_TREESHAKE !== 'false',
   report: process.env.BUILD_REPORT !== 'false',
-  watch: process.env.NODE_ENV === 'development',
-
+  watch: process.env.BUILD_WATCH === 'true',
 }
 
 export default defineConfig({

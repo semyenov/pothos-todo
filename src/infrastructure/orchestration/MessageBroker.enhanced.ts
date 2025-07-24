@@ -163,7 +163,7 @@ const MessageSchema = z.object({
   prefix: 'message_broker',
   hot: true,
 })
-export class MessageBroker extends BaseAsyncService<MessageBrokerConfig, MessageBrokerEventMap> {
+export class EnhancedMessageBroker extends BaseAsyncService<MessageBrokerConfig, MessageBrokerEventMap> {
   private queues: Map<string, Queue> = new Map();
   private handlers: Map<string, MessageHandler[]> = new Map();
   private eventStore: Map<string, EventStore> = new Map();
@@ -184,7 +184,7 @@ export class MessageBroker extends BaseAsyncService<MessageBrokerConfig, Message
   /**
    * Get the singleton instance
    */
-  static async getInstance(): Promise<MessageBroker> {
+  static async getInstance(): Promise<EnhancedMessageBroker> {
     return super.getInstance();
   }
 

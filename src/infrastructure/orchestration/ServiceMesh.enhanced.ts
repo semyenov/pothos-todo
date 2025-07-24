@@ -4,8 +4,8 @@ import { ServiceMeshConfig, ServiceMeshConfigSchema } from '@/config/schemas/inf
 import { ServiceConfig, Retry, CircuitBreaker, HealthCheck, Metric } from '../core/decorators/ServiceDecorators.js';
 import { logger } from '@/lib/unjs-utils.js';
 import { v4 as uuidv4 } from 'uuid';
-import { ServiceRegistry } from './ServiceRegistry.new.js';
-import { MessageBroker } from './MessageBroker.new.js';
+import { EnhancedServiceRegistry } from './ServiceRegistry.enhanced.js';
+import { EnhancedMessageBroker } from './MessageBroker.enhanced.js';
 
 export interface TrafficRule {
   id: string;
@@ -140,7 +140,7 @@ interface CircuitBreakerState {
   prefix: 'service_mesh',
   hot: true,
 })
-export class ServiceMesh extends BaseAsyncService<ServiceMeshConfig, ServiceMeshEventMap> {
+export class EnhancedServiceMesh extends BaseAsyncService<ServiceMeshConfig, ServiceMeshEventMap> {
   private trafficRules: Map<string, TrafficRule> = new Map();
   private securityPolicies: Map<string, SecurityPolicy> = new Map();
   private proxies: Map<string, ServiceProxy> = new Map();
@@ -151,8 +151,8 @@ export class ServiceMesh extends BaseAsyncService<ServiceMeshConfig, ServiceMesh
   private rateLimiters: Map<string, { requests: number; resetTime: number }> = new Map();
   
   // Dependencies
-  private serviceRegistry?: ServiceRegistry;
-  private messageBroker?: MessageBroker;
+  private serviceRegistry?: EnhancedServiceRegistry;
+  private messageBroker?: EnhancedMessageBroker;
 
   // Request tracking
   private activeRequests: Map<string, { startTime: Date; traceId: string }> = new Map();
@@ -160,7 +160,7 @@ export class ServiceMesh extends BaseAsyncService<ServiceMeshConfig, ServiceMesh
   /**
    * Get the singleton instance
    */
-  static async getInstance(): Promise<ServiceMesh> {
+  static async getInstance(): Promise<EnhancedServiceMesh> {
     return super.getInstance();
   }
 
@@ -191,8 +191,8 @@ export class ServiceMesh extends BaseAsyncService<ServiceMeshConfig, ServiceMesh
     });
 
     // Initialize dependencies
-    this.serviceRegistry = await ServiceRegistry.getInstance();
-    this.messageBroker = await MessageBroker.getInstance();
+    this.serviceRegistry = await EnhancedServiceRegistry.getInstance();
+    this.messageBroker = await EnhancedMessageBroker.getInstance();
 
     // Setup default middleware
     this.setupDefaultMiddleware();

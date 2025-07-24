@@ -100,6 +100,32 @@ export {
 // Enhanced SystemIntegration
 export { EnhancedSystemIntegration } from './SystemIntegration.enhanced.js';
 
+// Enhanced Microservices
+export { 
+  EnhancedMessageBroker,
+  type Message,
+  type MessageHandler, 
+  type Queue,
+  type EventStore,
+  type Saga,
+  type SagaStep,
+} from './MessageBroker.enhanced.js';
+
+export {
+  EnhancedServiceMesh,
+  type TrafficRule,
+  type SecurityPolicy,
+  type ServiceProxy as ServiceMeshProxy,
+  type ProxyMiddleware,
+} from './ServiceMesh.enhanced.js';
+
+export {
+  EnhancedServiceRegistry,
+  type ServiceDefinition as EnhancedServiceDefinition,
+  type ServiceInstance,
+  type LoadBalancingStrategy,
+} from './ServiceRegistry.enhanced.js';
+
 // Service Mesh Integration
 export {
   ServiceMeshIntegration,
@@ -162,6 +188,11 @@ export async function initializeServiceMesh(): Promise<{
     retryPolicy: RetryPolicy;
     serviceProxy: ServiceProxy;
   };
+  enhanced: {
+    messageBroker: EnhancedMessageBroker;
+    serviceMesh: EnhancedServiceMesh;
+    serviceRegistry: EnhancedServiceRegistry;
+  };
 }> {
   const mesh = ServiceMeshIntegration.getInstance();
   const gateway = MeshGateway.getInstance();
@@ -174,6 +205,11 @@ export async function initializeServiceMesh(): Promise<{
   const circuitBreaker = CircuitBreakerManager.getInstance();
   const retryPolicy = RetryPolicy.getInstance();
   const serviceProxy = ServiceProxy.getInstance();
+
+  // Enhanced microservices components
+  const enhancedMessageBroker = await EnhancedMessageBroker.getInstance();
+  const enhancedServiceMesh = await EnhancedServiceMesh.getInstance();
+  const enhancedServiceRegistry = await EnhancedServiceRegistry.getInstance();
 
   // Initialize in correct order
   await mesh.initialize();
@@ -190,6 +226,11 @@ export async function initializeServiceMesh(): Promise<{
       circuitBreaker,
       retryPolicy,
       serviceProxy,
+    },
+    enhanced: {
+      messageBroker: enhancedMessageBroker,
+      serviceMesh: enhancedServiceMesh,
+      serviceRegistry: enhancedServiceRegistry,
     }
   };
 }
