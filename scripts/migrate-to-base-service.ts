@@ -72,7 +72,7 @@ export interface ${serviceName}EventMap extends ServiceEventMap {
   classDeclaration: (className: string, baseClass: string, configType: string, eventMap: string) => 
     `export class ${className} extends ${baseClass}<${configType}, ${eventMap}>`,
 
-  getInstance: (isAsync: boolean) => isAsync ? `
+  getInstance: (isAsync: boolean, className: string) => isAsync ? `
   /**
    * Get the singleton instance
    */
@@ -86,7 +86,7 @@ export interface ${serviceName}EventMap extends ServiceEventMap {
     return super.getInstance();
   }`,
 
-  serviceMethods: `
+  serviceMethods: (serviceName: string) => `
   protected getServiceName(): string {
     return '${serviceName}';
   }
@@ -99,7 +99,7 @@ export interface ${serviceName}EventMap extends ServiceEventMap {
     return 'Service description';
   }`,
 
-  healthCheck: `
+  healthCheck: (serviceName: string) => `
   @HealthCheck({
     name: '${serviceName}:health',
     critical: true,
@@ -238,7 +238,7 @@ async function generateMigratedCode(info: ServiceInfo, originalContent: string):
   const getInstanceRegex = /static\s+(?:async\s+)?getInstance\s*\([^)]*\)\s*(?::\s*[^{]+)?\s*\{[^}]+\}/;
   migratedCode = migratedCode.replace(
     getInstanceRegex,
-    MIGRATION_TEMPLATES.getInstance(isAsync).replace(/\${className}/g, info.className)
+    MIGRATION_TEMPLATES.getInstance(isAsync, info.className)
   );
 
   // Add required service methods if not present
@@ -247,7 +247,7 @@ async function generateMigratedCode(info: ServiceInfo, originalContent: string):
     if (constructorIndex > -1) {
       const constructorEnd = findMatchingBrace(migratedCode, constructorIndex);
       migratedCode = migratedCode.substring(0, constructorEnd + 1) + '\n' +
-                    MIGRATION_TEMPLATES.serviceMethods.replace(/\${serviceName}/g, serviceName) + '\n' +
+                    MIGRATION_TEMPLATES.serviceMethods(serviceName) + '\n' +
                     migratedCode.substring(constructorEnd + 1);
     }
   }

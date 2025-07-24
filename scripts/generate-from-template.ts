@@ -701,7 +701,7 @@ const parsedArgs = parseArgs({
 
 const options: GeneratorOptions = {
   type: type as GeneratorOptions['type'],
-  name,
+  name: name || '',
   path: parsedArgs.values.path as string | undefined,
   withTests: parsedArgs.values['with-tests'] as boolean,
 };

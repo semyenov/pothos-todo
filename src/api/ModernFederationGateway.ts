@@ -2,24 +2,21 @@ import { createYoga, type YogaServerOptions } from 'graphql-yoga';
 import { useResponseCache } from '@graphql-yoga/plugin-response-cache';
 import { useRateLimiter } from '@envelop/rate-limiter';
 import { useGraphQLSSE } from '@graphql-yoga/plugin-graphql-sse';
-import { logger } from '../lib/logger.js';
+import { logger } from '../logger.js';
 import { HiveGatewayService } from '../infrastructure/gateway/HiveGatewayService.js';
-// import { SystemIntegration } from '@/infrastructure/SystemIntegration.js';
-
-// Stub types for missing imports
-type SystemIntegration = any;
-type EdgeComputingSystem = any;
-type IntelligentCDN = any;
-type EdgeAuthSystem = any;
-type PerformanceOptimizer = any;
-type ZeroTrustGateway = any;
-type ThreatDetectionSystem = any;
-type SecurityAuditSystem = any;
-type TelemetrySystem = any;
-type MetricsSystem = any;
-type AIAssistant = any;
-type SemanticSearch = any;
-type RealtimeEngine = any;
+import { SystemIntegration } from '@/infrastructure/SystemIntegration.js';
+import { EdgeComputingSystem } from '@/infrastructure/edge/EdgeComputing.js';
+import { IntelligentCDN } from '@/infrastructure/edge/IntelligentCDN.js';
+import { EdgeAuthSystem } from '@/infrastructure/edge/EdgeAuth.js';
+import { PerformanceOptimizer } from '@/infrastructure/performance/PerformanceOptimizer.js';
+import { ZeroTrustGateway } from '@/infrastructure/security/ZeroTrustGateway.js';
+import { ThreatDetectionSystem } from '@/infrastructure/security/ThreatDetection.js';
+import { SecurityAuditSystem } from '@/infrastructure/security/SecurityAudit.js';
+import { TelemetrySystem } from '@/infrastructure/observability/Telemetry.js';
+import { MetricsSystem } from '@/infrastructure/observability/Metrics.js';
+import { AdvancedAIManager as AIAssistant } from '@/infrastructure/ai/AdvancedAIManager.js';
+import { AdvancedSearchService as SemanticSearch } from '@/infrastructure/search/AdvancedSearchService.js';
+import { RealTimeCollaboration as RealtimeEngine } from '@/infrastructure/collaboration/RealTimeCollaboration.js';
 // import { EdgeComputingSystem } from '@/infrastructure/edge/EdgeComputing.js';
 // import { IntelligentCDN } from '@/infrastructure/edge/IntelligentCDN.js';
 // import { EdgeAuthSystem } from '@/infrastructure/edge/EdgeAuth.js';
@@ -86,7 +83,7 @@ export class ModernFederationGateway {
     this.hiveGateway = await HiveGatewayService.getInstance();
 
     // Initialize system integration
-    this.system = await SystemIntegration.initialize({
+    this.system = await SystemIntegration.getInstance().initialize({
       environment: this.config.environment,
       features: {
         eventSourcing: true,
@@ -129,28 +126,28 @@ export class ModernFederationGateway {
    */
   private async initializeComponents(): Promise<void> {
     if (this.config.features.edge) {
-      this.edgeComputing = EdgeComputingSystem.getInstance();
-      this.cdn = IntelligentCDN.getInstance();
-      this.edgeAuth = EdgeAuthSystem.getInstance();
-      this.performanceOptimizer = PerformanceOptimizer.getInstance();
+      this.edgeComputing = await EdgeComputingSystem.getInstance();
+      this.cdn = await IntelligentCDN.getInstance();
+      this.edgeAuth = await EdgeAuthSystem.getInstance();
+      this.performanceOptimizer = await PerformanceOptimizer.getInstance();
     }
 
     if (this.config.features.security) {
-      this.zeroTrust = ZeroTrustGateway.getInstance();
-      this.threatDetection = ThreatDetectionSystem.getInstance();
-      this.securityAudit = SecurityAuditSystem.getInstance();
+      this.zeroTrust = new ZeroTrustGateway();
+      this.threatDetection = await ThreatDetectionSystem.getInstance();
+      this.securityAudit = await SecurityAuditSystem.getInstance();
     }
 
     this.telemetry = TelemetrySystem.getInstance();
     this.metrics = MetricsSystem.getInstance();
 
     if (this.config.features.ai) {
-      this.aiAssistant = AIAssistant.getInstance();
-      this.semanticSearch = SemanticSearch.getInstance();
+      this.aiAssistant = await AIAssistant.getInstance();
+      this.semanticSearch = await SemanticSearch.getInstance();
     }
 
     if (this.config.features.realtime) {
-      this.realtimeEngine = RealtimeEngine.getInstance();
+      this.realtimeEngine = await RealtimeEngine.getInstance();
     }
   }
 
@@ -225,7 +222,7 @@ export class ModernFederationGateway {
   /**
    * Create telemetry plugin
    */
-  private createTelemetryPlugin(): YogaServerOptions<any, any>['plugins'][0] {
+  private createTelemetryPlugin(): NonNullable<YogaServerOptions<any, any>['plugins']>[0] {
     return {
       onRequest: async ({ request }) => {
         const span = this.telemetry?.startSpan('graphql.request', {
@@ -277,7 +274,7 @@ export class ModernFederationGateway {
   /**
    * Create security plugin
    */
-  private createSecurityPlugin(): YogaServerOptions<any, any>['plugins'][0] {
+  private createSecurityPlugin(): NonNullable<YogaServerOptions<any, any>['plugins']>[0] {
     return {
       onRequest: async ({ request, endResponse }) => {
         if (!this.config.features.security) return;
@@ -321,7 +318,7 @@ export class ModernFederationGateway {
   /**
    * Create edge plugin
    */
-  private createEdgePlugin(): YogaServerOptions<any, any>['plugins'][0] {
+  private createEdgePlugin(): NonNullable<YogaServerOptions<any, any>['plugins']>[0] {
     return {
       onRequest: async ({ request }) => {
         if (!this.config.features.edge) return;
@@ -365,7 +362,7 @@ export class ModernFederationGateway {
   /**
    * Create AI plugin
    */
-  private createAIPlugin(): YogaServerOptions<any, any>['plugins'][0] {
+  private createAIPlugin(): NonNullable<YogaServerOptions<any, any>['plugins']>[0] {
     return {
       onRequest: async () => {
         if (!this.config.features.ai) return;
@@ -407,7 +404,7 @@ export class ModernFederationGateway {
   /**
    * Create performance plugin
    */
-  private createPerformancePlugin(): YogaServerOptions<any, any>['plugins'][0] {
+  private createPerformancePlugin(): NonNullable<YogaServerOptions<any, any>['plugins']>[0] {
     return {
       onRequest: async ({ request }) => {
         const startTime = Date.now();

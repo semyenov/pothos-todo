@@ -1,7 +1,7 @@
-import { PrismaClient } from '@prisma/client';
-import { logger } from '@/logger.js';
-import { env } from '@/config/env.validation.js';
-import { SingletonService } from '../core/SingletonService.js';
+import { PrismaClient } from "@prisma/client";
+import { logger } from "@/logger.js";
+import { env } from "@/config/env.validation.js";
+import { SingletonService } from "../core/SingletonService.js";
 
 export interface PrismaServiceOptions {
   /**
@@ -40,13 +40,13 @@ export interface PrismaServiceOptions {
   enableMetrics?: boolean;
 }
 
-export class PrismaService extends SingletonService<PrismaService> {
+export class PrismaService extends SingletonService {
+  private config: PrismaServiceOptions = defaultPoolConfig;
   private prisma: PrismaClient | null = null;
   private connectionCount = 0;
   private queryCount = 0;
   private errorCount = 0;
   private startTime = Date.now();
-  private options: PrismaServiceOptions = defaultPoolConfig;
 
   protected constructor() {
     super();
@@ -55,30 +55,35 @@ export class PrismaService extends SingletonService<PrismaService> {
   /**
    * Get singleton instance
    */
-  public static getInstance(): PrismaService {
-    return super.getInstance();
+  public static override getInstance<T extends PrismaService>(
+    config: PrismaServiceOptions = defaultPoolConfig
+  ): T {
+    const instance = super.getInstance(config) as T;
+    instance.configure(config);
+    return instance;
   }
 
   /**
    * Configure the PrismaService with options
    */
   public configure(options: PrismaServiceOptions = {}): void {
-    this.options = { ...defaultPoolConfig, ...options };
-    
+    this.config = { ...defaultPoolConfig, ...options };
+
     if (!this.prisma) {
-      // Configure Prisma with optimized connection pooling
+      const log = this.configureLogging(this.config) as any;
+
       this.prisma = new PrismaClient({
         datasources: {
           db: {
             url: env.DATABASE_URL,
           },
         },
-        log: this.configureLogging(this.options),
-        errorFormat: 'pretty',
+        log,
+        errorFormat: "pretty",
       });
 
       // Set up middleware for metrics and logging
-      this.setupMiddleware(this.options);
+      this.setupMiddleware(this.config);
 
       // Handle connection events
       this.setupEventHandlers();
@@ -110,7 +115,7 @@ export class PrismaService extends SingletonService<PrismaService> {
       try {
         await this.prisma!.$connect();
         this.connectionCount++;
-        logger.info('Database connected successfully', {
+        logger.info("Database connected successfully", {
           attempt,
           connectionCount: this.connectionCount,
         });
@@ -126,12 +131,14 @@ export class PrismaService extends SingletonService<PrismaService> {
         if (attempt < maxRetries) {
           // Exponential backoff
           const delay = Math.pow(2, attempt) * 1000;
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
     }
 
-    throw new Error(`Failed to connect to database after ${maxRetries} attempts: ${lastError?.message}`);
+    throw new Error(
+      `Failed to connect to database after ${maxRetries} attempts: ${lastError?.message}`
+    );
   }
 
   /**
@@ -141,7 +148,7 @@ export class PrismaService extends SingletonService<PrismaService> {
     if (this.prisma) {
       await this.prisma.$disconnect();
       this.connectionCount--;
-      logger.info('Database disconnected', {
+      logger.info("Database disconnected", {
         connectionCount: this.connectionCount,
       });
     }
@@ -152,9 +159,8 @@ export class PrismaService extends SingletonService<PrismaService> {
    */
   public getPoolStats() {
     const uptime = Date.now() - this.startTime;
-    const avgQueryTime = this.queryCount > 0
-      ? Math.round(uptime / this.queryCount)
-      : 0;
+    const avgQueryTime =
+      this.queryCount > 0 ? Math.round(uptime / this.queryCount) : 0;
 
     return {
       connectionCount: this.connectionCount,
@@ -162,9 +168,10 @@ export class PrismaService extends SingletonService<PrismaService> {
       errorCount: this.errorCount,
       uptime,
       avgQueryTime,
-      errorRate: this.queryCount > 0
-        ? (this.errorCount / this.queryCount * 100).toFixed(2) + '%'
-        : '0%',
+      errorRate:
+        this.queryCount > 0
+          ? ((this.errorCount / this.queryCount) * 100).toFixed(2) + "%"
+          : "0%",
     };
   }
 
@@ -179,30 +186,42 @@ export class PrismaService extends SingletonService<PrismaService> {
 
     // Connection pool settings
     if (options.connectionLimit) {
-      url.searchParams.set('connection_limit', options.connectionLimit.toString());
+      url.searchParams.set(
+        "connection_limit",
+        options.connectionLimit.toString()
+      );
     }
 
     // Timeouts
     if (options.connectTimeout) {
-      url.searchParams.set('connect_timeout', options.connectTimeout.toString());
+      url.searchParams.set(
+        "connect_timeout",
+        options.connectTimeout.toString()
+      );
     }
 
     if (options.poolTimeout) {
-      url.searchParams.set('pool_timeout', options.poolTimeout.toString());
+      url.searchParams.set("pool_timeout", options.poolTimeout.toString());
     }
 
     if (options.idleTimeout) {
-      url.searchParams.set('idle_in_transaction_session_timeout', options.idleTimeout.toString());
+      url.searchParams.set(
+        "idle_in_transaction_session_timeout",
+        options.idleTimeout.toString()
+      );
     }
 
     if (options.queryTimeout) {
-      url.searchParams.set('statement_timeout', options.queryTimeout.toString());
+      url.searchParams.set(
+        "statement_timeout",
+        options.queryTimeout.toString()
+      );
     }
 
     // PostgreSQL specific optimizations
-    url.searchParams.set('schema', 'public');
-    url.searchParams.set('pgbouncer', 'true'); // Enable PgBouncer mode
-    url.searchParams.set('sslmode', 'prefer');
+    url.searchParams.set("schema", "public");
+    url.searchParams.set("pgbouncer", "true"); // Enable PgBouncer mode
+    url.searchParams.set("sslmode", "prefer");
 
     return url.toString();
   }
@@ -212,25 +231,25 @@ export class PrismaService extends SingletonService<PrismaService> {
    */
   private configureLogging(options: PrismaServiceOptions) {
     if (!options.enableQueryLogging) {
-      return ['error', 'warn'];
+      return ["error", "warn"];
     }
 
     return [
       {
-        emit: 'event',
-        level: 'query',
+        emit: "event",
+        level: "query",
       },
       {
-        emit: 'event',
-        level: 'error',
+        emit: "event",
+        level: "error",
       },
       {
-        emit: 'event',
-        level: 'info',
+        emit: "event",
+        level: "info",
       },
       {
-        emit: 'event',
-        level: 'warn',
+        emit: "event",
+        level: "warn",
       },
     ];
   }
@@ -251,7 +270,7 @@ export class PrismaService extends SingletonService<PrismaService> {
 
           // Log slow queries
           if (duration > 1000) {
-            logger.warn('Slow query detected', {
+            logger.warn("Slow query detected", {
               model: params.model,
               action: params.action,
               duration,
@@ -274,9 +293,9 @@ export class PrismaService extends SingletonService<PrismaService> {
     if (!this.prisma) return;
 
     // @ts-ignore - Prisma event types
-    this.prisma.$on('query', (e: any) => {
+    this.prisma.$on("query", (e: any) => {
       if (e.duration > 100) {
-        logger.debug('Database query', {
+        logger.debug("Database query", {
           query: e.query,
           params: e.params,
           duration: e.duration,
@@ -285,16 +304,16 @@ export class PrismaService extends SingletonService<PrismaService> {
     });
 
     // @ts-ignore - Prisma event types
-    this.prisma.$on('error', (e: any) => {
-      logger.error('Database error', {
+    this.prisma.$on("error", (e: any) => {
+      logger.error("Database error", {
         message: e.message,
         target: e.target,
       });
     });
 
     // @ts-ignore - Prisma event types
-    this.prisma.$on('warn', (e: any) => {
-      logger.warn('Database warning', {
+    this.prisma.$on("warn", (e: any) => {
+      logger.warn("Database warning", {
         message: e.message,
       });
     });
@@ -304,11 +323,25 @@ export class PrismaService extends SingletonService<PrismaService> {
    * Execute a transaction with retry logic
    */
   public async transaction<T>(
-    fn: (prisma: Omit<PrismaClient, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">) => Promise<T>,
+    fn: (
+      prisma: Omit<
+        PrismaClient,
+        | "$connect"
+        | "$disconnect"
+        | "$on"
+        | "$transaction"
+        | "$use"
+        | "$extends"
+      >
+    ) => Promise<T>,
     options?: {
       maxWait?: number;
       timeout?: number;
-      isolationLevel?: 'ReadUncommitted' | 'ReadCommitted' | 'RepeatableRead' | 'Serializable';
+      isolationLevel?:
+        | "ReadUncommitted"
+        | "ReadCommitted"
+        | "RepeatableRead"
+        | "Serializable";
     }
   ): Promise<T> {
     if (!this.prisma) {
@@ -328,9 +361,9 @@ export class PrismaService extends SingletonService<PrismaService> {
         // Check if error is retryable
         const errorMessage = lastError.message.toLowerCase();
         const isRetryable =
-          errorMessage.includes('deadlock') ||
-          errorMessage.includes('timeout') ||
-          errorMessage.includes('connection');
+          errorMessage.includes("deadlock") ||
+          errorMessage.includes("timeout") ||
+          errorMessage.includes("connection");
 
         if (!isRetryable || attempt === maxRetries) {
           throw error;
@@ -343,7 +376,7 @@ export class PrismaService extends SingletonService<PrismaService> {
 
         // Exponential backoff
         const delay = Math.pow(2, attempt) * 100;
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
 
@@ -354,7 +387,7 @@ export class PrismaService extends SingletonService<PrismaService> {
    * Health check for database connection
    */
   public async healthCheck(): Promise<{
-    status: 'healthy' | 'unhealthy';
+    status: "healthy" | "unhealthy";
     latency: number;
     details?: any;
   }> {
@@ -369,13 +402,13 @@ export class PrismaService extends SingletonService<PrismaService> {
       const latency = Date.now() - start;
 
       return {
-        status: 'healthy',
+        status: "healthy",
         latency,
         details: this.getPoolStats(),
       };
     } catch (error) {
       return {
-        status: 'unhealthy',
+        status: "unhealthy",
         latency: Date.now() - start,
         details: {
           error: (error as Error).message,
@@ -390,11 +423,11 @@ export class PrismaService extends SingletonService<PrismaService> {
  * Default connection pool configuration
  */
 export const defaultPoolConfig: PrismaServiceOptions = {
-  connectionLimit: 10,        // Maximum connections in pool
-  connectTimeout: 30000,      // 30 seconds
-  poolTimeout: 10000,         // 10 seconds
-  idleTimeout: 60000,         // 1 minute
-  queryTimeout: 30000,        // 30 seconds
-  enableQueryLogging: false,  // Disable in production
+  connectionLimit: 10, // Maximum connections in pool
+  connectTimeout: 30000, // 30 seconds
+  poolTimeout: 10000, // 10 seconds
+  idleTimeout: 60000, // 1 minute
+  queryTimeout: 30000, // 30 seconds
+  enableQueryLogging: false, // Disable in production
   enableMetrics: true,
 };

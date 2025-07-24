@@ -112,7 +112,7 @@ class RefactoringAnalyzer {
       }
       
     } catch (error) {
-      console.error(`Error analyzing ${file}:`, error.message);
+      console.error(`Error analyzing ${file}:`, error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -354,7 +354,7 @@ class RefactoringAnalyzer {
         }
       }
     } catch (error) {
-      console.error(`Error reading directory ${dir}:`, error.message);
+      console.error(`Error reading directory ${dir}:`, error instanceof Error ? error.message : String(error));
     }
     
     return files;

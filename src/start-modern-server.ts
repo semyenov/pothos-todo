@@ -29,7 +29,7 @@ async function startModernServer() {
     await gateway.initialize();
 
     // Initialize developer portal
-    const portal = new DeveloperPortal({
+    const portal = await DeveloperPortal.create({
       baseUrl: `http://localhost:${process.env.PORT || '4000'}`,
       features: {
         playground: true,
@@ -41,7 +41,7 @@ async function startModernServer() {
     });
 
     // Initialize monitoring dashboard
-    const dashboard = new MonitoringDashboard({
+    const dashboard = await MonitoringDashboard.create({
       refreshInterval: 30000, // 30 seconds
       historyWindow: 3600000, // 1 hour
       alertThresholds: {

@@ -11,7 +11,10 @@ import { usePrometheus } from "@envelop/prometheus";
 import { logger } from "../lib/unjs-utils.js";
 import chalk from "chalk";
 import { createServer } from "http";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import {
+  BatchSpanProcessor,
+  type SpanExporter,
+} from "@opentelemetry/sdk-trace-base";
 
 // Initialize default metrics collection
 collectDefaultMetrics({ prefix: "federation_" });
@@ -122,6 +125,12 @@ export function initializeOpenTelemetry(serviceName: string) {
     url:
       process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT ||
       "http://localhost:4318/v1/traces",
+    headers: {
+      "x-api-key": process.env.OTEL_EXPORTER_OTLP_TRACES_API_KEY || "",
+    },
+  });
+  const provider = new BasicTracerProvider({
+    spanProcessors: [new SimpleSpanProcessor(traceExporter)],
   });
 
   // Create metrics exporter
@@ -135,6 +144,8 @@ export function initializeOpenTelemetry(serviceName: string) {
     readers: [metricsExporter],
   });
 
+  const spanProcessor = new BatchSpanProcessor(traceExporter);
+
   // Initialize SDK
   const sdk = new NodeSDK({
     resource,
@@ -145,7 +156,7 @@ export function initializeOpenTelemetry(serviceName: string) {
         },
       }),
     ],
-    spanProcessors: [new BatchSpanProcessor(traceExporter)],
+    spanProcessors: spanProcessor,
   });
 
   // Start SDK
@@ -170,7 +181,17 @@ export function createMonitoringPlugin(subgraphName: string): Plugin {
       return {
         onExecuteDone({ result }) {
           const duration = (Date.now() - startTime) / 1000;
-          const status = result.errors ? "error" : "success";
+          let status = "success";
+          // Defensive check for errors property
+          if (
+            result &&
+            typeof result === "object" &&
+            "errors" in result &&
+            Array.isArray(result.errors) &&
+            result.errors.length > 0
+          ) {
+            status = "error";
+          }
 
           // Record metrics
           federationMetrics.requestsTotal.inc({
@@ -189,7 +210,12 @@ export function createMonitoringPlugin(subgraphName: string): Plugin {
             duration
           );
 
-          if (result.errors) {
+          if (
+            result &&
+            typeof result === "object" &&
+            "errors" in result &&
+            Array.isArray(result.errors)
+          ) {
             result.errors.forEach((error) => {
               federationMetrics.errorsTotal.inc({
                 subgraph: subgraphName,
@@ -221,34 +247,6 @@ export function createMonitoringPlugin(subgraphName: string): Plugin {
             },
           };
         },
-      };
-    },
-
-    onResolverCalled({ info }) {
-      const resolverName = `${info.parentType.name}.${info.fieldName}`;
-      const startTime = Date.now();
-
-      federationMetrics.resolverConcurrency.inc({
-        subgraph: subgraphName,
-        resolver: resolverName,
-      });
-
-      return ({ result }) => {
-        const duration = (Date.now() - startTime) / 1000;
-
-        federationMetrics.fieldResolutionDuration.observe(
-          {
-            subgraph: subgraphName,
-            type: info.parentType.name,
-            field: info.fieldName,
-          },
-          duration
-        );
-
-        federationMetrics.resolverConcurrency.dec({
-          subgraph: subgraphName,
-          resolver: resolverName,
-        });
       };
     },
   };
@@ -303,7 +301,7 @@ export async function checkHealth(
 
         return {
           name: dep.name,
-          status: response.ok ? "up" : ("down" as const),
+          status: response.ok ? "up" : "down",
           latency: Date.now() - depStartTime,
         };
       } catch (error) {
@@ -393,6 +391,7 @@ export function startMetricsServer(port: number = 9090) {
 
 // Distributed tracing helpers
 import { context, trace, SpanStatusCode } from "@opentelemetry/api";
+import { createOtlpHttpExporter } from "@graphql-hive/gateway";
 
 export const tracer = trace.getTracer("pothos-todo-federation");
 

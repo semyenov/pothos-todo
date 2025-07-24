@@ -1,7 +1,7 @@
 import { logger } from '@/logger.js';
 import { SystemIntegration } from '@/infrastructure/SystemIntegration.js';
 import { MetricsSystem } from '@/infrastructure/observability/Metrics.js';
-import { SLOMonitoring } from '@/infrastructure/observability/SLOMonitoring.js';
+import { SLOMonitoringSystem } from '@/infrastructure/observability/SLOMonitoring.js';
 import { AnomalyDetectionSystem } from '@/infrastructure/observability/AnomalyDetection.js';
 import { ThreatDetectionSystem } from '@/infrastructure/security/ThreatDetection.js';
 import { ComplianceAutomationSystem } from '@/infrastructure/security/ComplianceAutomation.js';
@@ -112,7 +112,7 @@ export class MonitoringDashboard {
   private config: DashboardConfig;
   private system: SystemIntegration;
   private metrics: MetricsSystem;
-  private sloMonitoring: SLOMonitoring;
+  private sloMonitoring: SLOMonitoringSystem;
   private anomalyDetection: AnomalyDetectionSystem;
   private threatDetection: ThreatDetectionSystem;
   private compliance: ComplianceAutomationSystem;
@@ -125,19 +125,70 @@ export class MonitoringDashboard {
   private dashboardData: DashboardData[] = [];
   private refreshInterval?: NodeJS.Timeout;
 
-  constructor(config: DashboardConfig) {
+  private constructor(
+    config: DashboardConfig,
+    system: SystemIntegration,
+    metrics: MetricsSystem,
+    sloMonitoring: SLOMonitoringSystem,
+    anomalyDetection: AnomalyDetectionSystem,
+    threatDetection: ThreatDetectionSystem,
+    compliance: ComplianceAutomationSystem,
+    securityAudit: SecurityAuditSystem,
+    edgeComputing: EdgeComputingSystem,
+    dataReplication: DataReplicationSystem,
+    cdn: IntelligentCDN,
+    performanceOptimizer: PerformanceOptimizer
+  ) {
     this.config = config;
-    this.system = SystemIntegration.getInstance();
-    this.metrics = MetricsSystem.getInstance();
-    this.sloMonitoring = SLOMonitoring.getInstance();
-    this.anomalyDetection = AnomalyDetectionSystem.getInstance();
-    this.threatDetection = ThreatDetectionSystem.getInstance();
-    this.compliance = ComplianceAutomationSystem.getInstance();
-    this.securityAudit = SecurityAuditSystem.getInstance();
-    this.edgeComputing = EdgeComputingSystem.getInstance();
-    this.dataReplication = DataReplicationSystem.getInstance();
-    this.cdn = IntelligentCDN.getInstance();
-    this.performanceOptimizer = PerformanceOptimizer.getInstance();
+    this.system = system;
+    this.metrics = metrics;
+    this.sloMonitoring = sloMonitoring;
+    this.anomalyDetection = anomalyDetection;
+    this.threatDetection = threatDetection;
+    this.compliance = compliance;
+    this.securityAudit = securityAudit;
+    this.edgeComputing = edgeComputing;
+    this.dataReplication = dataReplication;
+    this.cdn = cdn;
+    this.performanceOptimizer = performanceOptimizer;
+  }
+
+  /**
+   * Create a new MonitoringDashboard instance
+   * Handles async initialization of dependencies
+   */
+  static async create(config: DashboardConfig): Promise<MonitoringDashboard> {
+    // SystemIntegration is an AsyncSingletonService and must be initialized first
+    const system = SystemIntegration.getInstance();
+    
+    // These are async singleton services that need await
+    const metrics = await MetricsSystem.getInstance();
+    const edgeComputing = await EdgeComputingSystem.getInstance();
+    
+    // These are regular singleton services
+    const sloMonitoring = SLOMonitoringSystem.getInstance();
+    const anomalyDetection = AnomalyDetectionSystem.getInstance();
+    const threatDetection = ThreatDetectionSystem.getInstance();
+    const compliance = ComplianceAutomationSystem.getInstance();
+    const securityAudit = SecurityAuditSystem.getInstance();
+    const dataReplication = DataReplicationSystem.getInstance();
+    const cdn = IntelligentCDN.getInstance();
+    const performanceOptimizer = PerformanceOptimizer.getInstance();
+
+    return new MonitoringDashboard(
+      config,
+      system,
+      metrics,
+      sloMonitoring,
+      anomalyDetection,
+      threatDetection,
+      compliance,
+      securityAudit,
+      edgeComputing,
+      dataReplication,
+      cdn,
+      performanceOptimizer
+    );
   }
 
   /**

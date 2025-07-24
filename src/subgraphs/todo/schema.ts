@@ -20,12 +20,8 @@ builder.prismaObject("Todo", {
     id: t.exposeID("id"),
     title: t.exposeString("title"),
     description: t.exposeString("description", { nullable: true }),
-    status: t.expose('status', {
-      type: 'TodoStatus',
-    }),
-    priority: t.expose('priority', {
-      type: 'Priority',
-    }),
+    status: t.exposeString("status"),
+    priority: t.exposeString("priority"),
     dueDate: t.expose("dueDate", {
       type: "DateTime",
       nullable: true,

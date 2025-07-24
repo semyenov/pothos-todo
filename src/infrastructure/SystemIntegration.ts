@@ -2,14 +2,15 @@ import { logger } from '@/logger.js';
 import { AsyncSingletonService } from './core/SingletonService.js';
 import { EventBus } from './events/EventBus.js';
 import type { IEventStore } from './events/EventStore.js';
-import { CommandBus } from './cqrs/CommandBus.js';
-import { QueryBus } from './cqrs/QueryBus.js';
-import { ProjectionEngine } from './cqrs/ProjectionEngine.js';
-import { SagaOrchestrator } from './sagas/SagaOrchestrator.js';
+import { PrismaEventStore } from './events/PrismaEventStore.js';
+// import { CommandBus } from './cqrs/CommandBus.js';
+// import { QueryBus } from './cqrs/QueryBus.js';
+// import { ProjectionEngine } from './cqrs/ProjectionEngine.js';
+import { SagaOrchestrator } from './saga/SagaOrchestrator.js';
 import { TelemetrySystem } from './observability/Telemetry.js';
 import { MetricsSystem } from './observability/Metrics.js';
 import { AnomalyDetectionSystem } from './observability/AnomalyDetection.js';
-import { SLOMonitoring } from './observability/SLOMonitoring.js';
+import { SLOMonitoringSystem } from './observability/SLOMonitoring.js';
 import { AlertingSystem } from './observability/AlertingSystem.js';
 import { ZeroTrustGateway } from './security/ZeroTrustGateway.js';
 import { ThreatDetectionSystem } from './security/ThreatDetection.js';
@@ -21,21 +22,21 @@ import { DataReplicationSystem } from './edge/DataReplication.js';
 import { IntelligentCDN } from './edge/IntelligentCDN.js';
 import { EdgeAuthSystem } from './edge/EdgeAuth.js';
 import { PerformanceOptimizer } from './performance/PerformanceOptimizer.js';
-import { AIAssistant } from './ai/AIAssistant.js';
+// import { AIAssistant } from './ai/AIAssistant.js';
 import { VectorStore } from './ai/VectorStore.js';
-import { SemanticSearch } from './ai/SemanticSearch.js';
-import { MLPipeline } from './ml/MLPipeline.js';
-import { RealtimeEngine } from './realtime/RealtimeEngine.js';
-import { CollaborationManager } from './collaboration/CollaborationManager.js';
-import { WebSocketManager } from './websocket/WebSocketManager.js';
-import { NotificationSystem } from './notifications/NotificationSystem.js';
-import { SearchEngine } from './search/SearchEngine.js';
+// import { SemanticSearch } from './ai/SemanticSearch.js';
+// import { MLPipeline } from './ml/MLPipeline.js';
+// import { RealtimeEngine } from './realtime/RealtimeEngine.js';
+// import { CollaborationManager } from './collaboration/CollaborationManager.js';
+// import { WebSocketManager } from './websocket/WebSocketManager.js';
+import { AdvancedNotificationSystem as NotificationSystem } from './notifications/AdvancedNotificationSystem.js';
+// import { SearchEngine } from './search/SearchEngine.js';
 import { CacheManager } from './cache/CacheManager.js';
-import { RateLimiter } from './ratelimit/RateLimiter.js';
-import { QueueManager } from './queue/QueueManager.js';
-import { TransactionManager } from './transactions/TransactionManager.js';
-import { WorkflowEngine } from './workflow/WorkflowEngine.js';
-import { IntegrationHub } from './integrations/IntegrationHub.js';
+// import { RateLimiter } from './ratelimit/RateLimiter.js';
+// import { QueueManager } from './queue/QueueManager.js';
+// import { TransactionManager } from './transactions/TransactionManager.js';
+// import { WorkflowEngine } from './workflow/WorkflowEngine.js';
+// import { IntegrationHub } from './integrations/IntegrationHub.js';
 import { initializeEdgeInfrastructure } from './edge/EdgeIntegration.js';
 
 export interface SystemConfig {
@@ -77,16 +78,16 @@ export class SystemIntegration extends AsyncSingletonService<SystemIntegration> 
   // Core Infrastructure
   private eventBus!: EventBus;
   private eventStore!: IEventStore;
-  private commandBus!: CommandBus;
-  private queryBus!: QueryBus;
-  private projectionEngine!: ProjectionEngine;
+  // private commandBus!: CommandBus;
+  // private queryBus!: QueryBus;
+  // private projectionEngine!: ProjectionEngine;
   private sagaOrchestrator!: SagaOrchestrator;
 
   // Observability
   private telemetry!: TelemetrySystem;
   private metrics!: MetricsSystem;
   private anomalyDetection!: AnomalyDetectionSystem;
-  private sloMonitoring!: SLOMonitoring;
+  private sloMonitoring!: SLOMonitoringSystem;
   private alerting!: AlertingSystem;
 
   // Security
@@ -104,42 +105,44 @@ export class SystemIntegration extends AsyncSingletonService<SystemIntegration> 
   private performanceOptimizer!: PerformanceOptimizer;
 
   // AI & ML
-  private aiAssistant!: AIAssistant;
+  // private aiAssistant!: AIAssistant;
   private vectorStore!: VectorStore;
-  private semanticSearch!: SemanticSearch;
-  private mlPipeline!: MLPipeline;
+  // private semanticSearch!: SemanticSearch;
+  // private mlPipeline!: MLPipeline;
 
   // Real-time & Collaboration
-  private realtimeEngine!: RealtimeEngine;
-  private collaborationManager!: CollaborationManager;
-  private wsManager!: WebSocketManager;
+  // private realtimeEngine!: RealtimeEngine;
+  // private collaborationManager!: CollaborationManager;
+  // private wsManager!: WebSocketManager;
   private notificationSystem!: NotificationSystem;
 
   // Supporting Services
-  private searchEngine!: SearchEngine;
+  // private searchEngine!: SearchEngine;
   private cacheManager!: CacheManager;
-  private rateLimiter!: RateLimiter;
-  private queueManager!: QueueManager;
-  private transactionManager!: TransactionManager;
-  private workflowEngine!: WorkflowEngine;
-  private integrationHub!: IntegrationHub;
+  // private rateLimiter!: RateLimiter;
+  // private queueManager!: QueueManager;
+  // private transactionManager!: TransactionManager;
+  // private workflowEngine!: WorkflowEngine;
+  // private integrationHub!: IntegrationHub;
 
   protected constructor() {
     super();
   }
 
   static async initialize(config: SystemConfig): Promise<SystemIntegration> {
-    return super.getInstanceAsync(async (instance) => {
+    const instance = await super.getInstance();
+    if (!instance.initialized) {
       instance.config = config;
       await instance.initializeSystem();
-    });
+    }
+    return instance;
   }
 
-  static getInstance(): SystemIntegration {
+  static async getInstance(): Promise<SystemIntegration> {
     if (!AsyncSingletonService.isInitialized('SystemIntegration')) {
       throw new Error('SystemIntegration not initialized - call initialize() first');
     }
-    return super.getInstance() as SystemIntegration;
+    return super.getInstance();
   }
 
   /**
@@ -198,28 +201,28 @@ export class SystemIntegration extends AsyncSingletonService<SystemIntegration> 
    */
   private async initializeCoreInfrastructure(): Promise<void> {
     // Cache Manager
-    this.cacheManager = CacheManager.getInstance();
+    this.cacheManager = await CacheManager.getInstance();
 
     // Queue Manager
-    this.queueManager = QueueManager.getInstance();
+    // this.queueManager = QueueManager.getInstance();
 
     // Transaction Manager
-    this.transactionManager = TransactionManager.getInstance();
+    // this.transactionManager = TransactionManager.getInstance();
 
     // Rate Limiter
-    this.rateLimiter = await RateLimiter.initialize({
-      defaultLimit: 100,
-      defaultWindow: 60000,
-    });
+    // this.rateLimiter = await RateLimiter.initialize({
+    //   defaultLimit: 100,
+    //   defaultWindow: 60000,
+    // });
 
     // Search Engine
-    this.searchEngine = SearchEngine.getInstance();
+    // this.searchEngine = SearchEngine.getInstance();
 
     // WebSocket Manager
-    this.wsManager = WebSocketManager.getInstance();
+    // this.wsManager = WebSocketManager.getInstance();
 
     // Notification System
-    this.notificationSystem = NotificationSystem.getInstance();
+    this.notificationSystem = await NotificationSystem.getInstance();
   }
 
   /**
@@ -230,20 +233,17 @@ export class SystemIntegration extends AsyncSingletonService<SystemIntegration> 
     this.eventBus = EventBus.getInstance();
 
     // Event Store
-    this.eventStore = EventStore.initialize({
-      storage: 'postgres',
-      snapshotFrequency: 10,
-    });
+    this.eventStore = new PrismaEventStore();
 
     // Command Bus
-    this.commandBus = CommandBus.getInstance();
+    // this.commandBus = CommandBus.getInstance();
 
     // Query Bus
-    this.queryBus = QueryBus.getInstance();
+    // this.queryBus = QueryBus.getInstance();
 
     // Projection Engine
-    this.projectionEngine = ProjectionEngine.getInstance();
-    await this.projectionEngine.start();
+    // this.projectionEngine = ProjectionEngine.getInstance();
+    // await this.projectionEngine.start();
 
     // Saga Orchestrator
     this.sagaOrchestrator = SagaOrchestrator.getInstance();
@@ -270,7 +270,8 @@ export class SystemIntegration extends AsyncSingletonService<SystemIntegration> 
     this.anomalyDetection = AnomalyDetectionSystem.getInstance();
 
     // SLO Monitoring
-    this.sloMonitoring = SLOMonitoring.initialize([
+    this.sloMonitoring = SLOMonitoringSystem.getInstance();
+    const slos = [
       {
         id: 'api-availability',
         name: 'API Availability',
@@ -294,7 +295,10 @@ export class SystemIntegration extends AsyncSingletonService<SystemIntegration> 
           percentile: 0.95,
         },
       },
-    ]);
+    ];
+    for (const slo of slos) {
+      this.sloMonitoring.registerSLO(slo);
+    }
 
     // Alerting
     this.alerting = AlertingSystem.getInstance();
@@ -366,32 +370,32 @@ export class SystemIntegration extends AsyncSingletonService<SystemIntegration> 
       await this.vectorStore.connect('http://localhost:6333');
 
       // Semantic Search
-      this.semanticSearch = SemanticSearch.getInstance();
+      // this.semanticSearch = SemanticSearch.getInstance();
 
       // AI Assistant
-      this.aiAssistant = AIAssistant.getInstance();
+      // this.aiAssistant = AIAssistant.getInstance();
     }
 
     if (this.config.features.ml) {
       // ML Pipeline
-      this.mlPipeline = MLPipeline.getInstance();
+      // this.mlPipeline = MLPipeline.getInstance();
     }
 
     if (this.config.features.realtime) {
       // Realtime Engine
-      this.realtimeEngine = RealtimeEngine.getInstance();
+      // this.realtimeEngine = RealtimeEngine.getInstance();
     }
 
     if (this.config.features.collaboration) {
       // Collaboration Manager
-      this.collaborationManager = CollaborationManager.getInstance();
+      // this.collaborationManager = CollaborationManager.getInstance();
     }
 
     // Workflow Engine
-    this.workflowEngine = WorkflowEngine.getInstance();
+    // this.workflowEngine = WorkflowEngine.getInstance();
 
     // Integration Hub
-    this.integrationHub = IntegrationHub.getInstance();
+    // this.integrationHub = IntegrationHub.getInstance();
   }
 
   /**
@@ -426,14 +430,14 @@ export class SystemIntegration extends AsyncSingletonService<SystemIntegration> 
 
     // AI + Search Integration
     if (this.config.features.ai) {
-      this.searchEngine.on('search:performed', async ({ query, results }) => {
-        // Store search patterns for ML (commented due to method signature mismatch)
-        // await this.vectorStore.upsert([{
-        //   id: `search_${Date.now()}`,
-        //   vector: await this.semanticSearch.generateEmbedding(query),
-        //   payload: { query, resultCount: results.length },
-        // }]);
-      });
+      // this.searchEngine.on('search:performed', async ({ query, results }) => {
+      //   // Store search patterns for ML (commented due to method signature mismatch)
+      //   // await this.vectorStore.upsert([{
+      //   //   id: `search_${Date.now()}`,
+      //   //   vector: await this.semanticSearch.generateEmbedding(query),
+      //   //   payload: { query, resultCount: results.length },
+      //   // }]);
+      // });
     }
 
     // Compliance + Audit Integration
@@ -709,9 +713,9 @@ export class SystemIntegration extends AsyncSingletonService<SystemIntegration> 
     logger.info('Shutting down system...');
 
     // Stop background processes
-    if (this.projectionEngine) {
-      await this.projectionEngine.stop();
-    }
+    // if (this.projectionEngine) {
+    //   await this.projectionEngine.stop();
+    // }
 
     if (this.sagaOrchestrator) {
       await this.sagaOrchestrator.stop();

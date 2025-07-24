@@ -77,12 +77,27 @@ export class DeveloperPortal {
   private monitoring?: MonitoringDashboard;
   private documentation: APIDocumentation;
 
-  constructor(config: DeveloperPortalConfig) {
+  private constructor(
+    config: DeveloperPortalConfig,
+    system: SystemIntegration,
+    monitoring?: MonitoringDashboard
+  ) {
     this.config = config;
-    this.system = SystemIntegration.getInstance();
+    this.system = system;
+    this.monitoring = monitoring;
+    this.documentation = this.generateDocumentation();
+  }
+
+  /**
+   * Create a new DeveloperPortal instance
+   * Handles async initialization of dependencies
+   */
+  static async create(config: DeveloperPortalConfig): Promise<DeveloperPortal> {
+    const system = SystemIntegration.getInstance();
     
+    let monitoring: MonitoringDashboard | undefined;
     if (config.features.monitoring) {
-      this.monitoring = new MonitoringDashboard({
+      monitoring = await MonitoringDashboard.create({
         refreshInterval: 30000,
         historyWindow: 3600000,
         alertThresholds: {
@@ -94,7 +109,7 @@ export class DeveloperPortal {
       });
     }
 
-    this.documentation = this.generateDocumentation();
+    return new DeveloperPortal(config, system, monitoring);
   }
 
   /**

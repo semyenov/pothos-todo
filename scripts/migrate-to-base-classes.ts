@@ -128,7 +128,7 @@ class MigrationScript {
 
       // Add super() call if not present
       const constructorMatch = newContent.match(/protected constructor\(\)\s*{([^}]*)/);
-      if (constructorMatch && !constructorMatch[1].includes('super()')) {
+      if (constructorMatch && constructorMatch[1] && !constructorMatch[1].includes('super()')) {
         newContent = newContent.replace(
           /protected constructor\(\)\s*{/,
           'protected constructor() {\n    super();'
@@ -151,7 +151,7 @@ class MigrationScript {
         type: 'singleton',
         changes: [],
         success: false,
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       });
     }
   }
@@ -260,7 +260,7 @@ class MigrationScript {
         type: 'repository',
         changes: [],
         success: false,
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       });
     }
   }
@@ -272,7 +272,7 @@ class MigrationScript {
       const domain = findByIdMatch[1];
       // Try to infer Prisma type (often Prisma + domain name)
       const prisma = `Prisma${domain}`;
-      return { domain, prisma };
+      return { domain: domain || '', prisma };
     }
     return null;
   }
@@ -364,7 +364,7 @@ class MigrationScript {
         type: 'aggregate',
         changes: [],
         success: false,
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       });
     }
   }
@@ -380,9 +380,9 @@ class MigrationScript {
       const constructorBody = match[1];
       
       // Check if super() is already called
-      if (!constructorBody.includes('super(')) {
+      if (constructorBody && !constructorBody.includes('super(')) {
         // Find where to insert super() call
-        const lines = constructorBody.split('\n');
+        const lines = constructorBody ? constructorBody.split('\n') : [];
         const superCall = '    super(id, createdAt, updatedAt, version);';
         
         // Insert after initial property assignments
@@ -416,7 +416,7 @@ class MigrationScript {
       const methodBody = match[1];
       
       // Extract field updates
-      const fieldUpdates = this.extractFieldUpdates(methodBody);
+      const fieldUpdates = this.extractFieldUpdates(methodBody || '');
       
       if (fieldUpdates.length > 0) {
         const updateFieldsCall = `const hasChanges = this.updateFields({
@@ -424,7 +424,7 @@ ${fieldUpdates.map(f => `      ${f}`).join(',\n')}
     });`;
         
         // Replace manual updates with updateFields
-        const newMethodBody = methodBody
+        const newMethodBody = (methodBody || '')
           .replace(/this\._\w+\s*=\s*[^;]+;/g, '')
           .replace(/this\._updatedAt\s*=\s*new Date\(\);?/, '')
           .replace(/this\._version\+\+;?/, '')
@@ -449,8 +449,8 @@ ${fieldUpdates.map(f => `      ${f}`).join(',\n')}
     
     const matches = methodBody.matchAll(updateRegex);
     for (const match of matches) {
-      const field = match[1].substring(1); // Remove underscore
-      const value = match[2].trim();
+      const field = match[1] ? match[1].substring(1) : ''; // Remove underscore
+      const value = match[2] ? match[2].trim() : '';
       
       // Skip internal fields
       if (!['id', 'createdAt', 'updatedAt', 'version', 'events'].includes(field)) {
@@ -465,7 +465,7 @@ ${fieldUpdates.map(f => `      ${f}`).join(',\n')}
 
   private extractClassName(content: string): string | null {
     const match = content.match(/export\s+class\s+(\w+)/);
-    return match ? match[1] : null;
+    return match && match[1] ? match[1] : null;
   }
 
   private inferModelName(className: string): string {
@@ -525,7 +525,7 @@ ${fieldUpdates.map(f => `      ${f}`).join(',\n')}
         }
       }
     } catch (error) {
-      console.error(`Error reading directory ${dir}:`, error.message);
+      console.error(`Error reading directory ${dir}:`, error instanceof Error ? error.message : String(error));
     }
     
     return files;
@@ -566,7 +566,7 @@ ${fieldUpdates.map(f => `      ${f}`).join(',\n')}
         type: this.detectFileType(file),
         changes,
         success: false,
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       });
     }
   }
