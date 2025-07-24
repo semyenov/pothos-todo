@@ -1,5 +1,5 @@
 import { BaseService, BaseAsyncService } from './BaseService.js';
-import { ServiceDependencyGraph, ServiceDefinition } from './ServiceDependencyGraph.js';
+import { ServiceDependencyGraph, ServiceDefinition } from '../orchestration/ServiceDependencyGraph.js';
 import { TypedEventEmitter } from './TypedEventEmitter.js';
 import { logger } from '@/lib/unjs-utils.js';
 import type { HealthCheckResult, HealthStatus } from './BaseService.js';

@@ -5,7 +5,7 @@ import boxen from 'boxen';
 
 export default class PulumiMenu extends Command {
   static override description = 'Interactive infrastructure management menu';
-  
+
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
   ];
@@ -18,7 +18,7 @@ export default class PulumiMenu extends Command {
   private showHeader(): void {
     const header = chalk.cyan.bold('Infrastructure as Code Management');
     const subtitle = chalk.gray('Deploy and manage cloud infrastructure with Pulumi');
-    
+
     this.log(boxen(`${header}\n${subtitle}`, {
       padding: 1,
       margin: 1,
@@ -122,7 +122,7 @@ export default class PulumiMenu extends Command {
 
       if (action === 'back') {
         // Return to main CLI menu
-        const { Command } = await import('../index.js');
+        const Command = (await import('../../commands/index.js')).default;
         await Command.run([]);
         break;
       }
@@ -207,7 +207,7 @@ export default class PulumiMenu extends Command {
       }
     ]);
 
-    const args = [];
+    const args: string[] = [];
     if (stack) args.push('--stack', stack);
     if (skipPreview) args.push('--skip-preview');
     if (parallel) args.push('--parallel');
@@ -238,7 +238,7 @@ export default class PulumiMenu extends Command {
       }
     ]);
 
-    const args = [];
+    const args: string[] = [];
     if (stack) args.push('--stack', stack);
     if (diff) args.push('--diff');
     if (detailed) args.push('--detailed');
@@ -249,7 +249,7 @@ export default class PulumiMenu extends Command {
 
   private async handleDestroy(): Promise<void> {
     this.log(chalk.red('⚠️  WARNING: This will destroy all infrastructure resources!'));
-    
+
     const { confirm, stack, force } = await inquirer.prompt([
       {
         type: 'confirm',
@@ -278,7 +278,7 @@ export default class PulumiMenu extends Command {
       return;
     }
 
-    const args = [];
+    const args: string[] = [];
     if (stack) args.push('--stack', stack);
     if (force) args.push('--force');
 
@@ -330,7 +330,7 @@ export default class PulumiMenu extends Command {
 
   private async handleRefresh(): Promise<void> {
     this.log(chalk.blue('🔄 Refreshing infrastructure state...'));
-    
+
     const { executeCommand } = await import('../../lib/utils.js');
     await executeCommand('pulumi', ['refresh', '--yes'], { silent: false });
   }
@@ -352,7 +352,7 @@ export default class PulumiMenu extends Command {
     ]);
 
     const { executeCommand } = await import('../../lib/utils.js');
-    const args = ['logs'];
+    const args: string[] = ['logs'];
     if (follow) args.push('--follow');
     if (since) args.push('--since', since);
 
@@ -365,19 +365,19 @@ export default class PulumiMenu extends Command {
 
     try {
       const { executeCommand } = await import('../../lib/utils.js');
-      
+
       // Get stack info
       this.log(chalk.yellow('📋 Current Stack:'));
       await executeCommand('pulumi', ['stack'], { silent: false });
-      
+
       // Get stack outputs
       this.log(chalk.yellow('\n📤 Stack Outputs:'));
       await executeCommand('pulumi', ['stack', 'output'], { silent: false });
-      
+
       // Get resource count
       this.log(chalk.yellow('\n🔢 Resource Summary:'));
       await executeCommand('pulumi', ['stack', 'ls', '--json'], { silent: false });
-      
+
     } catch (error) {
       this.log(chalk.red(`Failed to get status: ${error instanceof Error ? error.message : String(error)}`));
     }
@@ -386,13 +386,13 @@ export default class PulumiMenu extends Command {
   private async handleSecurity(): Promise<void> {
     this.log(chalk.blue('🛡️ Security Scan'));
     this.log(chalk.yellow('Running infrastructure security analysis...'));
-    
+
     try {
       const { executeCommand } = await import('../../lib/utils.js');
-      
+
       // Use Pulumi policy engine if available
       await executeCommand('pulumi', ['preview', '--policy-pack', 'security'], { silent: false });
-      
+
     } catch (error) {
       this.log(chalk.red(`Security scan failed: ${error instanceof Error ? error.message : String(error)}`));
       this.log(chalk.yellow('💡 Tip: Install Pulumi CrossGuard for comprehensive security scanning'));
@@ -420,7 +420,7 @@ export default class PulumiMenu extends Command {
     ]);
 
     this.log(chalk.blue(`☁️ Deploying to ${cloud.toUpperCase()} (${environment} - ${region})`));
-    
+
     const stackName = `${cloud}-${environment}`;
     const args = ['--stack', stackName, '--cloud', cloud, '--region', region];
 

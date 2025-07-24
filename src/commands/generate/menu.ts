@@ -5,7 +5,7 @@ import boxen from 'boxen';
 
 export default class GenerateMenu extends Command {
   static override description = 'Interactive code generation menu';
-  
+
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
   ];
@@ -18,7 +18,7 @@ export default class GenerateMenu extends Command {
   private showHeader(): void {
     const header = chalk.cyan.bold('Code Generation Tools');
     const subtitle = chalk.gray('Generate boilerplate code, schemas, and templates');
-    
+
     this.log(boxen(`${header}\n${subtitle}`, {
       padding: 1,
       margin: 1,
@@ -117,7 +117,7 @@ export default class GenerateMenu extends Command {
 
       if (action === 'back') {
         // Return to main CLI menu
-        const { Command } = await import('../index.js');
+        const Command = (await import('../../commands/index.js')).default;
         await Command.run([]);
         break;
       }
@@ -379,7 +379,7 @@ export default class GenerateMenu extends Command {
 
   private async generateCRUD(): Promise<void> {
     this.log(chalk.blue('🔄 Generate Full CRUD Operations'));
-    
+
     const { entity, includeGraphQL, includeValidation, includeAuth } = await inquirer.prompt([
       {
         type: 'input',
@@ -457,10 +457,10 @@ export default class GenerateMenu extends Command {
 
   private async generateTypes(): Promise<void> {
     this.log(chalk.blue('🎨 Generate Types from Schema'));
-    
+
     const { executeCommand } = await import('../../lib/utils.js');
     await executeCommand('bun', ['run', 'db:generate'], { silent: false });
-    
+
     this.log(chalk.green('✅ Prisma types generated successfully'));
   }
 
@@ -471,7 +471,7 @@ export default class GenerateMenu extends Command {
 
   private async scaffoldFeature(): Promise<void> {
     this.log(chalk.blue('🔄 Scaffold Full Feature'));
-    
+
     const { featureName, includeDomain, includeGraphQL, includeTests } = await inquirer.prompt([
       {
         type: 'input',

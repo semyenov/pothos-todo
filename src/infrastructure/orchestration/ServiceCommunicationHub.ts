@@ -1,7 +1,7 @@
-import { EnhancedServiceRegistry } from './ServiceRegistry.enhanced.js';
-import { TypedEventEmitter } from './TypedEventEmitter.js';
+import { EnhancedServiceRegistry } from '../core/ServiceRegistry.enhanced.js';
+import { TypedEventEmitter } from '../core/TypedEventEmitter.js';
 import { logger } from '@/lib/unjs-utils.js';
-import { BaseService, BaseAsyncService } from './BaseService.js';
+import { BaseService, BaseAsyncService } from '../core/BaseService.js';
 
 export interface ServiceMessage {
   id: string;

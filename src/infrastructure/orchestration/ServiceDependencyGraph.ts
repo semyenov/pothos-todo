@@ -1,5 +1,5 @@
 import { logger } from '@/lib/unjs-utils.js';
-import { TypedEventEmitter } from './TypedEventEmitter.js';
+import { TypedEventEmitter } from '../core/TypedEventEmitter.js';
 
 export interface ServiceDefinition {
   name: string;

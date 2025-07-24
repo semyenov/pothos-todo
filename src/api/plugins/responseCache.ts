@@ -44,7 +44,8 @@ export function createResponseCachePlugin(options: ResponseCacheOptions = {}): P
     keyPrefix = 'gql:response:',
   } = options;
 
-  const cacheManager = CacheManager.getInstance();
+  // Cache manager will be initialized on first use
+  let cacheManager: CacheManager | null = null;
 
   return {
     onExecute: ({ args }) => {
@@ -77,24 +78,33 @@ export function createResponseCachePlugin(options: ResponseCacheOptions = {}): P
 
       return {
         onExecuteDone: async ({ result }) => {
-          // Don't cache if cache is disabled
-          if (!cacheManager.isConnected) {
-            logger.debug('Cache is disabled', {
-              operationName,
-              cacheKey,
-              ttl,
-            });
-            return;
-          }
+          try {
+            // Initialize cache manager if not already done
+            if (!cacheManager) {
+              cacheManager = await CacheManager.getInstance();
+            }
 
-          // Cache the result if successful
-          if (result && (!cacheOnlySuccess || !('errors' in result))) {
-            await cacheManager.set(cacheKey, result, { ttl });
-            logger.debug('GraphQL response cached', {
-              operationName,
-              cacheKey,
-              ttl,
-            });
+            // Don't cache if cache is disabled
+            if (!cacheManager.isConnected) {
+              logger.debug('Cache is disabled', {
+                operationName,
+                cacheKey,
+                ttl,
+              });
+              return;
+            }
+
+            // Cache the result if successful
+            if (result && (!cacheOnlySuccess || !('errors' in result))) {
+              await cacheManager.set(cacheKey, result, { ttl });
+              logger.debug('GraphQL response cached', {
+                operationName,
+                cacheKey,
+                ttl,
+              });
+            }
+          } catch (error) {
+            logger.error('Cache operation failed', { error, operationName, cacheKey });
           }
         },
       };
@@ -133,7 +143,7 @@ export function createCacheTags(type: string, id?: string): string[] {
  * Invalidate cache by type or specific entity
  */
 export async function invalidateCache(type: string, id?: string): Promise<void> {
-  const cacheManager = CacheManager.getInstance();
+  const cacheManager = await CacheManager.getInstance();
   const tags = createCacheTags(type, id);
 
   const invalidated = await cacheManager.invalidateByTags(tags);

@@ -19,9 +19,11 @@ export class CacheManager extends AsyncSingletonService {
   }
 
   static async getInstance(): Promise<CacheManager> {
-    return super.getInstanceAsync(async (instance) => {
+    const instance = await super.getInstance();
+    if (!instance.isConnected) {
       await instance.connect();
-    });
+    }
+    return instance;
   }
 
   public async connect(): Promise<void> {

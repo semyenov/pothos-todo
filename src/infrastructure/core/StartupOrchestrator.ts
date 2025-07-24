@@ -1,5 +1,5 @@
 import { EnhancedServiceRegistry } from './ServiceRegistry.enhanced.js';
-import { ServiceDependencyGraph, ServiceDefinition, DEFAULT_SERVICE_DEFINITIONS } from './ServiceDependencyGraph.js';
+import { ServiceDependencyGraph, ServiceDefinition, DEFAULT_SERVICE_DEFINITIONS } from '../orchestration/ServiceDependencyGraph.js';
 import { TypedEventEmitter } from './TypedEventEmitter.js';
 import { logger } from '@/lib/unjs-utils.js';
 import type { HealthStatus } from './BaseService.js';

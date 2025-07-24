@@ -52,6 +52,38 @@ export default defineConfig({
     'commands/dev/menu': './src/commands/dev/menu.ts',
     'commands/services/index': './src/commands/services/index.ts',
     'commands/services/menu': './src/commands/services/menu.ts',
+    // Federation commands
+    'commands/federation/dev': './src/commands/federation/dev.ts',
+    'commands/federation/docker': './src/commands/federation/docker.ts',
+    'commands/federation/test': './src/commands/federation/test.ts',
+    'commands/federation/subgraph': './src/commands/federation/subgraph.ts',
+    'commands/federation/menu': './src/commands/federation/menu.ts',
+    // Refactor commands
+    'commands/refactor/analyze': './src/commands/refactor/analyze.ts',
+    'commands/refactor/migrate': './src/commands/refactor/migrate.ts',
+    'commands/refactor/benchmark': './src/commands/refactor/benchmark.ts',
+    'commands/refactor/compare': './src/commands/refactor/compare.ts',
+    'commands/refactor/menu': './src/commands/refactor/menu.ts',
+    // Generate commands
+    'commands/generate/domain': './src/commands/generate/domain.ts',
+    'commands/generate/schema': './src/commands/generate/schema.ts',
+    'commands/generate/repository': './src/commands/generate/repository.ts',
+    'commands/generate/service': './src/commands/generate/service.ts',
+    'commands/generate/scaffold': './src/commands/generate/scaffold.ts',
+    'commands/generate/menu': './src/commands/generate/menu.ts',
+    // Pulumi commands
+    'commands/pulumi/deploy': './src/commands/pulumi/deploy.ts',
+    'commands/pulumi/preview': './src/commands/pulumi/preview.ts',
+    'commands/pulumi/stack': './src/commands/pulumi/stack.ts',
+    'commands/pulumi/menu': './src/commands/pulumi/menu.ts',
+    // Monitoring commands
+    'commands/monitoring/health': './src/commands/monitoring/health.ts',
+    'commands/monitoring/metrics': './src/commands/monitoring/metrics.ts',
+    'commands/monitoring/menu': './src/commands/monitoring/menu.ts',
+    // Hooks commands
+    'commands/hooks/setup': './src/commands/hooks/setup.ts',
+    'commands/hooks/validate': './src/commands/hooks/validate.ts',
+    'commands/hooks/menu': './src/commands/hooks/menu.ts',
     'lib/utils': './src/lib/utils.ts',
     'logger': './src/logger.ts',
     // Configuration files

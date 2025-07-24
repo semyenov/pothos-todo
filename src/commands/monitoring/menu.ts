@@ -5,7 +5,7 @@ import boxen from 'boxen';
 
 export default class MonitoringMenu extends Command {
   static override description = 'Interactive monitoring and observability management menu';
-  
+
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
   ];
@@ -18,7 +18,7 @@ export default class MonitoringMenu extends Command {
   private showHeader(): void {
     const header = chalk.cyan.bold('Monitoring & Observability Center');
     const subtitle = chalk.gray('Health checks, metrics, logs, and alerting management');
-    
+
     this.log(boxen(`${header}\n${subtitle}`, {
       padding: 1,
       margin: 1,
@@ -142,8 +142,8 @@ export default class MonitoringMenu extends Command {
       }
 
       if (action === 'back') {
-        // Return to main CLI menu
-        const { Command } = await import('../index.js');
+        // Return to main CLI menu  
+        const Command = (await import('../../commands/index.js')).default;
         await Command.run([]);
         break;
       }
@@ -235,7 +235,7 @@ export default class MonitoringMenu extends Command {
       }
     ]);
 
-    const MonitoringHealth = (await import('./health.js')).default;
+    const MonitoringHealth = (await import('../../commands/monitoring/health.js')).default;
     await MonitoringHealth.run(['--operation', operation]);
   }
 
@@ -271,7 +271,7 @@ export default class MonitoringMenu extends Command {
     const args = ['--operation', operation];
     if (timeframe) args.push('--timeframe', timeframe);
 
-    const MonitoringMetrics = (await import('./metrics.js')).default;
+    const MonitoringMetrics = (await import('../../commands/monitoring/metrics.js')).default;
     await MonitoringMetrics.run(args);
   }
 
@@ -351,11 +351,11 @@ export default class MonitoringMenu extends Command {
 
   private async handlePerformance(): Promise<void> {
     this.log(chalk.blue('⚡ Performance Monitoring'));
-    
+
     const { executeCommand } = await import('../../lib/utils.js');
-    
+
     this.log(chalk.yellow('📊 Current Performance Metrics:'));
-    
+
     // System performance
     this.log(chalk.cyan('\n🖥️ System Resources:'));
     try {
@@ -363,7 +363,7 @@ export default class MonitoringMenu extends Command {
     } catch {
       this.log(chalk.gray('System resource information not available'));
     }
-    
+
     // Memory usage
     this.log(chalk.cyan('\n💾 Memory Usage:'));
     try {
@@ -379,17 +379,17 @@ export default class MonitoringMenu extends Command {
 
     // Quick health overview
     await this.showQuickHealth();
-    
+
     // System metrics
     await this.showSystemMetrics();
-    
+
     // Service status
     await this.showServiceStatus();
   }
 
   private async showQuickHealth(): Promise<void> {
     this.log(chalk.blue('\n🏥 Health Status:'));
-    
+
     const services = [
       { name: 'API Gateway', url: 'http://localhost:4000/health', expected: 200 },
       { name: 'Database', url: 'http://localhost:5432', expected: 'connection' },
@@ -400,11 +400,11 @@ export default class MonitoringMenu extends Command {
     for (const service of services) {
       try {
         if (service.expected === 200) {
-          const response = await fetch(service.url, { 
+          const response = await fetch(service.url, {
             method: 'GET',
             signal: AbortSignal.timeout(5000)
           });
-          
+
           if (response.ok) {
             this.log(chalk.green(`  ✅ ${service.name}: Healthy`));
           } else {
@@ -421,18 +421,18 @@ export default class MonitoringMenu extends Command {
 
   private async showSystemMetrics(): Promise<void> {
     this.log(chalk.blue('\n📊 System Metrics:'));
-    
+
     // CPU and memory info
     try {
       this.log(chalk.cyan('  💻 CPU Usage:'));
       this.log(chalk.gray(`    Load: ${process.cpuUsage()}`));
-      
+
       this.log(chalk.cyan('  💾 Memory Usage:'));
       const memory = process.memoryUsage();
       this.log(chalk.gray(`    Heap Used: ${Math.round(memory.heapUsed / 1024 / 1024)}MB`));
       this.log(chalk.gray(`    Heap Total: ${Math.round(memory.heapTotal / 1024 / 1024)}MB`));
       this.log(chalk.gray(`    RSS: ${Math.round(memory.rss / 1024 / 1024)}MB`));
-      
+
     } catch {
       this.log(chalk.gray('  System metrics not available'));
     }
@@ -440,14 +440,14 @@ export default class MonitoringMenu extends Command {
 
   private async showServiceStatus(): Promise<void> {
     this.log(chalk.blue('\n🔧 Service Status:'));
-    
+
     try {
       const { executeCommand } = await import('../../lib/utils.js');
-      
+
       // Check if services are running
       this.log(chalk.cyan('  🐳 Docker Containers:'));
       await executeCommand('docker', ['ps', '--format', 'table {{.Names}}\\t{{.Status}}'], { silent: false });
-      
+
     } catch {
       this.log(chalk.gray('  Docker status not available'));
     }
@@ -465,16 +465,16 @@ export default class MonitoringMenu extends Command {
 
   private async handleContainerHealth(): Promise<void> {
     this.log(chalk.blue('🐳 Container Health Monitoring'));
-    
+
     const { executeCommand } = await import('../../lib/utils.js');
-    
+
     try {
       this.log(chalk.yellow('📊 Container Status:'));
       await executeCommand('docker', ['ps', '--all'], { silent: false });
-      
+
       this.log(chalk.yellow('\n💾 Container Resource Usage:'));
       await executeCommand('docker', ['stats', '--no-stream'], { silent: false });
-      
+
     } catch {
       this.log(chalk.gray('Docker not available or no containers running'));
     }
