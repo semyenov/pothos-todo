@@ -65,7 +65,7 @@ export default class Interactive extends Command {
         short: 'Status',
       },
       {
-        name: `${chalk.purple('🎯')} Orchestration - Service startup, scaling, monitoring`,
+        name: `${chalk.magenta('🎯')} Orchestration - Service startup, scaling, monitoring`,
         value: 'orchestration',
         short: 'Orchestration',
       },
@@ -238,7 +238,7 @@ ${chalk.bold('Enterprise Features:')}
   • ${chalk.cyan('202+ Infrastructure Services')} - Complete enterprise stack
   • ${chalk.green('Auto-scaling')} - Intelligent resource optimization
   • ${chalk.yellow('Security')} - Quantum-resistant cryptography
-  • ${chalk.purple('Monitoring')} - Real-time observability
+          • ${chalk.magenta('Monitoring')} - Real-time observability
   • ${chalk.blue('AI Integration')} - Advanced ML capabilities
 
 ${chalk.bold('Direct Usage:')}
@@ -280,7 +280,7 @@ You can also run commands directly:
         short: 'Registry Status',
       },
       {
-        name: `${chalk.purple('🔄')} Health Monitor - View system health monitoring`,
+        name: `${chalk.magenta('🔄')} Health Monitor - View system health monitoring`,
         value: 'health-monitor',
         short: 'Health Monitor',
       },
@@ -320,7 +320,7 @@ You can also run commands directly:
         this.log(chalk.green('✅ Enhanced Service Registry operational'));
         break;
       case 'health-monitor':
-        this.log(chalk.purple('🔄 Health Monitor Status:'));
+        this.log(chalk.magenta('🔄 Health Monitor Status:'));
         this.log(chalk.green('✅ Health monitoring active'));
         this.log(chalk.gray('- 4 alert rules configured'));
         this.log(chalk.gray('- 0 current incidents'));
@@ -356,7 +356,7 @@ You can also run commands directly:
         short: 'Microservices',
       },
       {
-        name: `${chalk.purple('🛡️')} Security Services - Advanced threat detection`,
+        name: `${chalk.magenta('🛡️')} Security Services - Advanced threat detection`,
         value: 'security',
         short: 'Security',
       },
@@ -428,7 +428,7 @@ You can also run commands directly:
         short: 'Vector Search',
       },
       {
-        name: `${chalk.purple('📊')} AI Analytics - Insights and predictions`,
+        name: `${chalk.magenta('📊')} AI Analytics - Insights and predictions`,
         value: 'ai-analytics',
         short: 'AI Analytics',
       },
@@ -478,7 +478,7 @@ You can also run commands directly:
     try {
       this.log(chalk.gray(`Running: bun run ${scriptName}`));
       const { execSync } = await import('child_process');
-      const result = execSync(`bun run ${scriptName}`, { 
+      const result = execSync(`bun run ${scriptName}`, {
         cwd: process.cwd(),
         encoding: 'utf-8',
         stdio: 'inherit'
@@ -520,7 +520,7 @@ You can also run commands directly:
   }
 
   private showSecurityInfo(): void {
-    this.log(chalk.purple('\n🛡️ Advanced Security Services:'));
+    this.log(chalk.magenta('\n🛡️ Advanced Security Services:'));
     this.log(chalk.gray('  - Quantum-resistant cryptography (Kyber, Dilithium, SPHINCS+)'));
     this.log(chalk.gray('  - ML-based threat detection engine'));
     this.log(chalk.gray('  - Policy engine with RBAC'));
@@ -580,7 +580,7 @@ You can also run commands directly:
   }
 
   private showAIAnalyticsInfo(): void {
-    this.log(chalk.purple('\n📊 AI Analytics & Insights:'));
+    this.log(chalk.magenta('\n📊 AI Analytics & Insights:'));
     this.log(chalk.gray('  - Predictive modeling and forecasting'));
     this.log(chalk.gray('  - User behavior analysis and recommendations'));
     this.log(chalk.gray('  - Performance insights and optimization'));
