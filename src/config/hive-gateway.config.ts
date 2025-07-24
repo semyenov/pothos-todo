@@ -23,13 +23,12 @@ const sessionConfig = getSessionConfig();
 export const hiveGatewayConfig: GatewayConfig = {
   // Gateway name for identification
   name: 'pothos-todo-gateway',
-  
+
   // Supergraph configuration - pulls from Hive CDN
   supergraph: {
     type: 'hive',
     endpoint: process.env.HIVE_CDN_ENDPOINT!,
     key: process.env.HIVE_CDN_KEY!,
-    pollIntervalInMs: 10_000, // Poll for schema updates every 10 seconds
   },
 
   // Hive reporting configuration
@@ -38,11 +37,7 @@ export const hiveGatewayConfig: GatewayConfig = {
     token: process.env.HIVE_TOKEN!,
     enabled: true,
     usage: {
-      enabled: true,
       target: process.env.HIVE_TARGET || 'production',
-    },
-    operations: {
-      enabled: true,
     },
     schema: {
       enabled: true,
@@ -59,13 +54,13 @@ export const hiveGatewayConfig: GatewayConfig = {
       methods: ['GET', 'POST', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
     },
-    
+
     // GraphQL endpoint configuration
     graphqlEndpoint: '/graphql',
-    
+
     // Enable GraphiQL in development
-    graphiql: serverConfig.env === 'development',
-    
+    graphiql: true,
+
     // Health check endpoints
     healthCheckEndpoint: '/health',
     readinessCheckEndpoint: '/ready',
@@ -251,7 +246,7 @@ export const hiveGatewayConfig: GatewayConfig = {
       'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
       'Content-Security-Policy': "default-src 'self'",
     },
-    
+
     // Request size limits
     requestLimits: {
       maxRequestSize: '1mb',
@@ -266,7 +261,7 @@ export const hiveGatewayConfig: GatewayConfig = {
       enabled: true,
       ttl: 300_000, // 5 minutes
     },
-    
+
     // Service health checks
     serviceHealthCheck: {
       enabled: true,
@@ -279,7 +274,7 @@ export const hiveGatewayConfig: GatewayConfig = {
 // Export a function to create gateway instance
 export async function createHiveGateway() {
   const { createGateway } = await import('@graphql-hive/gateway');
-  
+
   return createGateway(hiveGatewayConfig);
 }
 

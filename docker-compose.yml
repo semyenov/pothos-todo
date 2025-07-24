@@ -57,19 +57,22 @@ services:
     container_name: ${HIVE_GATEWAY_CONTAINER:-pothos-todo-gateway}
     ports:
       - "${GATEWAY_PORT:-4000}:4000"
+
     environment:
       # Hive Configuration
       HIVE_CDN_ENDPOINT: ${HIVE_CDN_ENDPOINT}
       HIVE_CDN_KEY: ${HIVE_CDN_KEY}
-      HIVE_TOKEN: ${HIVE_TOKEN}
+      HIVE_TOKEN: ${HIVE_TOKEN} 
       # Gateway Configuration
       PORT: 4000
+      CONFIG_PATH: /app/gateway.ts
       # Subgraph URLs (for development mode)
       USER_SUBGRAPH_URL: ${USER_SUBGRAPH_URL:-http://user-subgraph:4001/graphql}
       TODO_SUBGRAPH_URL: ${TODO_SUBGRAPH_URL:-http://todo-subgraph:4002/graphql}
       AI_SUBGRAPH_URL: ${AI_SUBGRAPH_URL:-http://ai-subgraph:4003/graphql}
       # Monitoring
       TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-true}
+    command: ["hive-gateway", "supergraph", "--port", "4000", "--host", "0.0.0.0"]
     depends_on:
       - user-subgraph
       - todo-subgraph

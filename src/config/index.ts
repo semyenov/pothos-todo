@@ -234,7 +234,7 @@ export function getServerConfig() {
       secure: false,
       sameSite: 'lax' as const,
     },
-  };
+  } as const;
   return defu(getConfigValue('server', {}), defaults);
 }
 
