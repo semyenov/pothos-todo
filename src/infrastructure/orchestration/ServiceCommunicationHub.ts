@@ -77,4 +77,723 @@ interface CommunicationHubEventMap {
 /**
  * Service Communication Hub for inter-service communication
  * Provides type-safe RPC calls, event messaging, circuit breaking, and load balancing
- */\nexport class ServiceCommunicationHub extends TypedEventEmitter<CommunicationHubEventMap> {\n  private static instance: ServiceCommunicationHub;\n  \n  private registry: EnhancedServiceRegistry;\n  private messageQueues: Map<string, ServiceMessage[]> = new Map();\n  private pendingRequests: Map<string, {\n    resolve: (value: any) => void;\n    reject: (error: Error) => void;\n    timeout: NodeJS.Timeout;\n  }> = new Map();\n  \n  private circuitBreakers: Map<string, CircuitBreakerState> = new Map();\n  private loadBalancers: Map<string, {\n    config: LoadBalancerConfig;\n    connections: Map<string, number>; // connection count per service\n    lastUsed: number; // for round-robin\n  }> = new Map();\n  \n  private constructor() {\n    super();\n    this.registry = EnhancedServiceRegistry.getInstance();\n    this.setupRegistryListeners();\n  }\n\n  static getInstance(): ServiceCommunicationHub {\n    if (!ServiceCommunicationHub.instance) {\n      ServiceCommunicationHub.instance = new ServiceCommunicationHub();\n    }\n    return ServiceCommunicationHub.instance;\n  }\n\n  /**\n   * Make a type-safe RPC call to a service\n   */\n  async call<TRequest, TResponse>(\n    targetService: string,\n    method: string,\n    request: TRequest,\n    options?: {\n      timeout?: number;\n      priority?: ServiceMessage['priority'];\n      correlationId?: string;\n      retries?: number;\n    }\n  ): Promise<TResponse> {\n    const {\n      timeout = 30000,\n      priority = 'normal',\n      correlationId,\n      retries = 0,\n    } = options || {};\n\n    const fromService = this.getCurrentServiceName();\n    const callStartTime = Date.now();\n\n    this.emit('rpc:call', {\n      from: fromService,\n      to: targetService,\n      method,\n    });\n\n    // Check circuit breaker\n    if (!this.isCircuitClosed(targetService)) {\n      const error = new Error(`Circuit breaker is open for service: ${targetService}`);\n      this.emit('rpc:response', {\n        from: fromService,\n        to: targetService,\n        method,\n        duration: Date.now() - callStartTime,\n        success: false,\n      });\n      throw error;\n    }\n\n    const messageId = this.generateMessageId();\n    const message: ServiceMessage = {\n      id: messageId,\n      from: fromService,\n      to: targetService,\n      type: 'request',\n      method,\n      payload: request,\n      timestamp: new Date(),\n      correlationId: correlationId || messageId,\n      timeout,\n      priority,\n    };\n\n    try {\n      const response = await this.sendMessage<TResponse>(message);\n      \n      // Record success for circuit breaker\n      this.recordSuccess(targetService);\n      \n      const duration = Date.now() - callStartTime;\n      this.emit('rpc:response', {\n        from: fromService,\n        to: targetService,\n        method,\n        duration,\n        success: true,\n      });\n\n      return response;\n\n    } catch (error) {\n      // Record failure for circuit breaker\n      this.recordFailure(targetService);\n      \n      const duration = Date.now() - callStartTime;\n      this.emit('rpc:response', {\n        from: fromService,\n        to: targetService,\n        method,\n        duration,\n        success: false,\n      });\n\n      // Retry if configured\n      if (retries > 0) {\n        logger.warn(`RPC call failed, retrying (${retries} attempts left)`, {\n          from: fromService,\n          to: targetService,\n          method,\n          error: (error as Error).message,\n        });\n        \n        await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries))); // Exponential backoff\n        \n        return this.call(targetService, method, request, {\n          ...options,\n          retries: retries - 1,\n        });\n      }\n      \n      throw error;\n    }\n  }\n\n  /**\n   * Call a service by capability (with load balancing)\n   */\n  async callByCapability<TRequest, TResponse>(\n    capability: string,\n    method: string,\n    request: TRequest,\n    options?: {\n      timeout?: number;\n      priority?: ServiceMessage['priority'];\n      correlationId?: string;\n      loadBalancerConfig?: LoadBalancerConfig;\n    }\n  ): Promise<TResponse> {\n    const targetService = this.selectServiceByCapability(capability, options?.loadBalancerConfig);\n    \n    if (!targetService) {\n      throw new Error(`No available service found for capability: ${capability}`);\n    }\n\n    return this.call<TRequest, TResponse>(targetService, method, request, options);\n  }\n\n  /**\n   * Send an event to a specific service\n   */\n  async sendEvent(\n    targetService: string,\n    eventType: string,\n    payload: any,\n    options?: {\n      priority?: ServiceMessage['priority'];\n      correlationId?: string;\n    }\n  ): Promise<void> {\n    const { priority = 'normal', correlationId } = options || {};\n    const fromService = this.getCurrentServiceName();\n\n    const message: ServiceMessage = {\n      id: this.generateMessageId(),\n      from: fromService,\n      to: targetService,\n      type: 'event',\n      method: eventType,\n      payload,\n      timestamp: new Date(),\n      correlationId,\n      priority,\n    };\n\n    await this.deliverMessage(message);\n  }\n\n  /**\n   * Broadcast an event to all services with a specific capability\n   */\n  async broadcastEvent(\n    capability: string,\n    eventType: string,\n    payload: any,\n    options?: {\n      priority?: ServiceMessage['priority'];\n      correlationId?: string;\n    }\n  ): Promise<void> {\n    const services = this.registry.getServicesByCapability(capability);\n    \n    await Promise.all(\n      services.map(serviceName => \n        this.sendEvent(serviceName, eventType, payload, options)\n      )\n    );\n  }\n\n  /**\n   * Subscribe to events from other services\n   */\n  subscribeToEvents(\n    serviceName: string,\n    eventTypes: string[],\n    handler: (eventType: string, payload: any, message: ServiceMessage) => Promise<void>\n  ): () => void {\n    const unsubscribeFunctions: Array<() => void> = [];\n\n    for (const eventType of eventTypes) {\n      const listener = async (data: { message: ServiceMessage }) => {\n        const { message } = data;\n        \n        if (\n          message.to === serviceName &&\n          message.type === 'event' &&\n          message.method === eventType\n        ) {\n          try {\n            await handler(eventType, message.payload, message);\n          } catch (error) {\n            logger.error(`Event handler failed for ${eventType}`, {\n              service: serviceName,\n              error,\n            });\n          }\n        }\n      };\n\n      this.on('message:received', listener);\n      unsubscribeFunctions.push(() => this.off('message:received', listener));\n    }\n\n    // Return cleanup function\n    return () => {\n      unsubscribeFunctions.forEach(unsub => unsub());\n    };\n  }\n\n  /**\n   * Configure circuit breaker for a service\n   */\n  configureCircuitBreaker(\n    serviceName: string,\n    config: {\n      failureThreshold: number;\n      timeout: number;\n      halfOpenRetryTimeout: number;\n    }\n  ): void {\n    this.circuitBreakers.set(serviceName, {\n      state: 'closed',\n      failureCount: 0,\n      ...config,\n    } as any);\n  }\n\n  /**\n   * Configure load balancer for a capability\n   */\n  configureLoadBalancer(\n    capability: string,\n    config: LoadBalancerConfig\n  ): void {\n    this.loadBalancers.set(capability, {\n      config,\n      connections: new Map(),\n      lastUsed: 0,\n    });\n  }\n\n  /**\n   * Get circuit breaker status\n   */\n  getCircuitBreakerStatus(serviceName: string): CircuitBreakerState | null {\n    return this.circuitBreakers.get(serviceName) || null;\n  }\n\n  /**\n   * Get communication statistics\n   */\n  getStatistics(): {\n    totalMessages: number;\n    messagesByType: Record<string, number>;\n    circuitBreakers: Map<string, CircuitBreakerState>;\n    activeConnections: number;\n    averageResponseTime: number;\n  } {\n    // This would be implemented with proper metrics collection\n    return {\n      totalMessages: 0,\n      messagesByType: {},\n      circuitBreakers: new Map(this.circuitBreakers),\n      activeConnections: this.pendingRequests.size,\n      averageResponseTime: 0,\n    };\n  }\n\n  private async sendMessage<TResponse>(message: ServiceMessage): Promise<TResponse> {\n    return new Promise((resolve, reject) => {\n      const timeoutHandle = setTimeout(() => {\n        this.pendingRequests.delete(message.id);\n        reject(new Error(`RPC call timeout: ${message.to}.${message.method}`));\n      }, message.timeout || 30000);\n\n      this.pendingRequests.set(message.id, {\n        resolve,\n        reject,\n        timeout: timeoutHandle,\n      });\n\n      this.deliverMessage(message).catch(error => {\n        this.pendingRequests.delete(message.id);\n        clearTimeout(timeoutHandle);\n        reject(error);\n      });\n    });\n  }\n\n  private async deliverMessage(message: ServiceMessage): Promise<void> {\n    const targetService = this.registry.get(message.to);\n    \n    if (!targetService) {\n      throw new Error(`Target service not found: ${message.to}`);\n    }\n\n    try {\n      this.emit('message:sent', {\n        message,\n        target: message.to,\n      });\n\n      // Add to target service's message queue\n      if (!this.messageQueues.has(message.to)) {\n        this.messageQueues.set(message.to, []);\n      }\n      \n      this.messageQueues.get(message.to)!.push(message);\n      \n      // Process message queue for target service\n      await this.processMessageQueue(message.to);\n\n    } catch (error) {\n      this.emit('message:failed', {\n        message,\n        error: error as Error,\n      });\n      throw error;\n    }\n  }\n\n  private async processMessageQueue(serviceName: string): Promise<void> {\n    const queue = this.messageQueues.get(serviceName) || [];\n    \n    // Sort by priority and timestamp\n    queue.sort((a, b) => {\n      const priorityOrder = { critical: 0, high: 1, normal: 2, low: 3 };\n      const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];\n      \n      if (priorityDiff !== 0) {\n        return priorityDiff;\n      }\n      \n      return a.timestamp.getTime() - b.timestamp.getTime();\n    });\n\n    const service = this.registry.get(serviceName);\n    if (!service) {\n      return;\n    }\n\n    // Process messages one by one\n    while (queue.length > 0) {\n      const message = queue.shift()!;\n      \n      try {\n        await this.processMessage(service, message);\n      } catch (error) {\n        logger.error(`Failed to process message for ${serviceName}`, {\n          message: message.id,\n          error,\n        });\n        \n        // Handle request message failures\n        if (message.type === 'request') {\n          const pending = this.pendingRequests.get(message.id);\n          if (pending) {\n            pending.reject(error as Error);\n            clearTimeout(pending.timeout);\n            this.pendingRequests.delete(message.id);\n          }\n        }\n      }\n    }\n  }\n\n  private async processMessage(\n    service: BaseService<any, any> | BaseAsyncService<any, any>,\n    message: ServiceMessage\n  ): Promise<void> {\n    this.emit('message:received', {\n      message,\n      source: message.from,\n    });\n\n    switch (message.type) {\n      case 'request':\n        await this.handleRpcRequest(service, message);\n        break;\n        \n      case 'response':\n        this.handleRpcResponse(message);\n        break;\n        \n      case 'event':\n        await this.handleEvent(service, message);\n        break;\n        \n      case 'broadcast':\n        await this.handleBroadcast(service, message);\n        break;\n    }\n  }\n\n  private async handleRpcRequest(\n    service: BaseService<any, any> | BaseAsyncService<any, any>,\n    message: ServiceMessage\n  ): Promise<void> {\n    try {\n      // Call the method on the target service\n      const method = (service as any)[message.method!];\n      \n      if (typeof method !== 'function') {\n        throw new Error(`Method ${message.method} not found on service ${service.metadata.name}`);\n      }\n\n      const result = await method.call(service, message.payload);\n      \n      // Send response back\n      const response: ServiceMessage = {\n        id: this.generateMessageId(),\n        from: message.to,\n        to: message.from,\n        type: 'response',\n        payload: result,\n        timestamp: new Date(),\n        correlationId: message.correlationId,\n        priority: message.priority,\n      };\n\n      await this.deliverMessage(response);\n\n    } catch (error) {\n      // Send error response\n      const errorResponse: ServiceMessage = {\n        id: this.generateMessageId(),\n        from: message.to,\n        to: message.from,\n        type: 'response',\n        payload: {\n          error: {\n            message: (error as Error).message,\n            stack: (error as Error).stack,\n          },\n        },\n        timestamp: new Date(),\n        correlationId: message.correlationId,\n        priority: message.priority,\n      };\n\n      await this.deliverMessage(errorResponse);\n    }\n  }\n\n  private handleRpcResponse(message: ServiceMessage): void {\n    const pending = this.pendingRequests.get(message.correlationId!);\n    \n    if (pending) {\n      clearTimeout(pending.timeout);\n      this.pendingRequests.delete(message.correlationId!);\n      \n      if (message.payload?.error) {\n        pending.reject(new Error(message.payload.error.message));\n      } else {\n        pending.resolve(message.payload);\n      }\n    }\n  }\n\n  private async handleEvent(\n    service: BaseService<any, any> | BaseAsyncService<any, any>,\n    message: ServiceMessage\n  ): Promise<void> {\n    // Emit the event on the service's event emitter\n    service.emit(message.method as any, message.payload);\n  }\n\n  private async handleBroadcast(\n    service: BaseService<any, any> | BaseAsyncService<any, any>,\n    message: ServiceMessage\n  ): Promise<void> {\n    // Handle broadcast messages (similar to events but for all services)\n    service.emit(message.method as any, message.payload);\n  }\n\n  private selectServiceByCapability(\n    capability: string,\n    config?: LoadBalancerConfig\n  ): string | null {\n    const services = this.registry.getServicesByCapability(capability)\n      .filter(serviceName => {\n        const availability = this.registry.getAvailability(serviceName);\n        return availability?.available && this.isCircuitClosed(serviceName);\n      });\n\n    if (services.length === 0) {\n      return null;\n    }\n\n    const strategy = config?.strategy || 'round-robin';\n    let selected: string;\n\n    switch (strategy) {\n      case 'round-robin':\n        selected = this.selectRoundRobin(capability, services);\n        break;\n        \n      case 'least-connections':\n        selected = this.selectLeastConnections(capability, services);\n        break;\n        \n      case 'random':\n        selected = services[Math.floor(Math.random() * services.length)];\n        break;\n        \n      case 'weighted':\n        selected = this.selectWeighted(capability, services, config?.weights);\n        break;\n        \n      default:\n        selected = services[0];\n    }\n\n    this.emit('load-balancer:target-selected', {\n      capability,\n      selected,\n      strategy,\n    });\n\n    return selected;\n  }\n\n  private selectRoundRobin(capability: string, services: string[]): string {\n    const lb = this.loadBalancers.get(capability) || {\n      config: { strategy: 'round-robin', healthCheck: true },\n      connections: new Map(),\n      lastUsed: 0,\n    };\n\n    const index = lb.lastUsed % services.length;\n    lb.lastUsed = index + 1;\n    \n    this.loadBalancers.set(capability, lb);\n    return services[index];\n  }\n\n  private selectLeastConnections(capability: string, services: string[]): string {\n    const lb = this.loadBalancers.get(capability) || {\n      config: { strategy: 'least-connections', healthCheck: true },\n      connections: new Map(),\n      lastUsed: 0,\n    };\n\n    let selected = services[0];\n    let minConnections = lb.connections.get(selected) || 0;\n\n    for (const service of services.slice(1)) {\n      const connections = lb.connections.get(service) || 0;\n      if (connections < minConnections) {\n        selected = service;\n        minConnections = connections;\n      }\n    }\n\n    // Increment connection count\n    lb.connections.set(selected, minConnections + 1);\n    this.loadBalancers.set(capability, lb);\n\n    return selected;\n  }\n\n  private selectWeighted(\n    capability: string,\n    services: string[],\n    weights?: Map<string, number>\n  ): string {\n    if (!weights || weights.size === 0) {\n      return services[0];\n    }\n\n    const totalWeight = Array.from(weights.values()).reduce((sum, weight) => sum + weight, 0);\n    const random = Math.random() * totalWeight;\n    \n    let currentWeight = 0;\n    for (const service of services) {\n      const weight = weights.get(service) || 1;\n      currentWeight += weight;\n      \n      if (random <= currentWeight) {\n        return service;\n      }\n    }\n\n    return services[0];\n  }\n\n  private isCircuitClosed(serviceName: string): boolean {\n    const breaker = this.circuitBreakers.get(serviceName);\n    \n    if (!breaker) {\n      return true; // No circuit breaker configured\n    }\n\n    const now = Date.now();\n    \n    switch (breaker.state) {\n      case 'closed':\n        return true;\n        \n      case 'open':\n        if (breaker.nextAttempt && now >= breaker.nextAttempt.getTime()) {\n          breaker.state = 'half-open';\n          this.emit('circuit-breaker:half-opened', { service: serviceName });\n          return true;\n        }\n        return false;\n        \n      case 'half-open':\n        return true;\n        \n      default:\n        return true;\n    }\n  }\n\n  private recordSuccess(serviceName: string): void {\n    const breaker = this.circuitBreakers.get(serviceName);\n    \n    if (breaker) {\n      breaker.lastSuccess = new Date();\n      breaker.failureCount = 0;\n      \n      if (breaker.state !== 'closed') {\n        breaker.state = 'closed';\n        this.emit('circuit-breaker:closed', { service: serviceName });\n      }\n    }\n  }\n\n  private recordFailure(serviceName: string): void {\n    const breaker = this.circuitBreakers.get(serviceName);\n    \n    if (breaker) {\n      breaker.failureCount++;\n      breaker.lastFailure = new Date();\n      \n      // Default thresholds if not configured\n      const failureThreshold = (breaker as any).failureThreshold || 5;\n      const timeout = (breaker as any).timeout || 60000;\n      \n      if (breaker.failureCount >= failureThreshold && breaker.state === 'closed') {\n        breaker.state = 'open';\n        breaker.nextAttempt = new Date(Date.now() + timeout);\n        \n        this.emit('circuit-breaker:opened', {\n          service: serviceName,\n          failureCount: breaker.failureCount,\n        });\n      }\n    }\n  }\n\n  private getCurrentServiceName(): string {\n    // This would typically be injected or determined from context\n    // For now, return a placeholder\n    return 'communication-hub';\n  }\n\n  private generateMessageId(): string {\n    return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;\n  }\n\n  private setupRegistryListeners(): void {\n    this.registry.on('service:deregistered', ({ name }) => {\n      // Clean up resources for deregistered service\n      this.messageQueues.delete(name);\n      this.circuitBreakers.delete(name);\n      \n      // Update load balancer connections\n      for (const [capability, lb] of this.loadBalancers.entries()) {\n        lb.connections.delete(name);\n      }\n    });\n  }\n}"
+ */
+export class ServiceCommunicationHub extends TypedEventEmitter<CommunicationHubEventMap> {
+  private static instance: ServiceCommunicationHub;
+  
+  private registry: EnhancedServiceRegistry;
+  private messageQueues: Map<string, ServiceMessage[]> = new Map();
+  private pendingRequests: Map<string, {
+    resolve: (value: any) => void;
+    reject: (error: Error) => void;
+    timeout: NodeJS.Timeout;
+  }> = new Map();
+  
+  private circuitBreakers: Map<string, CircuitBreakerState> = new Map();
+  private loadBalancers: Map<string, {
+    config: LoadBalancerConfig;
+    connections: Map<string, number>; // connection count per service
+    lastUsed: number; // for round-robin
+  }> = new Map();
+  
+  private constructor() {
+    super();
+    this.registry = EnhancedServiceRegistry.getInstance();
+    this.setupRegistryListeners();
+  }
+
+  static getInstance(): ServiceCommunicationHub {
+    if (!ServiceCommunicationHub.instance) {
+      ServiceCommunicationHub.instance = new ServiceCommunicationHub();
+    }
+    return ServiceCommunicationHub.instance;
+  }
+
+  /**
+   * Make a type-safe RPC call to a service
+   */
+  async call<TRequest, TResponse>(
+    targetService: string,
+    method: string,
+    request: TRequest,
+    options?: {
+      timeout?: number;
+      priority?: ServiceMessage['priority'];
+      correlationId?: string;
+      retries?: number;
+    }
+  ): Promise<TResponse> {
+    const {
+      timeout = 30000,
+      priority = 'normal',
+      correlationId,
+      retries = 0,
+    } = options || {};
+
+    const fromService = this.getCurrentServiceName();
+    const callStartTime = Date.now();
+
+    this.emit('rpc:call', {
+      from: fromService,
+      to: targetService,
+      method,
+    });
+
+    // Check circuit breaker
+    if (!this.isCircuitClosed(targetService)) {
+      const error = new Error(`Circuit breaker is open for service: ${targetService}`);
+      this.emit('rpc:response', {
+        from: fromService,
+        to: targetService,
+        method,
+        duration: Date.now() - callStartTime,
+        success: false,
+      });
+      throw error;
+    }
+
+    const messageId = this.generateMessageId();
+    const message: ServiceMessage = {
+      id: messageId,
+      from: fromService,
+      to: targetService,
+      type: 'request',
+      method,
+      payload: request,
+      timestamp: new Date(),
+      correlationId: correlationId || messageId,
+      timeout,
+      priority,
+    };
+
+    try {
+      const response = await this.sendMessage<TResponse>(message);
+      
+      // Record success for circuit breaker
+      this.recordSuccess(targetService);
+      
+      const duration = Date.now() - callStartTime;
+      this.emit('rpc:response', {
+        from: fromService,
+        to: targetService,
+        method,
+        duration,
+        success: true,
+      });
+
+      return response;
+
+    } catch (error) {
+      // Record failure for circuit breaker
+      this.recordFailure(targetService);
+      
+      const duration = Date.now() - callStartTime;
+      this.emit('rpc:response', {
+        from: fromService,
+        to: targetService,
+        method,
+        duration,
+        success: false,
+      });
+
+      // Retry if configured
+      if (retries > 0) {
+        logger.warn(`RPC call failed, retrying (${retries} attempts left)`, {
+          from: fromService,
+          to: targetService,
+          method,
+          error: (error as Error).message,
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries))); // Exponential backoff
+        
+        return this.call(targetService, method, request, {
+          ...options,
+          retries: retries - 1,
+        });
+      }
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Call a service by capability (with load balancing)
+   */
+  async callByCapability<TRequest, TResponse>(
+    capability: string,
+    method: string,
+    request: TRequest,
+    options?: {
+      timeout?: number;
+      priority?: ServiceMessage['priority'];
+      correlationId?: string;
+      loadBalancerConfig?: LoadBalancerConfig;
+    }
+  ): Promise<TResponse> {
+    const targetService = this.selectServiceByCapability(capability, options?.loadBalancerConfig);
+    
+    if (!targetService) {
+      throw new Error(`No available service found for capability: ${capability}`);
+    }
+
+    return this.call<TRequest, TResponse>(targetService, method, request, options);
+  }
+
+  /**
+   * Send an event to a specific service
+   */
+  async sendEvent(
+    targetService: string,
+    eventType: string,
+    payload: any,
+    options?: {
+      priority?: ServiceMessage['priority'];
+      correlationId?: string;
+    }
+  ): Promise<void> {
+    const { priority = 'normal', correlationId } = options || {};
+    const fromService = this.getCurrentServiceName();
+
+    const message: ServiceMessage = {
+      id: this.generateMessageId(),
+      from: fromService,
+      to: targetService,
+      type: 'event',
+      method: eventType,
+      payload,
+      timestamp: new Date(),
+      correlationId,
+      priority,
+    };
+
+    await this.deliverMessage(message);
+  }
+
+  /**
+   * Broadcast an event to all services with a specific capability
+   */
+  async broadcastEvent(
+    capability: string,
+    eventType: string,
+    payload: any,
+    options?: {
+      priority?: ServiceMessage['priority'];
+      correlationId?: string;
+    }
+  ): Promise<void> {
+    const services = this.registry.getServicesByCapability(capability);
+    
+    await Promise.all(
+      services.map(serviceName => 
+        this.sendEvent(serviceName, eventType, payload, options)
+      )
+    );
+  }
+
+  /**
+   * Subscribe to events from other services
+   */
+  subscribeToEvents(
+    serviceName: string,
+    eventTypes: string[],
+    handler: (eventType: string, payload: any, message: ServiceMessage) => Promise<void>
+  ): () => void {
+    const unsubscribeFunctions: Array<() => void> = [];
+
+    for (const eventType of eventTypes) {
+      const listener = async (data: { message: ServiceMessage }) => {
+        const { message } = data;
+        
+        if (
+          message.to === serviceName &&
+          message.type === 'event' &&
+          message.method === eventType
+        ) {
+          try {
+            await handler(eventType, message.payload, message);
+          } catch (error) {
+            logger.error(`Event handler failed for ${eventType}`, {
+              service: serviceName,
+              error,
+            });
+          }
+        }
+      };
+
+      this.on('message:received', listener);
+      unsubscribeFunctions.push(() => this.off('message:received', listener));
+    }
+
+    // Return cleanup function
+    return () => {
+      unsubscribeFunctions.forEach(unsub => unsub());
+    };
+  }
+
+  /**
+   * Configure circuit breaker for a service
+   */
+  configureCircuitBreaker(
+    serviceName: string,
+    config: {
+      failureThreshold: number;
+      timeout: number;
+      halfOpenRetryTimeout: number;
+    }
+  ): void {
+    this.circuitBreakers.set(serviceName, {
+      state: 'closed',
+      failureCount: 0,
+      ...config,
+    } as any);
+  }
+
+  /**
+   * Configure load balancer for a capability
+   */
+  configureLoadBalancer(
+    capability: string,
+    config: LoadBalancerConfig
+  ): void {
+    this.loadBalancers.set(capability, {
+      config,
+      connections: new Map(),
+      lastUsed: 0,
+    });
+  }
+
+  /**
+   * Get circuit breaker status
+   */
+  getCircuitBreakerStatus(serviceName: string): CircuitBreakerState | null {
+    return this.circuitBreakers.get(serviceName) || null;
+  }
+
+  /**
+   * Get communication statistics
+   */
+  getStatistics(): {
+    totalMessages: number;
+    messagesByType: Record<string, number>;
+    circuitBreakers: Map<string, CircuitBreakerState>;
+    activeConnections: number;
+    averageResponseTime: number;
+  } {
+    // This would be implemented with proper metrics collection
+    return {
+      totalMessages: 0,
+      messagesByType: {},
+      circuitBreakers: new Map(this.circuitBreakers),
+      activeConnections: this.pendingRequests.size,
+      averageResponseTime: 0,
+    };
+  }
+
+  private async sendMessage<TResponse>(message: ServiceMessage): Promise<TResponse> {
+    return new Promise((resolve, reject) => {
+      const timeoutHandle = setTimeout(() => {
+        this.pendingRequests.delete(message.id);
+        reject(new Error(`RPC call timeout: ${message.to}.${message.method}`));
+      }, message.timeout || 30000);
+
+      this.pendingRequests.set(message.id, {
+        resolve,
+        reject,
+        timeout: timeoutHandle,
+      });
+
+      this.deliverMessage(message).catch(error => {
+        this.pendingRequests.delete(message.id);
+        clearTimeout(timeoutHandle);
+        reject(error);
+      });
+    });
+  }
+
+  private async deliverMessage(message: ServiceMessage): Promise<void> {
+    const targetService = this.registry.get(message.to);
+    
+    if (!targetService) {
+      throw new Error(`Target service not found: ${message.to}`);
+    }
+
+    try {
+      this.emit('message:sent', {
+        message,
+        target: message.to,
+      });
+
+      // Add to target service's message queue
+      if (!this.messageQueues.has(message.to)) {
+        this.messageQueues.set(message.to, []);
+      }
+      
+      this.messageQueues.get(message.to)!.push(message);
+      
+      // Process message queue for target service
+      await this.processMessageQueue(message.to);
+
+    } catch (error) {
+      this.emit('message:failed', {
+        message,
+        error: error as Error,
+      });
+      throw error;
+    }
+  }
+
+  private async processMessageQueue(serviceName: string): Promise<void> {
+    const queue = this.messageQueues.get(serviceName) || [];
+    
+    // Sort by priority and timestamp
+    queue.sort((a, b) => {
+      const priorityOrder = { critical: 0, high: 1, normal: 2, low: 3 };
+      const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
+      
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+      
+      return a.timestamp.getTime() - b.timestamp.getTime();
+    });
+
+    const service = this.registry.get(serviceName);
+    if (!service) {
+      return;
+    }
+
+    // Process messages one by one
+    while (queue.length > 0) {
+      const message = queue.shift()!;
+      
+      try {
+        await this.processMessage(service, message);
+      } catch (error) {
+        logger.error(`Failed to process message for ${serviceName}`, {
+          message: message.id,
+          error,
+        });
+        
+        // Handle request message failures
+        if (message.type === 'request') {
+          const pending = this.pendingRequests.get(message.id);
+          if (pending) {
+            pending.reject(error as Error);
+            clearTimeout(pending.timeout);
+            this.pendingRequests.delete(message.id);
+          }
+        }
+      }
+    }
+  }
+
+  private async processMessage(
+    service: BaseService<any, any> | BaseAsyncService<any, any>,
+    message: ServiceMessage
+  ): Promise<void> {
+    this.emit('message:received', {
+      message,
+      source: message.from,
+    });
+
+    switch (message.type) {
+      case 'request':
+        await this.handleRpcRequest(service, message);
+        break;
+        
+      case 'response':
+        this.handleRpcResponse(message);
+        break;
+        
+      case 'event':
+        await this.handleEvent(service, message);
+        break;
+        
+      case 'broadcast':
+        await this.handleBroadcast(service, message);
+        break;
+    }
+  }
+
+  private async handleRpcRequest(
+    service: BaseService<any, any> | BaseAsyncService<any, any>,
+    message: ServiceMessage
+  ): Promise<void> {
+    try {
+      // Call the method on the target service
+      const method = (service as any)[message.method!];
+      
+      if (typeof method !== 'function') {
+        throw new Error(`Method ${message.method} not found on service ${service.metadata.name}`);
+      }
+
+      const result = await method.call(service, message.payload);
+      
+      // Send response back
+      const response: ServiceMessage = {
+        id: this.generateMessageId(),
+        from: message.to,
+        to: message.from,
+        type: 'response',
+        payload: result,
+        timestamp: new Date(),
+        correlationId: message.correlationId,
+        priority: message.priority,
+      };
+
+      await this.deliverMessage(response);
+
+    } catch (error) {
+      // Send error response
+      const errorResponse: ServiceMessage = {
+        id: this.generateMessageId(),
+        from: message.to,
+        to: message.from,
+        type: 'response',
+        payload: {
+          error: {
+            message: (error as Error).message,
+            stack: (error as Error).stack,
+          },
+        },
+        timestamp: new Date(),
+        correlationId: message.correlationId,
+        priority: message.priority,
+      };
+
+      await this.deliverMessage(errorResponse);
+    }
+  }
+
+  private handleRpcResponse(message: ServiceMessage): void {
+    const pending = this.pendingRequests.get(message.correlationId!);
+    
+    if (pending) {
+      clearTimeout(pending.timeout);
+      this.pendingRequests.delete(message.correlationId!);
+      
+      if (message.payload?.error) {
+        pending.reject(new Error(message.payload.error.message));
+      } else {
+        pending.resolve(message.payload);
+      }
+    }
+  }
+
+  private async handleEvent(
+    service: BaseService<any, any> | BaseAsyncService<any, any>,
+    message: ServiceMessage
+  ): Promise<void> {
+    // Emit the event on the service's event emitter
+    service.emit(message.method as any, message.payload);
+  }
+
+  private async handleBroadcast(
+    service: BaseService<any, any> | BaseAsyncService<any, any>,
+    message: ServiceMessage
+  ): Promise<void> {
+    // Handle broadcast messages (similar to events but for all services)
+    service.emit(message.method as any, message.payload);
+  }
+
+  private selectServiceByCapability(
+    capability: string,
+    config?: LoadBalancerConfig
+  ): string | null {
+    const services = this.registry.getServicesByCapability(capability)
+      .filter(serviceName => {
+        const availability = this.registry.getAvailability(serviceName);
+        return availability?.available && this.isCircuitClosed(serviceName);
+      });
+
+    if (services.length === 0) {
+      return null;
+    }
+
+    const strategy = config?.strategy || 'round-robin';
+    let selected: string;
+
+    switch (strategy) {
+      case 'round-robin':
+        selected = this.selectRoundRobin(capability, services);
+        break;
+        
+      case 'least-connections':
+        selected = this.selectLeastConnections(capability, services);
+        break;
+        
+      case 'random':
+        selected = services[Math.floor(Math.random() * services.length)];
+        break;
+        
+      case 'weighted':
+        selected = this.selectWeighted(capability, services, config?.weights);
+        break;
+        
+      default:
+        selected = services[0];
+    }
+
+    this.emit('load-balancer:target-selected', {
+      capability,
+      selected,
+      strategy,
+    });
+
+    return selected;
+  }
+
+  private selectRoundRobin(capability: string, services: string[]): string {
+    const lb = this.loadBalancers.get(capability) || {
+      config: { strategy: 'round-robin', healthCheck: true },
+      connections: new Map(),
+      lastUsed: 0,
+    };
+
+    const index = lb.lastUsed % services.length;
+    lb.lastUsed = index + 1;
+    
+    this.loadBalancers.set(capability, lb);
+    return services[index];
+  }
+
+  private selectLeastConnections(capability: string, services: string[]): string {
+    const lb = this.loadBalancers.get(capability) || {
+      config: { strategy: 'least-connections', healthCheck: true },
+      connections: new Map(),
+      lastUsed: 0,
+    };
+
+    let selected = services[0];
+    let minConnections = lb.connections.get(selected) || 0;
+
+    for (const service of services.slice(1)) {
+      const connections = lb.connections.get(service) || 0;
+      if (connections < minConnections) {
+        selected = service;
+        minConnections = connections;
+      }
+    }
+
+    // Increment connection count
+    lb.connections.set(selected, minConnections + 1);
+    this.loadBalancers.set(capability, lb);
+
+    return selected;
+  }
+
+  private selectWeighted(
+    capability: string,
+    services: string[],
+    weights?: Map<string, number>
+  ): string {
+    if (!weights || weights.size === 0) {
+      return services[0];
+    }
+
+    const totalWeight = Array.from(weights.values()).reduce((sum, weight) => sum + weight, 0);
+    const random = Math.random() * totalWeight;
+    
+    let currentWeight = 0;
+    for (const service of services) {
+      const weight = weights.get(service) || 1;
+      currentWeight += weight;
+      
+      if (random <= currentWeight) {
+        return service;
+      }
+    }
+
+    return services[0];
+  }
+
+  private isCircuitClosed(serviceName: string): boolean {
+    const breaker = this.circuitBreakers.get(serviceName);
+    
+    if (!breaker) {
+      return true; // No circuit breaker configured
+    }
+
+    const now = Date.now();
+    
+    switch (breaker.state) {
+      case 'closed':
+        return true;
+        
+      case 'open':
+        if (breaker.nextAttempt && now >= breaker.nextAttempt.getTime()) {
+          breaker.state = 'half-open';
+          this.emit('circuit-breaker:half-opened', { service: serviceName });
+          return true;
+        }
+        return false;
+        
+      case 'half-open':
+        return true;
+        
+      default:
+        return true;
+    }
+  }
+
+  private recordSuccess(serviceName: string): void {
+    const breaker = this.circuitBreakers.get(serviceName);
+    
+    if (breaker) {
+      breaker.lastSuccess = new Date();
+      breaker.failureCount = 0;
+      
+      if (breaker.state !== 'closed') {
+        breaker.state = 'closed';
+        this.emit('circuit-breaker:closed', { service: serviceName });
+      }
+    }
+  }
+
+  private recordFailure(serviceName: string): void {
+    const breaker = this.circuitBreakers.get(serviceName);
+    
+    if (breaker) {
+      breaker.failureCount++;
+      breaker.lastFailure = new Date();
+      
+      // Default thresholds if not configured
+      const failureThreshold = (breaker as any).failureThreshold || 5;
+      const timeout = (breaker as any).timeout || 60000;
+      
+      if (breaker.failureCount >= failureThreshold && breaker.state === 'closed') {
+        breaker.state = 'open';
+        breaker.nextAttempt = new Date(Date.now() + timeout);
+        
+        this.emit('circuit-breaker:opened', {
+          service: serviceName,
+          failureCount: breaker.failureCount,
+        });
+      }
+    }
+  }
+
+  private getCurrentServiceName(): string {
+    // This would typically be injected or determined from context
+    // For now, return a placeholder
+    return 'communication-hub';
+  }
+
+  private generateMessageId(): string {
+    return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  private setupRegistryListeners(): void {
+    this.registry.on('service:deregistered', ({ name }) => {
+      // Clean up resources for deregistered service
+      this.messageQueues.delete(name);
+      this.circuitBreakers.delete(name);
+      
+      // Update load balancer connections
+      for (const [capability, lb] of this.loadBalancers.entries()) {
+        lb.connections.delete(name);
+      }
+    });
+  }
+}

@@ -17,6 +17,4 @@ export { ZeroTrustGateway } from './ZeroTrustGateway.js';
 export type { SecurityContext } from './ZeroTrustGateway.js';
 
 // Enhanced Security Services
-export { ThreatDetection as EnhancedThreatDetection } from './ThreatDetection.enhanced.js';
-export { PolicyEngine as EnhancedPolicyEngine } from './PolicyEngine.enhanced.js';
-export { DataEncryption as EnhancedDataEncryption } from './DataEncryption.enhanced.js';
+export { ThreatDetectionService as EnhancedThreatDetection } from './ThreatDetection.enhanced.js';

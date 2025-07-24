@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { TypedEventEmitter, ServiceEventMap, HealthStatus, HealthCheckResult } from './TypedEventEmitter.js';
+import { TypedEventEmitter } from './TypedEventEmitter.js';
+import type { ServiceEventMap, HealthStatus, HealthCheckResult } from './TypedEventEmitter.js';
 import { loadAppConfig, watchAppConfig } from '@/config/index.js';
 import { logger } from '@/lib/unjs-utils.js';
 import { v4 as uuidv4 } from 'uuid';

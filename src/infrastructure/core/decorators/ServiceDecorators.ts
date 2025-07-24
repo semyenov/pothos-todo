@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ServiceConfigOptions } from '../BaseService.js';
+import type { ServiceConfigOptions } from '../BaseService.js';
 import { logger } from '@/lib/unjs-utils.js';
 
 /**

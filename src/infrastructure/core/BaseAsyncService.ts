@@ -1,6 +1,6 @@
 import { BaseService } from './BaseService.js';
-import { ServiceEventMap } from './TypedEventEmitter.js';
-import { ServiceConfigOptions } from './BaseService.js';
+import type { ServiceEventMap } from './TypedEventEmitter.js';
+import type { ServiceConfigOptions } from './BaseService.js';
 
 /**
  * Base class for services that require asynchronous initialization.
